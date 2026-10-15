@@ -1,0 +1,45 @@
+name: mikan
+
+services:
+  api:
+    build:
+      context: ../server
+    image: mikan-api:latest
+    env_file: .env
+    environment:
+      # Fixed inside the container regardless of .env: the server listens on all interfaces,
+      # stores data in the mounted volume, and never relies on the host OS timezone.
+      HOST: 0.0.0.0
+      PORT: "3000"
+      DATA_DIR: /app/data
+      TZ: UTC
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    expose:
+      - "3000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-95-170-124-192.sslip.io}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

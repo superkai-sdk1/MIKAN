@@ -1,0 +1,153 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import type Anthropic from '@anthropic-ai/sdk';
+import type { FastifyInstance, InjectOptions } from 'fastify';
+import { buildApp } from '../src/app.js';
+import { BotSendError, type BotGateway, type PhotoSource } from '../src/bot/gateway.js';
+import { loadConfig, type Config } from '../src/config.js';
+import { silentLogger, type AiClient, type AppContext } from '../src/context.js';
+import { openDatabase } from '../src/db/client.js';
+import { seedDatabase } from '../src/db/seed.js';
+
+export const ADMIN = { login: 'admin', password: 'secret123', name: 'Админ' };
+
+export class FakeGateway implements BotGateway {
+  running = true;
+  usernameValue: string | null = 'mikan_test_bot';
+  sent: Array<{ chatId: number; text: string }> = [];
+  photos: Array<{ chatId: number; photo: PhotoSource; caption: string }> = [];
+  typing = 0;
+  /** Errors to throw on the next sendText calls (consumed in order). */
+  failures: Error[] = [];
+
+  isRunning(): boolean {
+    return this.running;
+  }
+  username(): string | null {
+    return this.usernameValue;
+  }
+  async sendText(chatId: number, text: string): Promise<void> {
+    const failure = this.failures.shift();
+    if (failure) throw failure;
+    this.sent.push({ chatId, text });
+  }
+  async sendPhoto(chatId: number, photo: PhotoSource, caption: string): Promise<void> {
+    this.photos.push({ chatId, photo, caption });
+  }
+  async sendTyping(): Promise<void> {
+    this.typing += 1;
+  }
+  textsTo(chatId: number): string[] {
+    return this.sent.filter((s) => s.chatId === chatId).map((s) => s.text);
+  }
+}
+
+export const blocked = () => new BotSendError('Telegram: Forbidden: bot was blocked by the user', true);
+
+type Script = Anthropic.Message | Error;
+
+export function message(
+  content: Array<Record<string, unknown>>,
+  stopReason: Anthropic.Message['stop_reason'] = 'end_turn',
+): Anthropic.Message {
+  return {
+    id: `msg_${Math.random().toString(36).slice(2)}`,
+    type: 'message',
+    role: 'assistant',
+    model: 'test-model',
+    content,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 50, cache_creation_input_tokens: 0 },
+  } as unknown as Anthropic.Message;
+}
+
+export const text = (t: string) => ({ type: 'text', text: t, citations: null });
+export const toolUse = (id: string, name: string, input: unknown) => ({ type: 'tool_use', id, name, input });
+
+export class ScriptedAi implements AiClient {
+  model = 'test-model';
+  maxTokens = 4096;
+  calls: Anthropic.MessageCreateParamsNonStreaming[] = [];
+  constructor(private readonly script: Script[] = []) {}
+  push(...items: Script[]): this {
+    this.script.push(...items);
+    return this;
+  }
+  async createMessage(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> {
+    this.calls.push(structuredClone(params));
+    const next = this.script.shift();
+    if (!next) throw new Error('ScriptedAi: no more responses');
+    if (next instanceof Error) throw next;
+    return next;
+  }
+}
+
+export interface TestApp {
+  app: FastifyInstance;
+  ctx: AppContext;
+  gateway: FakeGateway;
+  token: string;
+  api: (method: InjectOptions['method'], url: string, payload?: unknown) => ReturnType<FastifyInstance['inject']>;
+  close: () => Promise<void>;
+}
+
+export function testConfig(overrides: Record<string, string> = {}): Config {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mikan-test-'));
+  return loadConfig({
+    JWT_SECRET: 'test-secret-test-secret-test-secret-42',
+    ADMIN_LOGIN: ADMIN.login,
+    ADMIN_PASSWORD: ADMIN.password,
+    ADMIN_NAME: ADMIN.name,
+    DATA_DIR: dataDir,
+    ...overrides,
+  });
+}
+
+export async function createTestApp(
+  opts: { ai?: AiClient | null; env?: Record<string, string>; gateway?: FakeGateway } = {},
+): Promise<TestApp> {
+  const config = testConfig(opts.env);
+  const { db, sqlite } = openDatabase(':memory:');
+  seedDatabase(db, config);
+  const gateway = opts.gateway ?? new FakeGateway();
+  const ctx: AppContext = {
+    db,
+    sqlite,
+    config,
+    log: silentLogger,
+    gateway,
+    ai: opts.ai ?? null,
+    onBotSettingsChanged: () => undefined,
+  };
+  const app = await buildApp(ctx);
+  const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { login: ADMIN.login, password: ADMIN.password } });
+  const token = login.json<{ token: string }>().token;
+  const api: TestApp['api'] = (method, url, payload) =>
+    app.inject({
+      method,
+      url,
+      headers: { authorization: `Bearer ${token}` },
+      ...(payload === undefined ? {} : { payload: payload as InjectOptions['payload'] }),
+    });
+  return {
+    app,
+    ctx,
+    gateway,
+    token,
+    api,
+    close: async () => {
+      await app.close();
+      sqlite.close();
+      fs.rmSync(config.dataDir, { recursive: true, force: true });
+    },
+  };
+}
+
+/** Creates a service/product/client quickly through the API and returns the JSON body. */
+export async function make(t: TestApp, url: string, payload: Record<string, unknown>) {
+  const res = await t.api('POST', url, payload);
+  if (res.statusCode !== 200) throw new Error(`POST ${url} → ${res.statusCode}: ${res.body}`);
+  return res.json();
+}

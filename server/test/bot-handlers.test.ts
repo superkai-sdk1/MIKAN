@@ -1,0 +1,245 @@
+import { Bot } from 'grammy';
+import type { Update, UserFromGetMe } from 'grammy/types';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BotUnavailableError } from '../src/bot/gateway.js';
+import { mainKeyboard, registerHandlers } from '../src/bot/handlers.js';
+import { BotController } from '../src/bot/index.js';
+import { BotPipeline } from '../src/bot/pipeline.js';
+import { issueStaffCode } from '../src/bot/staff.js';
+import { setCachedBotUsername } from '../src/domain/settings.js';
+import { createTestApp, make, message, ScriptedAi, text, type TestApp } from './helpers.js';
+
+const USER = 9_001;
+const botInfo = {
+  id: 1,
+  is_bot: true,
+  first_name: 'MIKAN',
+  username: 'mikan_test_bot',
+  can_join_groups: true,
+  can_read_all_group_messages: false,
+  supports_inline_queries: false,
+  can_connect_to_business: false,
+  has_main_web_app: false,
+} as unknown as UserFromGetMe;
+
+interface ApiCall {
+  method: string;
+  payload: Record<string, unknown>;
+}
+
+describe('grammY handlers (no network)', () => {
+  let t: TestApp;
+  let bot: Bot;
+  let calls: ApiCall[];
+  let pipeline: BotPipeline;
+  let ai: ScriptedAi;
+  let updateId = 0;
+
+  const privateMsg = (extra: Record<string, unknown>): Update =>
+    ({
+      update_id: ++updateId,
+      message: {
+        message_id: updateId,
+        date: 1_760_000_000,
+        chat: { id: USER, type: 'private', first_name: 'Ольга' },
+        from: { id: USER, is_bot: false, first_name: 'Ольга', last_name: 'Ли', username: 'olga' },
+        ...extra,
+      },
+    }) as unknown as Update;
+  const command = (body: string, chat: Record<string, unknown> = { id: USER, type: 'private', first_name: 'Ольга' }) =>
+    ({
+      ...privateMsg({ text: body, entities: [{ type: 'bot_command', offset: 0, length: body.split(' ')[0]!.length }] }),
+      message: {
+        ...(privateMsg({}) as { message: object }).message,
+        chat,
+        text: body,
+        entities: [{ type: 'bot_command', offset: 0, length: body.split(' ')[0]!.length }],
+      },
+    }) as unknown as Update;
+  const replies = () => calls.filter((c) => c.method === 'sendMessage').map((c) => c.payload);
+
+  beforeEach(async () => {
+    ai = new ScriptedAi();
+    t = await createTestApp({ ai });
+    pipeline = new BotPipeline(t.ctx, 0);
+    calls = [];
+    bot = new Bot('123:test', { botInfo });
+    bot.api.config.use(async (_prev, method, payload) => {
+      calls.push({ method, payload: payload as Record<string, unknown> });
+      const result = method === 'sendMessage' ? { message_id: 1, date: 0, chat: { id: USER, type: 'private' } } : true;
+      return { ok: true, result } as never;
+    });
+    registerHandlers(bot, { ctx: t.ctx, pipeline, downloadFile: async () => Buffer.from('jpegbytes') });
+  });
+  afterEach(async () => {
+    await t.close();
+  });
+
+  it('answers /start with the greeting and a keyboard offering to share the phone', async () => {
+    await bot.handleUpdate(command('/start'));
+    const [reply] = replies();
+    expect(reply!.text).toMatch(/^Здравствуйте!/);
+    const keyboard = (reply!.reply_markup as { keyboard: Array<Array<{ text: string; request_contact?: boolean }>> }).keyboard;
+    expect(keyboard.flat().map((b) => b.text)).toEqual(['💉 Услуги и цены', '💎 Украшения', '📅 Записаться', '🩹 Уход после процедуры', '📱 Поделиться номером']);
+    expect(keyboard[2]![0]!.request_contact).toBe(true);
+    expect(mainKeyboard(true).build().flat()).toHaveLength(4);
+  });
+
+  it('links the chat from a deep-link payload and from a shared contact', async () => {
+    const client = await make(t, '/api/clients', { name: 'Иван' });
+    const url = (await t.api('POST', `/api/clients/${client.id}/telegram-link`)).json().url as string;
+    await bot.handleUpdate(command(`/start ${new URL(url).searchParams.get('start')}`));
+    expect(replies()[0]!.text).toMatch(/^Иван, ваш Telegram подключён/);
+    expect((await t.api('GET', `/api/clients/${client.id}`)).json().telegramLinked).toBe(true);
+
+    await bot.handleUpdate(privateMsg({ contact: { phone_number: '+79990001122', first_name: 'Ольга', user_id: USER } }));
+    expect(replies()[1]!.text).toBe('Спасибо, Ольга! Номер сохранён ✅ Чем могу помочь?');
+  });
+
+  it('binds the staff chat with /staff in a group', async () => {
+    const { code } = issueStaffCode(t.ctx.db);
+    await bot.handleUpdate(command(`/staff ${code}`, { id: -100123, type: 'supergroup', title: 'Команда' }));
+    expect(replies()[0]!.text).toMatch(/^✅ Этот чат подключён/);
+    expect((await t.api('GET', '/api/settings/bot')).json().staffChatBound).toBe(true);
+  });
+
+  it('routes text, photos, image documents, other files, stickers and voice into the pipeline', async () => {
+    ai.push(message([text('Ответ 1')]), message([text('Ответ 2')]), message([text('Ответ 3')]), message([text('Ответ 4')]), message([text('😊')]));
+    await bot.handleUpdate(privateMsg({ text: 'Привет' }));
+    await pipeline.idle();
+    await bot.handleUpdate(privateMsg({ photo: [{ file_id: 'small', file_unique_id: 's', width: 90, height: 90, file_size: 1000 }, { file_id: 'big', file_unique_id: 'b', width: 900, height: 900, file_size: 9_000_000 }], caption: 'заживает?' }));
+    await pipeline.idle();
+    await bot.handleUpdate(privateMsg({ document: { file_id: 'doc', file_unique_id: 'd', mime_type: 'image/png', file_size: 2000, file_name: 'x.png' } }));
+    await pipeline.idle();
+    await bot.handleUpdate(privateMsg({ document: { file_id: 'pdf', file_unique_id: 'p', mime_type: 'application/pdf', file_name: 'эскиз.pdf' }, caption: 'вот' }));
+    await pipeline.idle();
+    await bot.handleUpdate(privateMsg({ sticker: { file_id: 'st', file_unique_id: 'st', type: 'regular', width: 1, height: 1, is_animated: false, is_video: false, emoji: '😊' } }));
+    await pipeline.idle();
+    await bot.handleUpdate(privateMsg({ voice: { file_id: 'v', file_unique_id: 'v', duration: 3 } }));
+    await pipeline.idle();
+
+    const texts = (await t.api('GET', `/api/bot/chats/${USER}/messages`)).json().items.map((m: { role: string; text: string }) => `${m.role}:${m.text}`);
+    expect(texts).toEqual([
+      'user:Привет',
+      'assistant:Ответ 1',
+      'user:[Фото] заживает?',
+      'assistant:Ответ 2',
+      'user:[Фото]',
+      'assistant:Ответ 3',
+      'user:[Файл «эскиз.pdf»] вот',
+      'assistant:Ответ 4',
+      'user:[Стикер 😊]',
+      'assistant:😊',
+      'user:[Голосовое сообщение]',
+      expect.stringMatching(/^assistant:Голосовые и видео/),
+    ]);
+    const photoTurn = ai.calls[1]!.messages.at(-1)!.content as Array<{ type: string; source?: { media_type: string; data: string } }>;
+    expect(photoTurn[0]).toEqual({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: Buffer.from('jpegbytes').toString('base64') } });
+    const pngTurn = ai.calls[2]!.messages.at(-1)!.content as Array<{ type: string; source?: { media_type: string } }>;
+    expect(pngTurn[0]!.source!.media_type).toBe('image/png');
+    expect(calls.some((c) => c.method === 'sendChatAction')).toBe(false); // typing goes through the gateway, not this bot
+    expect((await t.api('GET', '/api/bot/chats')).json().items[0]).toMatchObject({ telegramName: 'Ольга Ли', username: 'olga' });
+  });
+
+  it('does not block update handling while a photo downloads (#3)', async () => {
+    let release!: (b: Buffer) => void;
+    const slow = new Promise<Buffer>((resolve) => (release = resolve));
+    const slowBot = new Bot('123:test', { botInfo });
+    slowBot.api.config.use(async () => ({ ok: true, result: { message_id: 1, date: 0, chat: { id: USER, type: 'private' } } }) as never);
+    registerHandlers(slowBot, { ctx: t.ctx, pipeline, downloadFile: () => slow });
+    ai.push(message([text('Вижу фото')]));
+
+    const handled = await Promise.race([
+      slowBot.handleUpdate(privateMsg({ photo: [{ file_id: 'p', file_unique_id: 'p', width: 9, height: 9, file_size: 10 }] })).then(() => 'handled'),
+      new Promise((r) => setTimeout(() => r('blocked'), 200)),
+    ]);
+    expect(handled).toBe('handled');
+    expect(ai.calls).toHaveLength(0); // the AI call waits for the download, the update loop does not
+
+    release(Buffer.from('late-image'));
+    await pipeline.idle();
+    const content = ai.calls[0]!.messages.at(-1)!.content as Array<{ type: string; source?: { data: string } }>;
+    expect(content[0]!.source!.data).toBe(Buffer.from('late-image').toString('base64'));
+  });
+
+  it('ignores private-only handlers in groups', async () => {
+    await bot.handleUpdate({
+      update_id: 999,
+      message: { message_id: 1, date: 0, chat: { id: -5, type: 'group', title: 'G' }, from: { id: USER, is_bot: false, first_name: 'A' }, text: 'привет' },
+    } as unknown as Update);
+    await pipeline.idle();
+    expect((await t.api('GET', '/api/bot/chats')).json().items).toHaveLength(0);
+  });
+});
+
+describe('BotController polling lifecycle (#9)', () => {
+  it('never runs two polling loops when the bot is toggled off and on quickly', async () => {
+    const t = await createTestApp({ env: { BOT_ENABLED: 'true', TELEGRAM_BOT_TOKEN: '123:fake' } });
+    let running = 0;
+    let maxRunning = 0;
+    let created = 0;
+    const factory = () => {
+      created += 1;
+      let finish: (() => void) | null = null;
+      let isRunning = false;
+      return {
+        botInfo,
+        isInited: () => true,
+        isRunning: () => isRunning,
+        init: async () => undefined,
+        start: async (opts: { onStart?: (info: UserFromGetMe) => void }) => {
+          isRunning = true;
+          running += 1;
+          maxRunning = Math.max(maxRunning, running);
+          opts.onStart?.(botInfo);
+          await new Promise<void>((resolve) => (finish = resolve));
+          running -= 1;
+          isRunning = false;
+        },
+        // Like grammY: stop() resolves only after one last in-flight getUpdates returns.
+        stop: async () => {
+          await new Promise((r) => setTimeout(r, 50));
+          finish?.();
+        },
+      } as unknown as Bot;
+    };
+    const controller = new BotController(t.ctx, { botFactory: factory, debounceMs: 0 });
+    const setEnabled = async (enabled: boolean) => {
+      await t.api('PUT', '/api/settings/bot', { enabled });
+      controller.refresh();
+    };
+    controller.refresh();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(controller.isRunning()).toBe(true);
+    expect(controller.username()).toBe('mikan_test_bot');
+
+    await setEnabled(false);
+    await setEnabled(true); // re-enabled while the old loop is still unwinding
+    await new Promise((r) => setTimeout(r, 150));
+    expect(maxRunning).toBe(1);
+    expect(created).toBe(2);
+    expect(controller.isRunning()).toBe(true);
+
+    await controller.stop();
+    expect(controller.isRunning()).toBe(false);
+    expect(running).toBe(0);
+    await t.close();
+  });
+});
+
+describe('BotController when Telegram is disabled', () => {
+  it('stays offline, reports the cached username and refuses to send', async () => {
+    const t = await createTestApp();
+    const controller = new BotController(t.ctx);
+    controller.refresh();
+    expect(controller.isRunning()).toBe(false);
+    expect(controller.username()).toBeNull();
+    setCachedBotUsername(t.ctx.db, 'mikan_cached_bot');
+    expect(controller.username()).toBe('mikan_cached_bot');
+    await expect(controller.sendText(1, 'x')).rejects.toBeInstanceOf(BotUnavailableError);
+    await expect(controller.sendPhoto(1, { kind: 'url', url: 'https://x' }, 'c')).rejects.toBeInstanceOf(BotUnavailableError);
+    await controller.sendTyping(1);
+    await controller.stop();
+    await t.close();
+  });
+});

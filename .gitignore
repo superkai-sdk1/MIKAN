@@ -1,0 +1,24 @@
+# Secrets
+.env
+*.env
+!.env.example
+
+# Node
+node_modules/
+dist/
+server/data/
+coverage/
+
+# Xcode
+ios/build/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcarchive
+*.ipa
+
+# macOS
+.DS_Store
+
+# Client data dumps (personal data)
+import/

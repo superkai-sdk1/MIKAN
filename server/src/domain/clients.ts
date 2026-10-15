@@ -1,0 +1,205 @@
+import { randomBytes } from 'node:crypto';
+import { and, asc, count, desc, eq, gte, inArray, max, ne, sql } from 'drizzle-orm';
+import type { DbOrTx } from '../db/client.js';
+import { appointments, botChats, clients, sales } from '../db/schema.js';
+import { conflict } from '../lib/errors.js';
+import { phoneSearchVariants } from '../lib/phone.js';
+import type { ClientRow, ClientStats } from '../lib/serialize.js';
+import { normalizeSearchTerm, searchKey } from '../lib/text.js';
+import { toIso } from '../lib/time.js';
+import { likePattern } from '../lib/validation.js';
+import { getClientRow } from './refs.js';
+import { syncRemindersForClient } from './scheduling.js';
+
+export interface ClientInput {
+  name?: string;
+  phone?: string | null;
+  instagram?: string | null;
+  birthday?: string | null;
+  notes?: string | null;
+  source?: string | null;
+  botEnabled?: boolean;
+  archived?: boolean;
+}
+
+function derived(row: Pick<ClientRow, 'name' | 'phone' | 'instagram' | 'telegramUsername'>) {
+  return {
+    nameSort: searchKey(row.name),
+    searchText: searchKey(row.name, phoneSearchVariants(row.phone), row.instagram, row.telegramUsername),
+  };
+}
+
+function assertPhoneFree(db: DbOrTx, phone: string | null | undefined, exceptId?: number): void {
+  if (!phone) return;
+  const conditions = [eq(clients.phone, phone)];
+  if (exceptId !== undefined) conditions.push(ne(clients.id, exceptId));
+  const owner = db.select().from(clients).where(and(...conditions)).get();
+  if (owner) throw conflict(`Телефон ${phone} уже принадлежит клиенту «${owner.name}»`);
+}
+
+export function cleanInstagram(value: string | null | undefined): string | null | undefined {
+  if (value == null) return value;
+  const cleaned = value.trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/^@/, '').replace(/\/+$/, '');
+  return cleaned === '' ? null : cleaned;
+}
+
+export function createClient(db: DbOrTx, input: ClientInput & { name: string }, extra: Partial<ClientRow> = {}): ClientRow {
+  assertPhoneFree(db, input.phone);
+  const now = Date.now();
+  const base = {
+    name: input.name,
+    phone: input.phone ?? null,
+    instagram: cleanInstagram(input.instagram) ?? null,
+    telegramUsername: extra.telegramUsername ?? null,
+  };
+  return db
+    .insert(clients)
+    .values({
+      ...base,
+      ...derived(base),
+      birthday: input.birthday ?? null,
+      notes: input.notes ?? null,
+      source: input.source ?? null,
+      botEnabled: input.botEnabled ?? true,
+      archived: false,
+      telegramChatId: extra.telegramChatId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning()
+    .get();
+}
+
+export function updateClient(db: DbOrTx, id: number, input: ClientInput): ClientRow {
+  const current = getClientRow(db, id);
+  if (input.phone !== undefined && input.phone !== current.phone) assertPhoneFree(db, input.phone, id);
+  const next = {
+    name: input.name ?? current.name,
+    phone: input.phone === undefined ? current.phone : input.phone,
+    instagram: input.instagram === undefined ? current.instagram : (cleanInstagram(input.instagram) ?? null),
+    telegramUsername: current.telegramUsername,
+  };
+  return db
+    .update(clients)
+    .set({
+      ...next,
+      ...derived(next),
+      birthday: input.birthday === undefined ? current.birthday : input.birthday,
+      notes: input.notes === undefined ? current.notes : input.notes,
+      source: input.source === undefined ? current.source : input.source,
+      botEnabled: input.botEnabled ?? current.botEnabled,
+      archived: input.archived ?? current.archived,
+      updatedAt: Date.now(),
+    })
+    .where(eq(clients.id, id))
+    .returning()
+    .get();
+}
+
+export function searchClients(db: DbOrTx, f: { search?: string; archived: boolean; limit: number; offset: number }) {
+  const conditions = [eq(clients.archived, f.archived)];
+  const term = f.search ? normalizeSearchTerm(f.search) : '';
+  if (term) {
+    // A phone-looking query ("+7 (999) 12", "8999") is matched by digits against all phone variants.
+    const digits = term.replace(/\D/g, '');
+    const phoneLike = digits.length >= 3 && /^[\d\s+()-]+$/.test(term);
+    conditions.push(sql`${clients.searchText} like ${likePattern(phoneLike ? digits : term)} escape '\\'`);
+  }
+  const where = and(...conditions);
+  const rows = db.select().from(clients).where(where).orderBy(asc(clients.nameSort), asc(clients.id)).limit(f.limit).offset(f.offset).all();
+  const total = db.select({ n: count() }).from(clients).where(where).get()?.n ?? 0;
+  return { rows, total };
+}
+
+export function clientStats(db: DbOrTx, clientId: number): ClientStats {
+  const visits = db
+    .select({ n: count(), last: max(appointments.startsAt) })
+    .from(appointments)
+    .where(and(eq(appointments.clientId, clientId), eq(appointments.status, 'completed')))
+    .get();
+  const spent = db
+    .select({ v: sql<number>`coalesce(sum(${sales.total}), 0)` })
+    .from(sales)
+    .where(and(eq(sales.clientId, clientId), eq(sales.status, 'completed')))
+    .get();
+  const upcoming = db
+    .select({ n: count() })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.clientId, clientId),
+        inArray(appointments.status, ['scheduled', 'confirmed']),
+        gte(appointments.startsAt, Date.now()),
+      ),
+    )
+    .get();
+  return {
+    visits: visits?.n ?? 0,
+    totalSpent: spent?.v ?? 0,
+    lastVisitAt: toIso(visits?.last ?? null),
+    upcomingAppointments: upcoming?.n ?? 0,
+  };
+}
+
+export function clientHistory(db: DbOrTx, clientId: number) {
+  const appts = db
+    .select()
+    .from(appointments)
+    .where(eq(appointments.clientId, clientId))
+    .orderBy(desc(appointments.startsAt), desc(appointments.id))
+    .all();
+  const saleRows = db.select().from(sales).where(eq(sales.clientId, clientId)).orderBy(desc(sales.createdAt), desc(sales.id)).all();
+  return { appts, saleRows };
+}
+
+/** Creates (or replaces) the one-time token used in the t.me deep link. */
+export function issueLinkToken(db: DbOrTx, clientId: number): string {
+  getClientRow(db, clientId);
+  const token = randomBytes(12).toString('base64url');
+  db.update(clients).set({ linkToken: token, updatedAt: Date.now() }).where(eq(clients.id, clientId)).run();
+  return token;
+}
+
+export function findClientByLinkToken(db: DbOrTx, token: string): ClientRow | null {
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(token)) return null;
+  return db.select().from(clients).where(eq(clients.linkToken, token)).get() ?? null;
+}
+
+export function findClientByPhone(db: DbOrTx, phone: string): ClientRow | null {
+  return db.select().from(clients).where(eq(clients.phone, phone)).get() ?? null;
+}
+
+export function findClientByChat(db: DbOrTx, chatId: number): ClientRow | null {
+  return db.select().from(clients).where(eq(clients.telegramChatId, chatId)).get() ?? null;
+}
+
+/**
+ * Links a Telegram chat to a client (unlinking any other client that had this chat),
+ * updates the bot chat row and schedules reminders for upcoming appointments.
+ */
+export function linkTelegram(db: DbOrTx, clientId: number, chatId: number, username: string | null): ClientRow {
+  return db.transaction((tx) => {
+    const now = Date.now();
+    tx.update(clients)
+      .set({ telegramChatId: null, updatedAt: now })
+      .where(and(eq(clients.telegramChatId, chatId), ne(clients.id, clientId)))
+      .run();
+    const current = getClientRow(tx, clientId);
+    const next = { ...current, telegramUsername: username ?? current.telegramUsername };
+    const row = tx
+      .update(clients)
+      .set({
+        telegramChatId: chatId,
+        telegramUsername: next.telegramUsername,
+        linkToken: null,
+        ...derived(next),
+        updatedAt: now,
+      })
+      .where(eq(clients.id, clientId))
+      .returning()
+      .get();
+    tx.update(botChats).set({ clientId, updatedAt: now }).where(eq(botChats.chatId, chatId)).run();
+    syncRemindersForClient(tx, clientId, now);
+    return row;
+  });
+}

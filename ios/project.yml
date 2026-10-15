@@ -1,0 +1,76 @@
+name: MIKAN
+options:
+  bundleIdPrefix: com.mikanstudio
+  deploymentTarget:
+    iOS: "26.0"
+  developmentLanguage: ru
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "2"
+    # Apple Developer Team used for automatic signing (TestFlight / App Store Connect).
+    DEVELOPMENT_TEAM: G99YH9UK8C
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+targets:
+  MIKAN:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: MIKAN
+    info:
+      path: MIKAN/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: MIKAN
+        CFBundleDevelopmentRegion: ru
+        CFBundleLocalizations: [ru]
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSPhotoLibraryUsageDescription: "MIKAN использует фото из медиатеки, чтобы добавлять снимки украшений и расходников в каталог склада."
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mikanstudio.crm
+        PRODUCT_NAME: MIKAN
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+        ENABLE_PREVIEWS: YES
+        CODE_SIGN_STYLE: Automatic
+    scheme:
+      testTargets:
+        - MIKANTests
+      gatherCoverageData: true
+  MIKANTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: MIKANTests
+    dependencies:
+      - target: MIKAN
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mikanstudio.crm.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        SWIFT_STRICT_CONCURRENCY: complete

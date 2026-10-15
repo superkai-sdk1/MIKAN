@@ -1,0 +1,187 @@
+import SwiftUI
+
+/// One page of the День / 3 дня / Неделя grid: day headers + vertically scrolling hours.
+struct TimeGridPage: View {
+    @Environment(ScheduleStore.self) private var store
+
+    let period: CalendarPeriod
+    let query: ScheduleQuery
+    let isActive: Bool
+    let showsCancelled: Bool
+    let scroll: GridScrollState
+    let onCreate: (Date) -> Void
+    let onOpenDay: (Date) -> Void
+
+    @State private var position: ScrollPosition
+
+    init(
+        period: CalendarPeriod,
+        query: ScheduleQuery,
+        isActive: Bool,
+        showsCancelled: Bool,
+        scroll: GridScrollState,
+        onCreate: @escaping (Date) -> Void,
+        onOpenDay: @escaping (Date) -> Void
+    ) {
+        self.period = period
+        self.query = query
+        self.isActive = isActive
+        self.showsCancelled = showsCancelled
+        self.scroll = scroll
+        self.onCreate = onCreate
+        self.onOpenDay = onOpenDay
+        // Start at the requested hour on the very first layout instead of jumping from midnight.
+        let startY = TimeGridLayout.y(forMinute: scroll.topMinute, hourHeight: Self.hourHeight(for: period.scale))
+        _position = State(initialValue: ScrollPosition(y: startY))
+    }
+
+    static func hourHeight(for scale: CalendarScale) -> CGFloat { scale == .week ? 48 : 60 }
+
+    private var compact: Bool { period.scale == .week }
+    private var hourHeight: CGFloat { Self.hourHeight(for: period.scale) }
+    private var days: [Date] { period.days() }
+
+    private var appointments: [Appointment] {
+        let all = store.appointments(for: query) ?? []
+        return showsCancelled ? all : all.filter(\.isActive)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            DayHeaderRow(days: days, scale: period.scale, isLoading: store.isLoading(query), onOpenDay: onOpenDay)
+            if let error = store.error(for: query) {
+                LoadErrorBanner(message: error) { await store.reload(query) }
+            }
+            ScrollView(.vertical) {
+                TimeGridContent(
+                    days: days,
+                    appointments: appointments,
+                    hourHeight: hourHeight,
+                    compact: compact,
+                    onCreate: onCreate
+                )
+                .padding(.trailing, 4)
+            }
+            .scrollPosition($position)
+            .scrollIndicators(.hidden)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            } action: { _, offset in
+                // Only the user's own scrolling moves the shared position; the first layout reports
+                // offset 0 and must not overwrite the hour we asked the grid to open at.
+                guard isActive, scroll.userScrolled else { return }
+                scroll.topMinute = TimeGridLayout.minute(forY: offset, hourHeight: hourHeight)
+            }
+            .onScrollPhaseChange { _, phase in
+                if isActive, phase == .interacting { scroll.userScrolled = true }
+            }
+            .refreshable { await store.reload(query) }
+        }
+        .onAppear(perform: syncPosition)
+        .onChange(of: isActive) { _, active in if active { syncPosition() } }
+        .onChange(of: scroll.request) { _, _ in
+            withAnimation(isActive ? .smooth : nil) { syncPosition() }
+        }
+        .onChange(of: appointments.first?.id) { _, _ in scrollToFirstAppointmentIfNeeded() }
+    }
+
+    private func syncPosition() {
+        position.scrollTo(y: TimeGridLayout.y(forMinute: scroll.topMinute, hourHeight: hourHeight))
+    }
+
+    /// For periods without today, open at the first appointment until the user scrolls.
+    private func scrollToFirstAppointmentIfNeeded() {
+        guard isActive, !scroll.userScrolled, !days.contains(where: { Calendar.app.isDateInToday($0) }) else { return }
+        guard let first = appointments.min(by: { $0.startsAt < $1.startsAt }) else { return }
+        let minute = TimeGridLayout.minuteOfDay(first.startsAt, calendar: .app)
+        scroll.scroll(toMinute: TimeGridLayout.initialScrollMinute(nowMinute: nil, firstAppointmentMinute: minute))
+    }
+}
+
+/// Weekday + date headers; today is highlighted in the accent color. Tapping a header opens that day.
+private struct DayHeaderRow: View {
+    let days: [Date]
+    let scale: CalendarScale
+    let isLoading: Bool
+    let onOpenDay: (Date) -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ZStack {
+                if isLoading {
+                    ProgressView().controlSize(.mini)
+                }
+            }
+            .frame(width: TimeGridContent.gutterWidth)
+            ForEach(days, id: \.self) { day in
+                Button {
+                    if scale != .day { onOpenDay(day) }
+                } label: {
+                    header(for: day)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(DateText.weekdayDayMonth(day))
+                .accessibilityHint(scale == .day ? "" : "Открыть день")
+            }
+            Color.clear.frame(width: 4, height: 0)
+        }
+        // Keep the row at its content height; a flexible child here used to split the page's height
+        // with the hour grid and leave large gaps above and below the weekday headers.
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.vertical, 6)
+    }
+
+    private func header(for day: Date) -> some View {
+        let isToday = Calendar.app.isDateInToday(day)
+        return VStack(spacing: 3) {
+            Text(scale == .day ? DateText.weekdayDayMonth(day) : DateText.shortWeekday(day))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(isToday ? Color.accentColor : Color.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if scale != .day {
+                Text(DateText.dayNumber(day))
+                    .font(scale == .week ? .subheadline.weight(.semibold) : .title3.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(isToday ? Color.white : Color.primary)
+                    .frame(minWidth: 30, minHeight: 30)
+                    .background {
+                        if isToday { Circle().fill(Color.accentColor) }
+                    }
+            }
+        }
+        .contentShape(.rect)
+    }
+}
+
+/// Inline failure notice that keeps the grid visible.
+struct LoadErrorBanner: View {
+    let message: String
+    let retry: () async -> Void
+    @State private var isRetrying = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Text(message)
+                .font(.footnote)
+                .lineLimit(2)
+            Spacer(minLength: 4)
+            Button(isRetrying ? "…" : "Повторить") {
+                Task {
+                    isRetrying = true
+                    await retry()
+                    isRetrying = false
+                }
+            }
+            .font(.footnote.weight(.semibold))
+            .disabled(isRetrying)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.12), in: .rect(cornerRadius: 12))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+    }
+}

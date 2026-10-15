@@ -1,0 +1,97 @@
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import type { AppContext } from '../context.js';
+import {
+  clientHistory,
+  clientStats,
+  createClient,
+  issueLinkToken,
+  searchClients,
+  updateClient,
+} from '../domain/clients.js';
+import { findClientChat, serializeChat } from '../domain/bot-chats.js';
+import { getClientRow, serializeAppointments, serializeSales } from '../domain/refs.js';
+import { conflict } from '../lib/errors.js';
+import { clientOut } from '../lib/serialize.js';
+import {
+  calendarDate,
+  idParams,
+  nonNull,
+  nullableText,
+  pagination,
+  parse,
+  phoneInput,
+  queryBool,
+  requiredText,
+} from '../lib/validation.js';
+
+const fields = {
+  phone: phoneInput,
+  instagram: nullableText(100),
+  birthday: calendarDate,
+  notes: nullableText(5000),
+  source: nullableText(100),
+};
+
+const createBody = z.object({ name: requiredText(200), ...fields, botEnabled: nonNull(z.boolean()) });
+const patchBody = z.object({
+  name: nonNull(requiredText(200)),
+  ...fields,
+  botEnabled: nonNull(z.boolean()),
+  archived: nonNull(z.boolean()),
+});
+const listQuery = pagination.extend({
+  search: z.string().trim().max(100).optional(),
+  archived: queryBool,
+});
+
+export function clientRoutes(app: FastifyInstance, ctx: AppContext): void {
+  const { db } = ctx;
+
+  app.get('/clients', async (request) => {
+    const q = parse(listQuery, request.query);
+    const { rows, total } = searchClients(db, { search: q.search, archived: q.archived ?? false, limit: q.limit, offset: q.offset });
+    return { items: rows.map((r) => clientOut(r)), total };
+  });
+
+  app.get('/clients/:id', async (request) => {
+    const { id } = parse(idParams, request.params);
+    return clientOut(getClientRow(db, id), clientStats(db, id));
+  });
+
+  app.post('/clients', async (request) => {
+    const input = parse(createBody, request.body);
+    const row = createClient(db, input);
+    return clientOut(row, clientStats(db, row.id));
+  });
+
+  app.patch('/clients/:id', async (request) => {
+    const { id } = parse(idParams, request.params);
+    const input = parse(patchBody, request.body);
+    const row = updateClient(db, id, input);
+    return clientOut(row, clientStats(db, id));
+  });
+
+  app.get('/clients/:id/history', async (request) => {
+    const { id } = parse(idParams, request.params);
+    getClientRow(db, id);
+    const { appts, saleRows } = clientHistory(db, id);
+    return { appointments: serializeAppointments(db, appts), sales: serializeSales(db, saleRows) };
+  });
+
+  app.get('/clients/:id/chat', async (request) => {
+    const { id } = parse(idParams, request.params);
+    const chat = findClientChat(db, getClientRow(db, id));
+    return { chat: chat ? serializeChat(db, chat) : null };
+  });
+
+  app.post('/clients/:id/telegram-link', async (request) => {
+    const { id } = parse(idParams, request.params);
+    const username = ctx.gateway.username();
+    if (!username) {
+      throw conflict('Telegram-бот ещё не подключён: проверьте токен бота и что бот запущен');
+    }
+    const token = issueLinkToken(db, id);
+    return { url: `https://t.me/${username}?start=c${token}` };
+  });
+}

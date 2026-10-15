@@ -1,0 +1,21 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Uploads are ≤ 10 MB; leave headroom for multipart overhead.
+	request_body {
+		max_size 12MB
+	}
+
+	reverse_proxy api:3000
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

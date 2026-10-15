@@ -1,0 +1,260 @@
+import XCTest
+@testable import MIKAN
+
+/// Every model decodes from the exact example shapes in docs/API.md,
+/// with and without fractional seconds in instants.
+final class ModelDecodingTests: XCTestCase {
+    private let variants = [true, false]
+
+    func testInstantsDecodeWithAndWithoutFractionalSeconds() throws {
+        for fractional in variants {
+            let employee = try Fixtures.decode(Employee.self, Fixtures.employee, fractional: fractional)
+            XCTAssertEqual(employee.createdAt, Fixtures.referenceDate, "fractional: \(fractional)")
+        }
+    }
+
+    func testInstantWithMillisecondsKeepsPrecision() throws {
+        let data = Data(#"{ "id": 1, "name": "А", "login": "a", "phone": null, "color": null, "isMaster": false, "active": true, "createdAt": "2026-10-15T11:00:00.250Z" }"#.utf8)
+        let employee = try JSONCoding.makeDecoder().decode(Employee.self, from: data)
+        XCTAssertEqual(employee.createdAt.timeIntervalSince1970, Fixtures.referenceDate.timeIntervalSince1970 + 0.25, accuracy: 0.001)
+        XCTAssertNil(employee.phone)
+        XCTAssertNil(employee.color)
+    }
+
+    func testInvalidInstantFailsDecoding() {
+        let data = Data(#"{ "id": 1, "name": "А", "login": "a", "phone": null, "color": null, "isMaster": false, "active": true, "createdAt": "15.10.2026" }"#.utf8)
+        XCTAssertThrowsError(try JSONCoding.makeDecoder().decode(Employee.self, from: data))
+    }
+
+    func testEmbeddedRefs() throws {
+        let employee = try Fixtures.decode(EmployeeRef.self, Fixtures.employeeRef)
+        XCTAssertEqual(employee, EmployeeRef(id: 2, name: "Анна", color: "#FF7A1A"))
+        let client = try Fixtures.decode(ClientRef.self, Fixtures.clientRef)
+        XCTAssertEqual(client, ClientRef(id: 1, name: "Иван Петров", phone: "+79991234567", telegramLinked: true))
+        let service = try Fixtures.decode(ServiceRef.self, Fixtures.serviceRef)
+        XCTAssertEqual(service, ServiceRef(id: 3, name: "Прокол мочки", category: .piercing))
+    }
+
+    func testEmployee() throws {
+        for fractional in variants {
+            let employee = try Fixtures.decode(Employee.self, Fixtures.employee, fractional: fractional)
+            XCTAssertEqual(employee.login, "anna")
+            XCTAssertTrue(employee.isMaster)
+            XCTAssertTrue(employee.active)
+            XCTAssertEqual(employee.ref, EmployeeRef(id: 1, name: "Анна", color: "#FF7A1A"))
+        }
+    }
+
+    func testClientInListHasNullStats() throws {
+        for fractional in variants {
+            let client = try Fixtures.decode(Client.self, Fixtures.clientInList, fractional: fractional)
+            XCTAssertEqual(client.birthday, "1995-04-12")
+            XCTAssertEqual(client.instagram, "ivan.p")
+            XCTAssertTrue(client.telegramLinked)
+            XCTAssertNil(client.stats)
+        }
+    }
+
+    func testClientDetailWithStats() throws {
+        for fractional in variants {
+            let client = try Fixtures.decode(Client.self, Fixtures.clientWithStats, fractional: fractional)
+            XCTAssertNil(client.phone)
+            XCTAssertEqual(client.stats?.visits, 3)
+            XCTAssertEqual(client.stats?.totalSpent, 25_000)
+            XCTAssertEqual(client.stats?.lastVisitAt, Fixtures.referenceDate)
+            XCTAssertEqual(client.stats?.upcomingAppointments, 1)
+        }
+    }
+
+    func testServiceAndAftercareTemplate() throws {
+        let service = try Fixtures.decode(Service.self, Fixtures.service)
+        XCTAssertEqual(service.category, .piercing)
+        XCTAssertEqual(service.durationMin, 30)
+        XCTAssertEqual(service.aftercareTemplateId, 2)
+        XCTAssertFalse(service.priceFrom)
+
+        for fractional in variants {
+            let template = try Fixtures.decode(AftercareTemplate.self, Fixtures.aftercareTemplate, fractional: fractional)
+            XCTAssertEqual(template.category, .tattoo)
+            XCTAssertEqual(template.steps.map(\.dayOffset), [0, 1, 7])
+        }
+    }
+
+    func testProductAndMovements() throws {
+        for fractional in variants {
+            let product = try Fixtures.decode(Product.self, Fixtures.product, fractional: fractional)
+            XCTAssertEqual(product.kind, .jewelry)
+            XCTAssertEqual(product.photoUrl, "/uploads/3f1c.jpg")
+            XCTAssertEqual(product.detailLine, "Титан G23 · 1.2×8 мм")
+            XCTAssertFalse(product.lowStock)
+
+            let movement = try Fixtures.decode(StockMovement.self, Fixtures.stockMovement, fractional: fractional)
+            XCTAssertEqual(movement.type, .sale)
+            XCTAssertEqual(movement.delta, -1)
+            XCTAssertEqual(movement.saleId, 5)
+            XCTAssertNil(movement.appointmentId)
+
+            let result = try Fixtures.decode(
+                MovementResult.self,
+                #"{ "product": \#(Fixtures.product), "movement": \#(Fixtures.stockMovement) }"#,
+                fractional: fractional
+            )
+            XCTAssertEqual(result.movement.quantityAfter, 11)
+        }
+    }
+
+    func testAllMovementTypesDecode() throws {
+        for raw in ["receipt", "sale", "return", "writeoff", "usage", "adjustment"] {
+            let type = try JSONDecoder().decode(MovementType.self, from: Data("\"\(raw)\"".utf8))
+            XCTAssertEqual(type.rawValue, raw)
+        }
+    }
+
+    func testAppointment() throws {
+        for fractional in variants {
+            let appointment = try Fixtures.decode(Appointment.self, Fixtures.appointment, fractional: fractional)
+            XCTAssertEqual(appointment.status, .noShow)
+            XCTAssertEqual(appointment.service?.category, .piercing)
+            XCTAssertEqual(appointment.displayTitle, "Прокол мочки")
+            XCTAssertFalse(appointment.isActive)
+
+            let bare = try Fixtures.decode(Appointment.self, Fixtures.appointmentWithoutService, fractional: fractional)
+            XCTAssertNil(bare.service)
+            XCTAssertEqual(bare.displayTitle, "Запись")
+            XCTAssertEqual(bare.saleId, 7)
+            XCTAssertEqual(bare.completedAt, Fixtures.referenceDate)
+
+            let completed = try Fixtures.decode(
+                CompleteAppointmentResult.self,
+                #"{ "appointment": \#(Fixtures.appointment), "scheduledMessages": 3 }"#,
+                fractional: fractional
+            )
+            XCTAssertEqual(completed.scheduledMessages, 3)
+        }
+    }
+
+    func testSaleAndHistory() throws {
+        for fractional in variants {
+            let sale = try Fixtures.decode(Sale.self, Fixtures.sale, fractional: fractional)
+            XCTAssertEqual(sale.number, 17)
+            XCTAssertEqual(sale.items.first?.type, .product)
+            XCTAssertEqual(sale.payments, Payments(cash: 1500, card: 0, transfer: 0))
+            XCTAssertEqual(sale.status, .completed)
+            XCTAssertTrue(sale.hasProducts)
+
+            let history = try Fixtures.decode(
+                ClientHistory.self,
+                #"{ "appointments": [\#(Fixtures.appointment)], "sales": [\#(Fixtures.sale)] }"#,
+                fractional: fractional
+            )
+            XCTAssertEqual(history.appointments.count, 1)
+            XCTAssertEqual(history.sales.count, 1)
+        }
+    }
+
+    func testCashShiftAndOperations() throws {
+        for fractional in variants {
+            let shift = try Fixtures.decode(CashShift.self, Fixtures.cashShift, fractional: fractional)
+            XCTAssertTrue(shift.isOpen)
+            XCTAssertEqual(shift.expectedCash, 7500)
+            XCTAssertEqual(shift.summary.card, 5000)
+            XCTAssertEqual(shift.operations.first?.type, .withdrawal)
+
+            let current = try Fixtures.decode(CurrentShiftResponse.self, #"{ "shift": \#(Fixtures.cashShift) }"#, fractional: fractional)
+            XCTAssertEqual(current.shift?.id, 3)
+        }
+        let none = try Fixtures.decode(CurrentShiftResponse.self, #"{ "shift": null }"#)
+        XCTAssertNil(none.shift)
+    }
+
+    func testBotEntities() throws {
+        for fractional in variants {
+            let chat = try Fixtures.decode(BotChat.self, Fixtures.botChat, fractional: fractional)
+            XCTAssertEqual(chat.chatId, 123_456_789)
+            XCTAssertEqual(chat.lastMessage?.role, .user)
+            XCTAssertEqual(chat.displayName, "Иван Петров")
+
+            let scheduled = try Fixtures.decode(ScheduledMessage.self, Fixtures.scheduledMessage, fractional: fractional)
+            XCTAssertEqual(scheduled.kind, .aftercare)
+            XCTAssertEqual(scheduled.status, .pending)
+
+            let request = try Fixtures.decode(BookingRequest.self, Fixtures.bookingRequest, fractional: fractional)
+            XCTAssertEqual(request.status, .new)
+            XCTAssertEqual(request.displayName, "Иван")
+
+            let entry = try Fixtures.decode(KnowledgeEntry.self, Fixtures.knowledgeEntry, fractional: fractional)
+            XCTAssertEqual(entry.title, "Противопоказания")
+
+            let code = try Fixtures.decode(
+                StaffCode.self,
+                #"{ "code": "482913", "expiresAt": "<T>", "instruction": "Добавьте бота в рабочий чат и отправьте: /staff 482913" }"#,
+                fractional: fractional
+            )
+            XCTAssertEqual(code.code, "482913")
+        }
+        let reply = try Fixtures.decode(BotTestReply.self, #"{ "reply": "Здравствуйте!" }"#)
+        XCTAssertEqual(reply.reply, "Здравствуйте!")
+    }
+
+    func testGroupChatIdsFitInt64() throws {
+        let message = try Fixtures.decode(
+            BotMessage.self,
+            #"{ "id": 9, "chatId": -1001234567890, "role": "staff", "text": "Ок", "employee": \#(Fixtures.employeeRef), "createdAt": "<T>" }"#
+        )
+        XCTAssertEqual(message.chatId, -1_001_234_567_890)
+        XCTAssertEqual(message.employee?.name, "Анна")
+    }
+
+    func testSettings() throws {
+        let studio = try Fixtures.decode(StudioSettings.self, Fixtures.studioSettings)
+        XCTAssertEqual(studio.timezone, "Europe/Moscow")
+        XCTAssertEqual(studio.workingHours, "Ежедневно 11:00–21:00")
+
+        let tolerant = try Fixtures.decode(StudioSettings.self, #"{ "name": "MIKAN", "address": null, "timezone": "Europe/Moscow" }"#)
+        XCTAssertEqual(tolerant.address, "")
+
+        let bot = try Fixtures.decode(BotSettings.self, Fixtures.botSettings)
+        XCTAssertEqual(bot.botUsername, "mikan_studio_bot")
+        XCTAssertEqual(bot.reminderHoursBefore, 24)
+        XCTAssertTrue(bot.aiConfigured)
+        XCTAssertFalse(bot.staffChatBound)
+    }
+
+    func testDashboardBadgesAndAuth() throws {
+        for fractional in variants {
+            let dashboard = try Fixtures.decode(Dashboard.self, Fixtures.dashboard, fractional: fractional)
+            XCTAssertEqual(dashboard.date, "2026-10-15")
+            XCTAssertEqual(dashboard.revenueToday, 12_000)
+            XCTAssertEqual(dashboard.openShift?.id, 3)
+            XCTAssertEqual(dashboard.badges.lowStock, 3)
+
+            let login = try Fixtures.decode(LoginResponse.self, #"{ "token": "abc", "employee": \#(Fixtures.employee) }"#, fractional: fractional)
+            XCTAssertEqual(login.token, "abc")
+        }
+        let link = try Fixtures.decode(LinkResponse.self, #"{ "url": "https://t.me/mikan_studio_bot?start=cAbC" }"#)
+        XCTAssertEqual(link.url, "https://t.me/mikan_studio_bot?start=cAbC")
+        let health = try Fixtures.decode(HealthResponse.self, #"{ "ok": true, "version": "1.0.0" }"#)
+        XCTAssertTrue(health.ok)
+    }
+
+    func testReportSummary() throws {
+        for fractional in variants {
+            let report = try Fixtures.decode(ReportSummary.self, Fixtures.report, fractional: fractional)
+            XCTAssertEqual(report.revenue, 120_000)
+            XCTAssertEqual(report.byDay.first?.date, "2026-10-01")
+            XCTAssertEqual(report.topProducts.first?.quantity, 7)
+            XCTAssertEqual(report.topServices.first?.serviceId, 3)
+            XCTAssertEqual(report.byMaster.first?.employee.id, 2)
+            XCTAssertEqual(report.payments.total, 120_000)
+        }
+    }
+
+    func testPaginatedListWrapper() throws {
+        let page = try Fixtures.decode(ItemsResponse<Client>.self, #"{ "items": [\#(Fixtures.clientInList)], "total": 120 }"#)
+        XCTAssertEqual(page.items.count, 1)
+        XCTAssertEqual(page.total, 120)
+
+        let plain = try Fixtures.decode(ItemsResponse<Service>.self, #"{ "items": [\#(Fixtures.service)] }"#)
+        XCTAssertNil(plain.total)
+    }
+}

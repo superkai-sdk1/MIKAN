@@ -1,0 +1,7 @@
+name = "mikan-telegram-proxy"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Numeric bot IDs (the part of the token before ":") the proxy may forward, comma-separated.
+ALLOWED_BOT_IDS = "8960400388"

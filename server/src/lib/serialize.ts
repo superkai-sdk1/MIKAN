@@ -1,0 +1,278 @@
+import type * as s from '../db/schema.js';
+import { toIso } from './time.js';
+
+type Row<T extends { $inferSelect: unknown }> = T['$inferSelect'];
+export type EmployeeRow = Row<typeof s.employees>;
+export type ClientRow = Row<typeof s.clients>;
+export type ServiceRow = Row<typeof s.services>;
+export type TemplateRow = Row<typeof s.aftercareTemplates>;
+export type ProductRow = Row<typeof s.products>;
+export type MovementRow = Row<typeof s.stockMovements>;
+export type AppointmentRow = Row<typeof s.appointments>;
+export type SaleRow = Row<typeof s.sales>;
+export type SaleItemRow = Row<typeof s.saleItems>;
+export type ShiftRow = Row<typeof s.cashShifts>;
+export type CashOpRow = Row<typeof s.cashOperations>;
+export type BotChatRow = Row<typeof s.botChats>;
+export type BotMessageRow = Row<typeof s.botMessages>;
+export type ScheduledRow = Row<typeof s.scheduledMessages>;
+export type BookingRow = Row<typeof s.bookingRequests>;
+export type KnowledgeRow = Row<typeof s.knowledgeEntries>;
+
+export interface EmployeeRef {
+  id: number;
+  name: string;
+  color: string;
+}
+export interface ClientRef {
+  id: number;
+  name: string;
+  phone: string | null;
+  telegramLinked: boolean;
+}
+export interface ServiceRef {
+  id: number;
+  name: string;
+  category: string;
+}
+export interface AftercareStep {
+  dayOffset: number;
+  text: string;
+}
+export interface ClientStats {
+  visits: number;
+  totalSpent: number;
+  lastVisitAt: string | null;
+  upcomingAppointments: number;
+}
+
+export const employeeRef = (e: EmployeeRow): EmployeeRef => ({ id: e.id, name: e.name, color: e.color });
+
+export const employeeOut = (e: EmployeeRow) => ({
+  id: e.id,
+  name: e.name,
+  login: e.login,
+  phone: e.phone,
+  color: e.color,
+  isMaster: e.isMaster,
+  active: e.active,
+  createdAt: toIso(e.createdAt),
+});
+
+export const clientRef = (c: ClientRow): ClientRef => ({
+  id: c.id,
+  name: c.name,
+  phone: c.phone,
+  telegramLinked: c.telegramChatId != null,
+});
+
+export const clientOut = (c: ClientRow, stats: ClientStats | null = null) => ({
+  id: c.id,
+  name: c.name,
+  phone: c.phone,
+  instagram: c.instagram,
+  birthday: c.birthday,
+  notes: c.notes,
+  source: c.source,
+  telegramLinked: c.telegramChatId != null,
+  telegramUsername: c.telegramUsername,
+  botEnabled: c.botEnabled,
+  archived: c.archived,
+  createdAt: toIso(c.createdAt),
+  updatedAt: toIso(c.updatedAt),
+  stats,
+});
+
+export const serviceRef = (sv: ServiceRow): ServiceRef => ({ id: sv.id, name: sv.name, category: sv.category });
+
+export const serviceOut = (sv: ServiceRow) => ({
+  id: sv.id,
+  name: sv.name,
+  category: sv.category,
+  price: sv.price,
+  priceFrom: sv.priceFrom,
+  durationMin: sv.durationMin,
+  description: sv.description,
+  aftercareTemplateId: sv.aftercareTemplateId,
+  active: sv.active,
+  sort: sv.sort,
+});
+
+export function parseSteps(json: string): AftercareStep[] {
+  try {
+    const value: unknown = JSON.parse(json);
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((x): x is AftercareStep => typeof x?.dayOffset === 'number' && typeof x?.text === 'string')
+      .map((x) => ({ dayOffset: x.dayOffset, text: x.text }));
+  } catch {
+    return [];
+  }
+}
+
+export const templateOut = (t: TemplateRow) => ({
+  id: t.id,
+  name: t.name,
+  category: t.category,
+  steps: parseSteps(t.stepsJson),
+  createdAt: toIso(t.createdAt),
+  updatedAt: toIso(t.updatedAt),
+});
+
+export const productOut = (p: ProductRow) => ({
+  id: p.id,
+  kind: p.kind,
+  name: p.name,
+  sku: p.sku,
+  category: p.category,
+  material: p.material,
+  size: p.size,
+  description: p.description,
+  price: p.price,
+  cost: p.cost,
+  quantity: p.quantity,
+  minQuantity: p.minQuantity,
+  unit: p.unit,
+  photoUrl: p.photoUrl,
+  active: p.active,
+  lowStock: p.quantity <= p.minQuantity,
+  createdAt: toIso(p.createdAt),
+  updatedAt: toIso(p.updatedAt),
+});
+
+export const movementOut = (m: MovementRow, productName: string, employee: EmployeeRef | null) => ({
+  id: m.id,
+  productId: m.productId,
+  productName,
+  delta: m.delta,
+  quantityAfter: m.quantityAfter,
+  type: m.type,
+  note: m.note,
+  saleId: m.saleId,
+  appointmentId: m.appointmentId,
+  employee,
+  createdAt: toIso(m.createdAt),
+});
+
+export const appointmentOut = (
+  a: AppointmentRow,
+  client: ClientRef,
+  master: EmployeeRef,
+  service: ServiceRef | null,
+) => ({
+  id: a.id,
+  client,
+  master,
+  service,
+  title: a.title,
+  startsAt: toIso(a.startsAt),
+  endsAt: toIso(a.endsAt),
+  status: a.status,
+  price: a.price,
+  deposit: a.deposit,
+  notes: a.notes,
+  saleId: a.saleId,
+  completedAt: toIso(a.completedAt),
+  createdAt: toIso(a.createdAt),
+  updatedAt: toIso(a.updatedAt),
+});
+export type AppointmentOut = ReturnType<typeof appointmentOut>;
+
+export const saleItemOut = (i: SaleItemRow) => ({
+  id: i.id,
+  type: i.type,
+  productId: i.productId,
+  serviceId: i.serviceId,
+  name: i.name,
+  quantity: i.quantity,
+  price: i.price,
+  total: i.total,
+});
+
+export const saleOut = (sale: SaleRow, items: SaleItemRow[], client: ClientRef | null, employee: EmployeeRef) => ({
+  id: sale.id,
+  number: sale.number,
+  client,
+  employee,
+  appointmentId: sale.appointmentId,
+  shiftId: sale.shiftId,
+  items: items.map(saleItemOut),
+  subtotal: sale.subtotal,
+  discount: sale.discount,
+  total: sale.total,
+  payments: { cash: sale.payCash, card: sale.payCard, transfer: sale.payTransfer },
+  status: sale.status,
+  note: sale.note,
+  refundedAt: toIso(sale.refundedAt),
+  refundReason: sale.refundReason,
+  createdAt: toIso(sale.createdAt),
+});
+export type SaleOut = ReturnType<typeof saleOut>;
+
+export const cashOpOut = (o: CashOpRow, employee: EmployeeRef) => ({
+  id: o.id,
+  shiftId: o.shiftId,
+  type: o.type,
+  amount: o.amount,
+  reason: o.reason,
+  employee,
+  createdAt: toIso(o.createdAt),
+});
+
+export const botMessageOut = (m: BotMessageRow, employee: EmployeeRef | null) => ({
+  id: m.id,
+  chatId: m.chatId,
+  role: m.role,
+  text: m.text,
+  employee,
+  createdAt: toIso(m.createdAt),
+});
+export type BotMessageOut = ReturnType<typeof botMessageOut>;
+
+export const botChatOut = (c: BotChatRow, client: ClientRef | null, lastMessage: BotMessageOut | null) => ({
+  chatId: c.chatId,
+  client,
+  telegramName: c.telegramName,
+  username: c.username,
+  aiPaused: c.aiPaused,
+  needsAttention: c.needsAttention,
+  unreadCount: c.unreadCount,
+  lastMessage,
+  updatedAt: toIso(c.updatedAt),
+});
+
+export const scheduledOut = (m: ScheduledRow, client: ClientRef) => ({
+  id: m.id,
+  chatId: m.chatId,
+  client,
+  appointmentId: m.appointmentId,
+  kind: m.kind,
+  sendAt: toIso(m.sendAt),
+  text: m.text,
+  status: m.status,
+  sentAt: toIso(m.sentAt),
+  error: m.error,
+});
+
+export const bookingOut = (b: BookingRow, client: ClientRef | null) => ({
+  id: b.id,
+  chatId: b.chatId,
+  client,
+  contactName: b.contactName,
+  phone: b.phone,
+  serviceName: b.serviceName,
+  preferredTime: b.preferredTime,
+  comment: b.comment,
+  status: b.status,
+  createdAt: toIso(b.createdAt),
+  updatedAt: toIso(b.updatedAt),
+});
+
+export const knowledgeOut = (k: KnowledgeRow) => ({
+  id: k.id,
+  title: k.title,
+  content: k.content,
+  active: k.active,
+  sort: k.sort,
+  updatedAt: toIso(k.updatedAt),
+});

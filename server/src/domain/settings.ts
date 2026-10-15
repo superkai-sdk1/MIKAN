@@ -1,0 +1,140 @@
+import { eq } from 'drizzle-orm';
+import type { DbOrTx } from '../db/client.js';
+import { settings } from '../db/schema.js';
+
+export interface StudioSettings {
+  name: string;
+  address: string;
+  phone: string;
+  workingHours: string;
+  instagram: string;
+  website: string;
+  about: string;
+  timezone: string;
+}
+
+export interface BotSettingsStored {
+  enabled: boolean;
+  aiEnabled: boolean;
+  greeting: string;
+  extraInstructions: string;
+  aftercareHour: number;
+  remindersEnabled: boolean;
+  reminderHoursBefore: number;
+}
+
+export interface StaffCode {
+  code: string;
+  expiresAt: number;
+  /** Wrong guesses so far; the code is burned after STAFF_CODE_MAX_ATTEMPTS. */
+  attempts?: number;
+}
+
+export const DEFAULT_STUDIO: StudioSettings = {
+  name: 'MIKAN STUDIO',
+  address: '',
+  phone: '',
+  workingHours: 'Ежедневно 11:00–21:00',
+  instagram: '',
+  website: '',
+  about: '',
+  timezone: 'Europe/Moscow',
+};
+
+export const DEFAULT_BOT: BotSettingsStored = {
+  enabled: true,
+  aiEnabled: true,
+  greeting:
+    'Здравствуйте! 👋 Я помощник MIKAN STUDIO. Расскажу об услугах тату и пирсинга, помогу подобрать украшение, ' +
+    'записаться на сеанс и подскажу, как ухаживать за татуировкой или проколом. Напишите ваш вопрос или выберите кнопку ниже.',
+  extraInstructions: '',
+  aftercareHour: 12,
+  remindersEnabled: true,
+  reminderHoursBefore: 24,
+};
+
+const KEY_STUDIO = 'studio';
+const KEY_BOT = 'bot';
+const KEY_STAFF_CHAT = 'staffChatId';
+const KEY_STAFF_CODE = 'staffCode';
+const KEY_BOT_USERNAME = 'botUsername';
+
+function readKey<T>(db: DbOrTx, key: string): T | null {
+  const row = db.select().from(settings).where(eq(settings.key, key)).get();
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeKey(db: DbOrTx, key: string, value: unknown): void {
+  const json = JSON.stringify(value);
+  const now = Date.now();
+  db.insert(settings)
+    .values({ key, value: json, updatedAt: now })
+    .onConflictDoUpdate({ target: settings.key, set: { value: json, updatedAt: now } })
+    .run();
+}
+
+function deleteKey(db: DbOrTx, key: string): void {
+  db.delete(settings).where(eq(settings.key, key)).run();
+}
+
+export function getStudioSettings(db: DbOrTx): StudioSettings {
+  return { ...DEFAULT_STUDIO, ...(readKey<Partial<StudioSettings>>(db, KEY_STUDIO) ?? {}) };
+}
+
+export function saveStudioSettings(db: DbOrTx, value: StudioSettings): StudioSettings {
+  writeKey(db, KEY_STUDIO, value);
+  return value;
+}
+
+export function getBotSettings(db: DbOrTx): BotSettingsStored {
+  return { ...DEFAULT_BOT, ...(readKey<Partial<BotSettingsStored>>(db, KEY_BOT) ?? {}) };
+}
+
+export function saveBotSettings(db: DbOrTx, value: BotSettingsStored): BotSettingsStored {
+  writeKey(db, KEY_BOT, value);
+  return value;
+}
+
+export function studioTimezone(db: DbOrTx): string {
+  return getStudioSettings(db).timezone;
+}
+
+export function getStaffChatId(db: DbOrTx): number | null {
+  const value = readKey<number>(db, KEY_STAFF_CHAT);
+  return typeof value === 'number' ? value : null;
+}
+
+export function setStaffChatId(db: DbOrTx, chatId: number): void {
+  writeKey(db, KEY_STAFF_CHAT, chatId);
+}
+
+export function getStaffCode(db: DbOrTx): StaffCode | null {
+  return readKey<StaffCode>(db, KEY_STAFF_CODE);
+}
+
+export function setStaffCode(db: DbOrTx, value: StaffCode): void {
+  writeKey(db, KEY_STAFF_CODE, value);
+}
+
+export function clearStaffCode(db: DbOrTx): void {
+  deleteKey(db, KEY_STAFF_CODE);
+}
+
+export function getCachedBotUsername(db: DbOrTx): string | null {
+  return readKey<string>(db, KEY_BOT_USERNAME);
+}
+
+export function setCachedBotUsername(db: DbOrTx, username: string): void {
+  writeKey(db, KEY_BOT_USERNAME, username);
+}
+
+/** Inserts defaults for keys that are missing; never overwrites existing values. */
+export function ensureDefaultSettings(db: DbOrTx): void {
+  if (readKey(db, KEY_STUDIO) === null) writeKey(db, KEY_STUDIO, DEFAULT_STUDIO);
+  if (readKey(db, KEY_BOT) === null) writeKey(db, KEY_BOT, DEFAULT_BOT);
+}
