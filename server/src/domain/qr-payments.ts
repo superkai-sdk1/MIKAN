@@ -4,10 +4,11 @@ import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { qrPayments } from '../db/schema.js';
 import { AppError, badRequest, conflict, errorMessage, notFound } from '../lib/errors.js';
-import type { QrPaymentRow } from '../lib/serialize.js';
+import { qrPaymentOut, type QrPaymentRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
-import { toIso } from '../lib/time.js';
-import { QrProviderError, type QrBankStatus, type QrProvider } from '../payments/qr-provider.js';
+import { QrProviderError, type CreatedQr, type QrBankStatus, type QrProvider } from '../payments/qr-provider.js';
+import { announceQrDeposit } from './deposit-messages.js';
+import { recordQrDeposit } from './deposits.js';
 import { getSaleRow, serializeSale } from './refs.js';
 import { createSale, prepareSale, type SaleInput } from './sales.js';
 import { getStudioSettings } from './settings.js';
@@ -21,9 +22,13 @@ export const QR_GIVE_UP_MS = 24 * 60 * 60_000;
 /** App polls and the background sweep share this floor between bank requests for one code. */
 export const QR_MIN_CHECK_INTERVAL_MS = 2_000;
 export const QR_SWEEP_INTERVAL_MS = 15_000;
+/** Prepayment links live up to days: the background check asks the bank about each at most this often. */
+export const DEPOSIT_SWEEP_INTERVAL_MS = 60_000;
 
 /** `pending` → `paid` | `expired`; `pending` → `cancelled` (→ `paid` with `error` if the client pays it anyway). */
 export type QrPaymentStatus = 'pending' | 'paid' | 'expired' | 'cancelled';
+/** `sale` — the QR part of a checkout; `deposit` — an appointment's prepayment. */
+export type QrPaymentKind = 'sale' | 'deposit';
 
 const BANK_UNAVAILABLE = 'Банк не ответил. Попробуйте ещё раз или выберите другой способ оплаты.';
 const BANK_REFUSED = 'Банк не выдал QR-код. Проверьте подключение оплаты по QR (СБП) в Точке — подробности в журнале сервера.';
@@ -35,9 +40,24 @@ const paidAfterCancel = (amount: number) =>
   'другим способом, и при необходимости верните деньги в интернет-банке Точки.';
 const paidNotSold = (amount: number, reason: string) => `Оплата ${formatRub(amount)} получена, но продажа не проведена: ${reason}`;
 
-function requireProvider(ctx: AppContext): QrProvider {
+export function requireQrProvider(ctx: AppContext): QrProvider {
   if (!ctx.qr) throw conflict('Оплата по QR-коду не настроена на сервере');
   return ctx.qr;
+}
+
+/** Asks the bank for a one-off code; bank failures become a `payment_provider_error` safe to show. */
+export async function registerBankCode(
+  ctx: AppContext,
+  provider: QrProvider,
+  input: { amount: number; purpose: string; ttlMinutes: number },
+): Promise<CreatedQr> {
+  try {
+    return await provider.createQr(input);
+  } catch (err) {
+    ctx.log.error({ err: errorMessage(err), provider: provider.name }, 'QR code registration failed');
+    const refused = err instanceof QrProviderError && err.status !== undefined && err.status < 500;
+    throw new AppError('payment_provider_error', refused ? BANK_REFUSED : BANK_UNAVAILABLE);
+  }
 }
 
 export function getQrPaymentRow(db: DbOrTx, id: number): QrPaymentRow {
@@ -47,16 +67,7 @@ export function getQrPaymentRow(db: DbOrTx, id: number): QrPaymentRow {
 }
 
 export function serializeQrPayment(db: DbOrTx, row: QrPaymentRow) {
-  return {
-    id: row.id,
-    status: row.status as QrPaymentStatus,
-    amount: row.amount,
-    payload: row.payload,
-    expiresAt: toIso(row.expiresAt),
-    error: row.error,
-    sale: row.saleId != null ? serializeSale(db, getSaleRow(db, row.saleId)) : null,
-    createdAt: toIso(row.createdAt),
-  };
+  return qrPaymentOut(row, row.saleId != null ? serializeSale(db, getSaleRow(db, row.saleId)) : null);
 }
 
 /** Shown in the client's bank app next to the amount (SBP limits it to 140 characters). */
@@ -69,23 +80,21 @@ function purposeFor(db: DbOrTx): string {
  * fixed. Nothing is sold yet: the sale is created by `refreshQrPayment` once the bank reports the money received.
  */
 export async function createQrPayment(ctx: AppContext, input: SaleInput, employeeId: number): Promise<QrPaymentRow> {
-  const provider = requireProvider(ctx);
+  const provider = requireQrProvider(ctx);
   if (input.payments.qr <= 0) throw badRequest('Укажите сумму оплаты по QR-коду');
   const prepared = prepareSale(ctx.db, input);
   // A catalog price edited before the client pays must not change the amount the sale is checked against.
   const frozen: SaleInput = { ...input, items: input.items.map((item, i) => ({ ...item, price: prepared.items[i]!.price })) };
-  let created;
-  try {
-    created = await provider.createQr({ amount: input.payments.qr, purpose: purposeFor(ctx.db), ttlMinutes: QR_TTL_MINUTES });
-  } catch (err) {
-    ctx.log.error({ err: errorMessage(err), provider: provider.name }, 'QR code registration failed');
-    const refused = err instanceof QrProviderError && err.status !== undefined && err.status < 500;
-    throw new AppError('payment_provider_error', refused ? BANK_REFUSED : BANK_UNAVAILABLE);
-  }
+  const created = await registerBankCode(ctx, provider, {
+    amount: input.payments.qr,
+    purpose: purposeFor(ctx.db),
+    ttlMinutes: QR_TTL_MINUTES,
+  });
   const now = Date.now();
   return ctx.db
     .insert(qrPayments)
     .values({
+      kind: 'sale',
       provider: provider.name,
       externalId: created.externalId,
       payload: created.payload,
@@ -117,12 +126,15 @@ function update(db: DbOrTx, id: number, values: Partial<QrPaymentRow>): QrPaymen
 }
 
 /**
- * Money arrived: sell the remembered cart. A cancelled code is not sold — staff may have taken the money another
- * way — and neither is a cart that no longer validates; both leave the payment flagged for staff.
+ * Money arrived. A prepayment code records the prepayment (always — see `recordQrDeposit`). A checkout code sells the
+ * remembered cart; a cancelled one is not sold — staff may have taken the money another way — and neither is a cart
+ * that no longer validates; both leave the payment flagged for staff.
  */
 function completePaid(db: DbOrTx, row: QrPaymentRow, now: number): QrPaymentRow {
   const paid = { status: 'paid', paidAt: now, checkedAt: now, updatedAt: now };
+  if (row.kind === 'deposit') return update(db, row.id, { ...paid, error: recordQrDeposit(db, row, now) });
   if (row.status === 'cancelled') return update(db, row.id, { ...paid, error: paidAfterCancel(row.amount) });
+  if (row.saleInputJson == null) throw new Error(`QR payment ${row.id} has no cart to sell`);
   const input = JSON.parse(row.saleInputJson) as SaleInput;
   try {
     const sale = createSale(db, { ...input, payments: { ...input.payments, qr: row.amount } }, row.employeeId);
@@ -181,8 +193,9 @@ async function checkBank(ctx: AppContext, id: number, force: boolean): Promise<Q
   }
   const updated = applyBankStatus(ctx.db, id, bank, Date.now());
   if (updated.status === 'paid' && row.status !== 'paid') {
-    ctx.log.info({ qrPaymentId: id, saleId: updated.saleId, amount: updated.amount }, 'QR payment received');
+    ctx.log.info({ qrPaymentId: id, kind: updated.kind, saleId: updated.saleId, amount: updated.amount }, 'QR payment received');
     if (updated.error) await alertStaff(ctx, updated);
+    if (updated.kind === 'deposit') await announceQrDeposit(ctx, updated);
   }
   return updated;
 }
@@ -220,12 +233,17 @@ export async function cancelQrPayment(ctx: AppContext, id: number): Promise<QrPa
   return cancelled ?? getQrPaymentRow(ctx.db, id);
 }
 
+/** Prepayment links are checked less often than checkout codes, which someone is waiting at the counter for. */
+function dueForSweep(row: Pick<QrPaymentRow, 'kind' | 'checkedAt'>, now: number): boolean {
+  return row.kind !== 'deposit' || row.checkedAt == null || now - row.checkedAt >= DEPOSIT_SWEEP_INTERVAL_MS;
+}
+
 /** Background check of every watched code, so a payment is recorded even if the app was closed. */
 export async function sweepQrPayments(ctx: AppContext): Promise<void> {
   if (!ctx.qr) return;
   const now = Date.now();
   const rows = ctx.db
-    .select({ id: qrPayments.id })
+    .select({ id: qrPayments.id, kind: qrPayments.kind, checkedAt: qrPayments.checkedAt })
     .from(qrPayments)
     .where(
       or(
@@ -233,7 +251,8 @@ export async function sweepQrPayments(ctx: AppContext): Promise<void> {
         and(eq(qrPayments.status, 'cancelled'), gt(qrPayments.expiresAt, now - QR_GIVE_UP_MS)),
       ),
     )
-    .all();
+    .all()
+    .filter((row) => dueForSweep(row, now));
   for (const { id } of rows) {
     try {
       await refreshQrPayment(ctx, id);

@@ -214,7 +214,7 @@ If the implementation must deviate, update this file in the same change.
 ```json
 { "id": 3, "openedAt": "...", "openedBy": { EmployeeRef }, "openingCash": 5000,
   "closedAt": null, "closedBy": null, "closingCash": null, "note": null,
-  "expectedCash": 7500, "difference": null,
+  "expectedCash": 8500, "difference": null,
   "summary": { "salesCount": 3, "revenue": 10000, "cash": 2500, "card": 5000, "transfer": 0, "qr": 0, "deposit": 2500,
                "refunds": 0, "cashRefunds": 0, "cashIn": 0, "cashOut": 0,
                "deposits": { "received": 3000, "cash": 1000, "card": 0, "transfer": 2000, "qr": 0,

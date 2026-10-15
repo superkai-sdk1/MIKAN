@@ -56,24 +56,29 @@ final class CartStoreTests: XCTestCase {
         XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 4_500, card: 0, transfer: 0))
     }
 
-    func testSingleMethodWithDepositKeepsItInTransfer() throws {
+    func testSingleMethodPaysTheAmountDueAndThePrepaymentIsSeparate() throws {
         let cart = try makeCart()
         cart.prefill(from: appointment(price: 8_000, deposit: 2_000))
 
+        XCTAssertEqual(cart.deposit, 2_000)
         XCTAssertEqual(cart.depositApplied, 2_000)
         XCTAssertEqual(cart.amountDue, 6_000)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 6_000, transfer: 2_000))
+        XCTAssertEqual(cart.depositRemainder, 0)
+        XCTAssertFalse(cart.isPaidByDeposit)
+        XCTAssertEqual(cart.split, PaymentSplit(cash: 6_000), "nothing is reserved in transfer")
         XCTAssertTrue(cart.canSubmit)
 
         cart.selectPaymentMode(.single(.transfer))
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 0, card: 0, transfer: 8_000), "transfer takes the whole total")
-        XCTAssertEqual(cart.amountDue, 6_000, "the deposit is still not due again")
+        XCTAssertEqual(cart.split, PaymentSplit(transfer: 6_000), "transfer takes only the amount due")
+        XCTAssertEqual(cart.payments, Payments(cash: 0, card: 0, transfer: 6_000, qr: 0, deposit: 2_000))
 
         cart.selectPaymentMode(.single(.cash))
         let body = cart.makeSaleBody()
         XCTAssertEqual(body.appointmentId, 4)
         XCTAssertEqual(body.clientId, 1)
-        XCTAssertEqual(body.payments, Payments(cash: 6_000, card: 0, transfer: 2_000))
+        XCTAssertEqual(body.payments, Payments(cash: 6_000, card: 0, transfer: 0, qr: 0, deposit: 2_000))
+        XCTAssertEqual(body.payments.total, cart.total, "cash + card + transfer + qr + deposit == total")
+        XCTAssertEqual(body.payments.paidNow, 6_000)
         let item = try XCTUnwrap(body.items.first)
         XCTAssertEqual(item.type, .service)
         XCTAssertEqual(item.serviceId, 3)
@@ -85,12 +90,12 @@ final class CartStoreTests: XCTestCase {
         let cart = try makeCart()
         cart.prefill(from: appointment(price: 8_000, deposit: 2_000))
         cart.add(product: product(price: 1_500))
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 7_500, transfer: 2_000))
+        XCTAssertEqual(cart.split, PaymentSplit(cash: 7_500))
 
         cart.discount = 1_500
         XCTAssertEqual(cart.total, 8_000)
         XCTAssertEqual(cart.amountDue, 6_000)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 6_000, transfer: 2_000))
+        XCTAssertEqual(cart.split, PaymentSplit(cash: 6_000))
         XCTAssertTrue(cart.canSubmit)
 
         cart.discount = 20_000
@@ -98,18 +103,65 @@ final class CartStoreTests: XCTestCase {
         XCTAssertFalse(cart.canSubmit)
     }
 
-    func testDepositCoveringTheTotalGoesEntirelyToTransfer() throws {
+    func testPrepaymentCoveringTheTotalLeavesNothingToPay() throws {
         let cart = try makeCart()
         cart.prefill(from: appointment(price: 3_000, deposit: 3_000))
         XCTAssertEqual(cart.amountDue, 0)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 0, card: 0, transfer: 3_000))
+        XCTAssertTrue(cart.isPaidByDeposit)
+        XCTAssertEqual(cart.split, PaymentSplit())
         XCTAssertTrue(cart.canSubmit)
+        XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 0, card: 0, transfer: 0, qr: 0, deposit: 3_000))
 
         cart.discount = 1_000
         XCTAssertEqual(cart.depositApplied, 2_000, "never more than the total")
+        XCTAssertEqual(cart.depositRemainder, 1_000, "the rest stays held for the appointment")
         XCTAssertEqual(cart.amountDue, 0)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 0, card: 0, transfer: 2_000))
+        XCTAssertEqual(cart.split, PaymentSplit())
         XCTAssertTrue(cart.canSubmit)
+        XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 0, card: 0, transfer: 0, qr: 0, deposit: 2_000))
+    }
+
+    func testHeldPrepaymentLargerThanTheTotalIsAppliedUpToTheTotal() throws {
+        let cart = try makeCart()
+        cart.prefill(from: appointment(price: 3_000, deposit: 5_000))
+
+        XCTAssertEqual(cart.deposit, 5_000, "the whole held amount, not clamped to the price")
+        XCTAssertEqual(cart.depositApplied, 3_000)
+        XCTAssertEqual(cart.depositRemainder, 2_000)
+        XCTAssertEqual(cart.amountDue, 0)
+
+        cart.add(product: product(price: 2_500))
+        XCTAssertEqual(cart.depositApplied, 5_000, "a larger receipt uses more of the held prepayment")
+        XCTAssertEqual(cart.depositRemainder, 0)
+        XCTAssertEqual(cart.amountDue, 500)
+        XCTAssertEqual(cart.split, PaymentSplit(cash: 500))
+        XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 500, card: 0, transfer: 0, qr: 0, deposit: 5_000))
+    }
+
+    func testTypedSplitAmountsDoNotCountWhenThePrepaymentCoversTheReceipt() throws {
+        let cart = try makeCart()
+        cart.prefill(from: appointment(price: 8_000, deposit: 2_000))
+        cart.selectPaymentMode(.split)
+        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 6_000))
+
+        cart.discount = 6_000
+        XCTAssertTrue(cart.isPaidByDeposit)
+        XCTAssertEqual(cart.split, PaymentSplit(), "checkout hides the methods, so nothing typed there is sent")
+        XCTAssertEqual(cart.remaining, 0)
+        XCTAssertTrue(cart.canSubmit)
+
+        cart.discount = 0
+        XCTAssertEqual(cart.split, PaymentSplit(cash: 6_000), "typed amounts come back with an amount due")
+    }
+
+    func testSaleBodyAlwaysEncodesTheDepositKey() throws {
+        let cart = try makeCart()
+        cart.addCustomService(name: "Прокол", price: 2_000)
+        let data = try JSONCoding.makeEncoder().encode(cart.makeSaleBody())
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let payments = try XCTUnwrap(json["payments"] as? [String: Any])
+        XCTAssertEqual(payments["deposit"] as? Int, 0, "the server rejects a body without it when a prepayment is held")
+        XCTAssertEqual(payments["cash"] as? Int, 2_000)
     }
 
     // MARK: Cash
@@ -125,7 +177,9 @@ final class CartStoreTests: XCTestCase {
         cart.cashReceived = 5_000
         XCTAssertEqual(cart.cashChange, 500)
         XCTAssertTrue(cart.canSubmit)
-        XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 4_500, card: 0, transfer: 2_000), "change is never sent")
+        XCTAssertEqual(
+            cart.makeSaleBody().payments, Payments(cash: 4_500, card: 0, transfer: 0, qr: 0, deposit: 2_000), "change is never sent"
+        )
 
         cart.cashReceived = 4_000
         XCTAssertNil(cart.cashChange)
@@ -147,15 +201,34 @@ final class CartStoreTests: XCTestCase {
 
         cart.selectPaymentMode(.split)
         XCTAssertEqual(cart.paymentMode, .split)
-        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 6_000, card: 0, transfer: 2_000))
+        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 6_000), "the prepayment is not one of the methods")
         XCTAssertEqual(cart.split, cart.manualSplit)
         XCTAssertTrue(cart.canSubmit)
 
         cart.selectPaymentMode(.split)
-        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 6_000, card: 0, transfer: 2_000), "re-selecting keeps typed amounts")
+        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 6_000), "re-selecting keeps typed amounts")
 
         cart.selectPaymentMode(.single(.qr))
-        XCTAssertEqual(cart.split, PaymentSplit(transfer: 2_000, qr: 6_000), "back to automatic amounts")
+        XCTAssertEqual(cart.split, PaymentSplit(qr: 6_000), "back to automatic amounts; QR never includes the prepayment")
+    }
+
+    func testSplitIsBalancedAgainstTheAmountDue() throws {
+        let cart = try makeCart()
+        cart.prefill(from: appointment(price: 8_000, deposit: 2_000))
+        cart.selectPaymentMode(.split)
+
+        cart.manualSplit = PaymentSplit(cash: 8_000)
+        XCTAssertEqual(cart.remaining, -2_000, "the whole total would pay the prepayment twice")
+        XCTAssertFalse(cart.canSubmit)
+        cart.fillRemaining(with: .cash)
+        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 6_000))
+
+        cart.manualSplit = PaymentSplit(cash: 3_000)
+        XCTAssertEqual(cart.remaining, 3_000)
+        cart.fillRemaining(with: .transfer)
+        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 3_000, transfer: 3_000))
+        XCTAssertTrue(cart.canSubmit)
+        XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 3_000, card: 0, transfer: 3_000, qr: 0, deposit: 2_000))
     }
 
     func testSplitSubmitsOnlyWhenBalanced() throws {
@@ -187,7 +260,7 @@ final class CartStoreTests: XCTestCase {
         XCTAssertEqual(cart.manualSplit.cash, 0, "never below zero")
     }
 
-    func testDetachingTheAppointmentDropsTheDepositFromTheSplit() throws {
+    func testDetachingTheAppointmentDropsTheDeposit() throws {
         let cart = try makeCart()
         cart.prefill(from: appointment(price: 8_000, deposit: 2_000))
         cart.selectPaymentMode(.split)
@@ -195,9 +268,16 @@ final class CartStoreTests: XCTestCase {
 
         XCTAssertNil(cart.appointment)
         XCTAssertEqual(cart.deposit, 0)
-        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 6_000))
+        XCTAssertEqual(cart.depositApplied, 0)
+        XCTAssertEqual(cart.amountDue, 8_000)
+        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 6_000), "typed amounts are kept as they are")
         XCTAssertEqual(cart.remaining, 2_000)
         XCTAssertNil(cart.makeCompleteBody())
+
+        cart.selectPaymentMode(.single(.cash))
+        let body = cart.makeSaleBody()
+        XCTAssertNil(body.appointmentId)
+        XCTAssertEqual(body.payments, Payments(cash: 8_000, card: 0, transfer: 0, qr: 0, deposit: 0))
     }
 
     // MARK: Remembered method
@@ -249,16 +329,17 @@ final class CartStoreTests: XCTestCase {
         let cart = try makeCart()
         cart.prefill(from: appointment(price: 8_000, deposit: 2_000))
         cart.selectPaymentMode(.single(.qr))
-        XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 0, card: 0, transfer: 2_000, qr: 6_000))
+        XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 0, card: 0, transfer: 0, qr: 6_000, deposit: 2_000))
 
         cart.moveQrShareToTransfer()
         XCTAssertEqual(cart.paymentMode, .single(.transfer))
-        XCTAssertEqual(cart.split, PaymentSplit(transfer: 8_000))
+        XCTAssertEqual(cart.split, PaymentSplit(transfer: 6_000))
+        XCTAssertEqual(cart.payments.deposit, 2_000, "the prepayment is still applied")
 
         cart.selectPaymentMode(.split)
-        cart.manualSplit = PaymentSplit(cash: 1_000, transfer: 2_000, qr: 5_000)
+        cart.manualSplit = PaymentSplit(cash: 1_000, qr: 5_000)
         cart.moveQrShareToTransfer()
-        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 1_000, transfer: 7_000))
+        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 1_000, transfer: 5_000))
         XCTAssertTrue(cart.canSubmit)
     }
 
@@ -307,7 +388,8 @@ final class CartStoreTests: XCTestCase {
         XCTAssertFalse(cart.hasPendingAppointment)
         XCTAssertNil(cart.makeCompleteBody(), "a retry after a failed sale sends only the sale")
         XCTAssertEqual(cart.saleIdempotencyKey(for: cart.makeSaleBody()), key, "the retried sale body is unchanged")
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 6_000, transfer: 2_000))
+        XCTAssertEqual(cart.split, PaymentSplit(cash: 6_000))
+        XCTAssertEqual(cart.payments.deposit, 2_000)
     }
 
     func testAlreadyCompletedAppointmentHasNoCompletionStep() throws {

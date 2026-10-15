@@ -36,6 +36,13 @@
       "when": 1792079998972,
       "tag": "0004_service_cards_and_lines",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792081373773,
+      "tag": "0005_deposits",
+      "breakpoints": true
     }
   ]
 }

@@ -25,6 +25,9 @@ struct ReportContent: View {
                 RevenueChartCard(days: summary.byDay)
             }
             PaymentBreakdownCard(payments: summary.payments, services: summary.servicesRevenue, products: summary.productsRevenue)
+            if let deposits = summary.deposits, deposits != .zero {
+                ReportDepositsCard(deposits: deposits)
+            }
             if !summary.topServices.isEmpty {
                 RankingCard(title: "Топ услуг", rows: summary.topServices.map { ($0.id, $0.name, $0.quantity, $0.revenue) })
             }
@@ -91,6 +94,10 @@ private struct PaymentBreakdownCard: View {
             ForEach(PaymentMethod.allCases.filter { ![.card, .qr].contains($0) || PaymentSplit(payments)[$0] > 0 }) { method in
                 let amount = PaymentSplit(payments)[method]
                 ShareRow(title: method.title, systemImage: method.symbol, amount: amount, total: payments.total)
+            }
+            // Revenue covered by prepayments received earlier (counted in «Предоплаты» when received).
+            if payments.deposit > 0 {
+                ShareRow(title: "Из предоплат", systemImage: PaymentLine.depositSymbol, amount: payments.deposit, total: payments.total)
             }
             Divider()
             Text("Структура выручки").font(.headline)
@@ -179,3 +186,13 @@ private struct MastersCard: View {
         .cardStyle()
     }
 }
+
+#if DEBUG
+#Preview {
+    ScrollView {
+        ReportContent(summary: PreviewData.report)
+            .padding()
+    }
+    .previewEnvironment()
+}
+#endif

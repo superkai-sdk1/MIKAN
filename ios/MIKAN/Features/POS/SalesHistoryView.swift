@@ -130,22 +130,20 @@ struct SaleRow: View {
     }
 }
 
+/// One icon per payment method used (and the prepayment), read out as «Оплачено наличными и предоплатой».
 private struct PaymentIcons: View {
     let payments: Payments
 
     var body: some View {
         HStack(spacing: 4) {
-            if payments.cash > 0 { icon(.cash) }
-            if payments.card > 0 { icon(.card) }
-            if payments.transfer > 0 { icon(.transfer) }
-            if payments.qr > 0 { icon(.qr) }
+            ForEach(payments.paymentLines) { line in
+                Image(systemName: line.symbol)
+            }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
-    }
-
-    private func icon(_ method: PaymentMethod) -> some View {
-        Image(systemName: method.symbol).accessibilityLabel(method.title)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(PaymentText.methods(payments).map { "Оплачено \($0)" } ?? "")
     }
 }
 

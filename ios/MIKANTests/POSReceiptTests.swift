@@ -24,6 +24,17 @@ private enum POSFixtures {
         )
     }
 
+    static func receive(id: Int, amount: Int, method: PaymentMethod?, at date: Date) -> DepositOperation {
+        operation(id: id, type: .receive, amount: amount, method: method, at: date)
+    }
+
+    static func operation(id: Int, type: DepositOperationType, amount: Int, method: PaymentMethod?, at date: Date) -> DepositOperation {
+        DepositOperation(
+            id: id, appointmentId: 4, type: type, amount: amount, method: method, saleId: nil, shiftId: nil,
+            qrPaymentId: nil, note: nil, employee: nil, createdAt: date
+        )
+    }
+
     static func product(id: Int, name: String, category: String?, sku: String? = nil, quantity: Int = 5) -> Product {
         Product(
             id: id, kind: .jewelry, name: name, sku: sku, category: category, material: "Титан G23", size: nil,
@@ -60,6 +71,25 @@ final class PaymentQueueTests: XCTestCase {
             POSFixtures.appointment(id: 6, startsAt: late, status: .completed),
         ]
         XCTAssertEqual(PaymentQueue.unpaid(appointments).map(\.id), [5, 1, 6])
+    }
+
+    func testDepositBadgeShowsAHeldOrAWaitedPrepayment() {
+        var appointment = POSFixtures.appointment(status: .confirmed, deposit: 0)
+        XCTAssertNil(PaymentQueue.depositBadge(for: appointment), "nothing required")
+
+        appointment.depositRequired = 2_000
+        appointment.depositStatus = .waiting
+        XCTAssertEqual(PaymentQueue.depositBadge(for: appointment), .waiting(2_000))
+        XCTAssertEqual(QueueDepositBadge.waiting(2_000).text, "Ждём предоплату \(Money.format(2_000))")
+
+        appointment.deposit = 1_500
+        appointment.depositStatus = .paid
+        XCTAssertEqual(PaymentQueue.depositBadge(for: appointment), .held(1_500), "a partial prepayment is still held")
+        XCTAssertEqual(QueueDepositBadge.held(1_500).text, "Предоплата \(Money.format(1_500))")
+
+        appointment.deposit = 0
+        appointment.depositStatus = .applied
+        XCTAssertNil(PaymentQueue.depositBadge(for: appointment), "already counted in a sale")
     }
 }
 
@@ -136,6 +166,46 @@ final class ReceiptDraftTests: XCTestCase {
         XCTAssertEqual(ReceiptDraft.appointmentBanner(appointment), "По записи · \(time) · Иван Петров · Хеликс")
     }
 
+    func testAppointmentDetailsSayHowMuchOfThePrepaymentIsApplied() {
+        XCTAssertEqual(ReceiptDraft.appointmentDetails(master: "Анна", deposit: 0, applied: 0), "Мастер Анна")
+        XCTAssertEqual(
+            ReceiptDraft.appointmentDetails(master: "Анна", deposit: 2_000, applied: 2_000),
+            "Мастер Анна · предоплата \(Money.format(2_000)) зачтётся"
+        )
+        XCTAssertEqual(
+            ReceiptDraft.appointmentDetails(master: "Анна", deposit: 5_000, applied: 3_000),
+            "Мастер Анна · из предоплаты \(Money.format(5_000)) зачтётся \(Money.format(3_000))"
+        )
+        XCTAssertEqual(
+            ReceiptDraft.appointmentDetails(master: "Анна", deposit: 2_000, applied: 0),
+            "Мастер Анна · предоплата \(Money.format(2_000)) зачтётся",
+            "an empty receipt still shows the whole prepayment"
+        )
+    }
+
+    func testDepositReceivedNoteUsesTheLatestReceive() {
+        let first = Fixtures.referenceDate.addingTimeInterval(-3 * 86_400)
+        let operations = [
+            POSFixtures.receive(id: 1, amount: 1_000, method: .cash, at: first),
+            POSFixtures.receive(id: 2, amount: 1_000, method: .transfer, at: Fixtures.referenceDate),
+            POSFixtures.operation(id: 3, type: .apply, amount: 500, method: nil, at: Fixtures.referenceDate.addingTimeInterval(60)),
+        ]
+        XCTAssertEqual(
+            ReceiptDraft.depositReceivedNote(operations),
+            "внесена переводом \(DateText.dayMonth(Fixtures.referenceDate))"
+        )
+        XCTAssertEqual(
+            ReceiptDraft.depositReceivedNote([POSFixtures.receive(id: 4, amount: 2_000, method: .qr, at: first)]),
+            "внесена по QR СБП \(DateText.dayMonth(first))"
+        )
+        XCTAssertEqual(
+            ReceiptDraft.depositReceivedNote([POSFixtures.receive(id: 5, amount: 2_000, method: nil, at: first)]),
+            "внесена \(DateText.dayMonth(first))"
+        )
+        XCTAssertNil(ReceiptDraft.depositReceivedNote([]), "migrated prepayments have no ledger")
+        XCTAssertNil(ReceiptDraft.depositReceivedNote([POSFixtures.operation(id: 6, type: .unapply, amount: 500, method: nil, at: first)]))
+    }
+
     func testOpeningTheSameAppointmentKeepsEditsAndTakesTheFreshCopy() {
         let cart = CartStore()
         cart.open(POSFixtures.appointment(status: .confirmed, price: 3_000, deposit: 1_000))
@@ -143,7 +213,7 @@ final class ReceiptDraftTests: XCTestCase {
         cart.discount = 200
         cart.note = "Скидка постоянному клиенту"
         cart.selectPaymentMode(.split)
-        cart.manualSplit = PaymentSplit(cash: 1_000, transfer: 1_000, qr: 2_300)
+        cart.manualSplit = PaymentSplit(cash: 1_000, qr: 2_300)
         cart.completesAppointment = false
 
         let completed = POSFixtures.appointment(status: .completed, price: 3_000, deposit: 1_000)
@@ -154,8 +224,10 @@ final class ReceiptDraftTests: XCTestCase {
         XCTAssertEqual(cart.discount, 200)
         XCTAssertEqual(cart.note, "Скидка постоянному клиенту")
         XCTAssertEqual(cart.deposit, 1_000)
+        XCTAssertEqual(cart.amountDue, 3_300)
         XCTAssertEqual(cart.paymentMode, .split)
-        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 1_000, transfer: 1_000, qr: 2_300))
+        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 1_000, qr: 2_300))
+        XCTAssertTrue(cart.canSubmit, "the typed split still covers the amount due")
         XCTAssertFalse(cart.completesAppointment)
     }
 
@@ -239,5 +311,66 @@ final class POSRoutingTests: XCTestCase {
 
         XCTAssertTrue(state.posPath.isEmpty)
         XCTAssertEqual(state.cart.client, POSFixtures.ivan, "closing the screen keeps the receipt")
+    }
+}
+
+final class ShiftBreakdownTests: XCTestCase {
+    private func shift(summary: ShiftSummary, openingCash: Int = 5_000, expectedCash: Int) -> CashShift {
+        CashShift(
+            id: 3, openedAt: Fixtures.referenceDate, openedBy: EmployeeRef(id: 2, name: "Анна", color: nil),
+            openingCash: openingCash, closedAt: nil, closedBy: nil, closingCash: nil, note: nil,
+            expectedCash: expectedCash, difference: nil, summary: summary, operations: []
+        )
+    }
+
+    private let busy = ShiftSummary(
+        salesCount: 3, revenue: 10_000, cash: 2_500, card: 0, transfer: 5_000, deposit: 2_500,
+        refunds: 1_000, cashRefunds: 500, cashIn: 300, cashOut: 1_000,
+        deposits: ShiftDepositSummary(received: 3_000, cash: 1_000, transfer: 2_000, refunded: 700, cashRefunded: 200, retained: 400)
+    )
+
+    private let quiet = ShiftSummary(
+        salesCount: 0, revenue: 0, cash: 0, card: 0, transfer: 0, refunds: 0, cashRefunds: 0, cashIn: 0, cashOut: 0
+    )
+
+    func testDrawerRowsAddUpToTheServersExpectedCash() {
+        // expectedCash = opening + cash − cashRefunds + deposits.cash − deposits.cashRefunded + cashIn − cashOut
+        let current = shift(summary: busy, expectedCash: 5_000 + 2_500 - 500 + 1_000 - 200 + 300 - 1_000)
+        let rows = ShiftBreakdown.drawer(current.summary)
+
+        XCTAssertEqual(rows.map(\.title), [
+            "Продажи наличными", "Возвраты наличными", "Предоплаты наличными", "Возвраты предоплат наличными",
+            "Внесения", "Изъятия",
+        ])
+        XCTAssertEqual(rows.map(\.amount), [2_500, -500, 1_000, -200, 300, -1_000])
+        XCTAssertEqual(current.openingCash + rows.reduce(0) { $0 + $1.amount }, current.expectedCash)
+    }
+
+    func testQuietShiftShowsOnlyCashSales() {
+        XCTAssertEqual(ShiftBreakdown.drawer(quiet).map(\.title), ["Продажи наличными"])
+        XCTAssertTrue(ShiftBreakdown.deposits(quiet).isEmpty)
+        XCTAssertNil(ShiftBreakdown.cardLine(quiet))
+    }
+
+    func testDepositRowsListReceivedByMethodAppliedRefundedAndRetained() {
+        let rows = ShiftBreakdown.deposits(busy)
+
+        XCTAssertEqual(rows.map(\.title), ["Получено", "Зачтено в чеках", "Возвращено клиентам", "Удержано (неявки и отмены)"])
+        XCTAssertEqual(rows.map(\.amount), [3_000, 2_500, 700, 400])
+        XCTAssertEqual(rows[0].detail, "наличными \(Money.format(1_000)) · переводом \(Money.format(2_000))")
+        XCTAssertNil(rows[1].detail)
+        XCTAssertEqual(rows[2].detail, "из них наличными \(Money.format(200))")
+
+        var appliedOnly = quiet
+        appliedOnly.deposit = 2_000
+        XCTAssertEqual(ShiftBreakdown.deposits(appliedOnly).map(\.title), ["Зачтено в чеках"])
+    }
+
+    func testCardLineSummarisesThePrepayments() {
+        XCTAssertEqual(
+            ShiftBreakdown.cardLine(busy),
+            "Предоплаты: получено \(Money.format(3_000)) · зачтено \(Money.format(2_500)) · "
+                + "возвращено \(Money.format(700)) · удержано \(Money.format(400))"
+        )
     }
 }

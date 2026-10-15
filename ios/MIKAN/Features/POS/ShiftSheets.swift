@@ -155,6 +155,7 @@ struct CloseShiftSheet: View {
                     closedSummary(closed)
                 } else {
                     breakdown
+                    ShiftDepositsSection(summary: shift.summary)
                     Section {
                         NumberField.optionalMoney("Пересчитано", value: $counted, placeholder: "0")
                         if let difference {
@@ -203,19 +204,10 @@ struct CloseShiftSheet: View {
         return "В кассе \(Money.format(counted)), ожидалось \(Money.format(shift.expectedCash)) — \(diffText)."
     }
 
+    /// Drawer movements (prepayments taken and refunded in cash included); the expected amount is the server's.
     private var breakdown: some View {
         Section("Движение наличных") {
-            LabeledContent("На начало") { MoneyText(shift.openingCash) }
-            LabeledContent("Продажи наличными") { Text("+" + Money.format(shift.summary.cash)).monospacedDigit() }
-            if shift.summary.cashRefunds > 0 {
-                LabeledContent("Возвраты наличными") { Text("−" + Money.format(shift.summary.cashRefunds)).monospacedDigit() }
-            }
-            if shift.summary.cashIn > 0 {
-                LabeledContent("Внесения") { Text("+" + Money.format(shift.summary.cashIn)).monospacedDigit() }
-            }
-            if shift.summary.cashOut > 0 {
-                LabeledContent("Изъятия") { Text("−" + Money.format(shift.summary.cashOut)).monospacedDigit() }
-            }
+            ShiftDrawerRows(shift: shift)
             LabeledContent("Ожидается") { MoneyText(shift.expectedCash).fontWeight(.semibold) }
         }
     }

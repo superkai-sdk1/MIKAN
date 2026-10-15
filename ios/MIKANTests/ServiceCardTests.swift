@@ -242,6 +242,64 @@ final class ServiceCardTests: XCTestCase {
         XCTAssertEqual(body.photos, ["/uploads/x.jpg"])
     }
 
+    // MARK: - Prepayment
+
+    func testNewCardHasNoPrepayment() {
+        let draft = ServiceEditorDraft(service: nil, nextSort: 0)
+        XCTAssertFalse(draft.deposit.isRequired)
+        XCTAssertEqual(draft.body.depositAmount, 0)
+    }
+
+    func testPrepaymentToggleMapsToBody() {
+        var draft = ServiceEditorDraft(service: makeService(id: 1, price: 3_000), nextSort: 0)
+
+        draft.deposit.isRequired = true
+        draft.deposit.requiredAmount = 1_500
+        XCTAssertEqual(draft.body.depositAmount, 1_500)
+        XCTAssertTrue(draft.canSave)
+
+        draft.deposit.isRequired = false
+        XCTAssertEqual(draft.body.depositAmount, 0, "off means no prepayment")
+        XCTAssertEqual(draft.deposit.requiredAmount, 1_500, "the amount is kept while the toggle is off")
+
+        draft.deposit.isRequired = true
+        XCTAssertEqual(draft.body.depositAmount, 1_500)
+    }
+
+    func testPrepaymentNeedsAnAmount() {
+        var draft = ServiceEditorDraft(service: makeService(id: 1), nextSort: 0)
+        draft.deposit.isRequired = true
+        XCTAssertEqual(draft.validationMessage, "Укажите сумму предоплаты.")
+        XCTAssertFalse(draft.canSave)
+
+        draft.deposit.requiredAmount = 500
+        XCTAssertNil(draft.validationMessage)
+    }
+
+    func testStoredPrepaymentLoadsIntoDraft() {
+        var service = makeService(id: 1)
+        service.depositAmount = 2_000
+        let draft = ServiceEditorDraft(service: service, nextSort: 0)
+        XCTAssertTrue(draft.deposit.isRequired)
+        XCTAssertEqual(draft.deposit.requiredAmount, 2_000)
+        XCTAssertEqual(draft.body.depositAmount, 2_000)
+    }
+
+    func testPrepaymentAboveFixedPriceIsHinted() {
+        let deposit = ServiceDepositDraft(isRequired: true, requiredAmount: 5_000)
+        XCTAssertNotNil(deposit.priceHint(for: ServicePriceFields(price: 3_000, priceMax: nil, priceFrom: false)))
+        XCTAssertNil(deposit.priceHint(for: ServicePriceFields(price: 3_000, priceMax: nil, priceFrom: true)), "«от» prices can grow")
+        XCTAssertNil(deposit.priceHint(for: ServicePriceFields(price: 0, priceMax: nil, priceFrom: false)))
+        XCTAssertNil(ServiceDepositDraft(isRequired: true, requiredAmount: 1_000)
+            .priceHint(for: ServicePriceFields(price: 3_000, priceMax: nil, priceFrom: false)))
+    }
+
+    func testServiceBodyFromServiceKeepsPrepayment() {
+        var service = makeService(id: 4)
+        service.depositAmount = 1_000
+        XCTAssertEqual(ServiceBody(service).depositAmount, 1_000, "toggling «Активна» must not drop the prepayment")
+    }
+
     func testLimits() {
         XCTAssertEqual(ServiceLimits.remainingPhotos(current: 0), 12)
         XCTAssertEqual(ServiceLimits.remainingPhotos(current: 10), 2)

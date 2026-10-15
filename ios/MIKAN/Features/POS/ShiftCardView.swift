@@ -92,6 +92,12 @@ struct ShiftCardView: View {
                 metric("Продажи", "\(current.summary.salesCount)")
                 metric("Безнал", Money.format(current.summary.nonCash))
             }
+            if let deposits = ShiftBreakdown.cardLine(current.summary) {
+                Label(deposits, systemImage: PaymentLine.depositSymbol)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
                     Button { sheet = .deposit } label: { ActionLabel(title: "Внести", systemImage: "plus.circle") }

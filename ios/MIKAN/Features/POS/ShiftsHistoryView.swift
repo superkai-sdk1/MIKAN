@@ -144,15 +144,16 @@ struct ShiftDetailView: View {
             if shift.summary.card > 0 {
                 LabeledContent(PaymentMethod.card.title) { MoneyText(shift.summary.card) }
             }
+            if shift.summary.deposit > 0 {
+                LabeledContent("Из предоплат") { MoneyText(shift.summary.deposit) }
+            }
             if shift.summary.refunds > 0 {
                 LabeledContent("Возвраты") { MoneyText(shift.summary.refunds) }
             }
         }
+        ShiftDepositsSection(summary: shift.summary)
         Section("Наличные в кассе") {
-            LabeledContent("На начало") { MoneyText(shift.openingCash) }
-            LabeledContent("Внесения") { MoneyText(shift.summary.cashIn) }
-            LabeledContent("Изъятия") { MoneyText(shift.summary.cashOut) }
-            LabeledContent("Возвраты наличными") { MoneyText(shift.summary.cashRefunds) }
+            ShiftDrawerRows(shift: shift)
             LabeledContent("Ожидалось") { MoneyText(shift.expectedCash).fontWeight(.semibold) }
             if let closing = shift.closingCash {
                 LabeledContent("Пересчитано") { MoneyText(closing) }

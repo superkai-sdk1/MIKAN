@@ -21,6 +21,30 @@ nonisolated enum PaymentQueue {
             .filter { $0.saleId == nil && statuses.contains($0.status) }
             .sorted { ($0.startsAt, $0.id) < ($1.startsAt, $1.id) }
     }
+
+    /// Prepayment badge of a queue row: a held prepayment, or one still waited for; `nil` otherwise.
+    static func depositBadge(for appointment: Appointment) -> QueueDepositBadge? {
+        if appointment.deposit > 0 { return .held(appointment.deposit) }
+        if appointment.depositStatus == .waiting, appointment.depositRequired > 0 {
+            return .waiting(appointment.depositRequired)
+        }
+        return nil
+    }
+}
+
+/// Prepayment state shown on a «К оплате по записям» row.
+nonisolated enum QueueDepositBadge: Equatable, Sendable {
+    /// Received earlier and held for the appointment: it is applied at checkout.
+    case held(Int)
+    /// Required but not received yet.
+    case waiting(Int)
+
+    var text: String {
+        switch self {
+        case .held(let amount): "Предоплата \(Money.format(amount))"
+        case .waiting(let amount): "Ждём предоплату \(Money.format(amount))"
+        }
+    }
 }
 
 extension APIClient {

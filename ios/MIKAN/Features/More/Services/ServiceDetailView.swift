@@ -261,6 +261,12 @@ private struct ServiceSummarySection: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                if service.requiresDeposit {
+                    Label("Предоплата \(Money.format(service.depositAmount))", systemImage: DepositStyle.symbol)
+                        .font(.subheadline.weight(.medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.vertical, 4)
             .accessibilityElement(children: .combine)

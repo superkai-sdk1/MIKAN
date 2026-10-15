@@ -219,7 +219,7 @@ export function importAppointments(db: Db, records: unknown[], opts: ImportOptio
           endsAt,
           status: visit.status,
           price: visit.price,
-          deposit: 0,
+          depositRequired: 0,
           notes: visit.notes ?? null,
           saleId: null,
           completedAt: visit.status === 'completed' ? endsAt : null,

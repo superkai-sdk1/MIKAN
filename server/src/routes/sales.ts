@@ -21,7 +21,13 @@ export const saleBody = z.object({
   appointmentId: id.nullish(),
   items: z.array(item).min(1).max(100),
   discount: nonNull(money),
-  payments: z.object({ cash: nonNull(money), card: nonNull(money), transfer: nonNull(money), qr: nonNull(money) }),
+  payments: z.object({
+    cash: nonNull(money),
+    card: nonNull(money),
+    transfer: nonNull(money),
+    qr: nonNull(money),
+    deposit: nonNull(money),
+  }),
   note: nullableText(1000),
 });
 export type SaleBody = z.infer<typeof saleBody>;
@@ -38,6 +44,8 @@ export function saleInputOf(input: SaleBody): SaleInput {
       card: input.payments.card ?? 0,
       transfer: input.payments.transfer ?? 0,
       qr: input.payments.qr ?? 0,
+      // Absent (not 0) for clients that predate prepayments: see `SalePayments.deposit`.
+      deposit: input.payments.deposit,
     },
     note: input.note,
   };

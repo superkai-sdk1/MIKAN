@@ -57,6 +57,8 @@ describe('cash register', () => {
       cashRefunds: 2500,
       cashIn: 300,
       cashOut: 1000,
+      deposit: 0,
+      deposits: { received: 0, cash: 0, card: 0, transfer: 0, qr: 0, refunded: 0, cashRefunded: 0, retained: 0 },
     });
     // 5000 + 3500 − 2500 + 300 − 1000
     expect(current.expectedCash).toBe(5300);

@@ -97,7 +97,6 @@ describe('sales (POS)', () => {
       masterId: 1,
       serviceId: service.id,
       startsAt: '2026-11-01T10:00:00.000Z',
-      deposit: 1000,
     });
     const sale = await t.api('POST', '/api/sales', {
       appointmentId: appt.id,

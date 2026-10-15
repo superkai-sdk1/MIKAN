@@ -39,7 +39,7 @@ const body = z.object({
   startsAt: nonNull(instant),
   endsAt: nonNull(instant),
   price: nonNull(money),
-  deposit: nonNull(money),
+  depositRequired: nonNull(money),
   notes: nullableText(5000),
   status: nonNull(status),
   force: nonNull(z.boolean()),

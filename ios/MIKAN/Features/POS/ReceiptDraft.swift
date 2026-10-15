@@ -43,6 +43,25 @@ enum ReceiptDraft {
         let time = DateText.timeRange(appointment.startsAt, appointment.endsAt)
         return "По записи · \(time) · \(appointment.client.name) · \(appointment.displayTitle)"
     }
+
+    /// "Мастер Анна · предоплата 2 000 ₽ зачтётся", or with a held prepayment larger than the receipt
+    /// "Мастер Анна · из предоплаты 5 000 ₽ зачтётся 3 000 ₽".
+    static func appointmentDetails(master: String, deposit: Int, applied: Int) -> String {
+        let prefix = "Мастер \(master)"
+        guard deposit > 0 else { return prefix }
+        if applied > 0, applied < deposit {
+            return "\(prefix) · из предоплаты \(Money.format(deposit)) зачтётся \(Money.format(applied))"
+        }
+        return "\(prefix) · предоплата \(Money.format(deposit)) зачтётся"
+    }
+
+    /// "внесена переводом 15 октября" — the latest prepayment receipt of the appointment; `nil` without one.
+    static func depositReceivedNote(_ operations: [DepositOperation]) -> String? {
+        guard let receive = operations.last(where: { $0.type == .receive }) else { return nil }
+        let date = DateText.dayMonth(receive.createdAt)
+        guard let method = receive.method else { return "внесена \(date)" }
+        return "внесена \(method.instrumental) \(date)"
+    }
 }
 
 /// Search and category filter for the jewelry catalog on the receipt screen.

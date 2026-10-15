@@ -60,7 +60,7 @@ final class CartStore {
     private(set) var appointment: Appointment?
     var appointmentId: Int? { appointment?.id }
     var discount = 0
-    /// Deposit already received for the appointment; it stays in `transfer` whatever the payment mode.
+    /// Prepayment held for the appointment (received earlier); `depositApplied` of it is counted in this receipt.
     private(set) var deposit = 0
     var note = ""
     var isCheckoutPresented = false
@@ -97,27 +97,37 @@ final class CartStore {
 
     // MARK: Payment
 
-    /// Part of the deposit counted in this receipt (paid by transfer before the visit).
+    /// Part of the held prepayment counted in this receipt: `min(held, total)`.
     var depositApplied: Int { CheckoutRules.depositApplied(deposit, total: total) }
-    /// What the client still has to pay now: total minus the deposit.
-    var amountDue: Int { total - depositApplied }
+    /// What the client pays now: total minus the applied prepayment. The payment methods cover only this.
+    var amountDue: Int { CheckoutRules.amountDue(total: total, deposit: deposit) }
+    /// Prepayment that stays held for the appointment after this receipt (more was paid than the receipt costs).
+    var depositRemainder: Int { CheckoutRules.depositRemainder(deposit, total: total) }
+    /// Nothing is left to pay now: the prepayment covers the whole receipt.
+    var isPaidByDeposit: Bool { depositApplied > 0 && amountDue == 0 }
 
-    /// Payments sent with the sale.
+    /// How `amountDue` is paid now (the prepayment is not part of it). Empty when the prepayment covers everything
+    /// (checkout then hides the methods, so amounts typed earlier in «Разделить» must not count).
     var split: PaymentSplit {
-        switch paymentMode {
+        guard !isPaidByDeposit else { return PaymentSplit() }
+        return switch paymentMode {
         case .single(let method): PaymentSplit.single(method, total: total, deposit: deposit)
         case .split: manualSplit
         }
     }
 
+    /// Payments sent with the sale: the split plus the applied prepayment (always sent, 0 when none).
+    var payments: Payments { split.payments(deposit: depositApplied) }
+
     /// Positive: still to distribute; negative: overpaid. Always 0 in single mode.
-    var remaining: Int { split.remaining(for: total) }
+    var remaining: Int { split.remaining(for: amountDue) }
 
     var isCashMode: Bool { paymentMode == .single(.cash) }
 
-    /// Change for `cashReceived`; `nil` outside cash mode, while the field is empty or the amount is short.
+    /// Change for `cashReceived`; `nil` outside cash mode, when nothing is due, while the field is empty
+    /// or the amount is short.
     var cashChange: Int? {
-        guard isCashMode else { return nil }
+        guard isCashMode, amountDue > 0 else { return nil }
         return CashTender.change(received: cashReceived, due: amountDue)
     }
 
@@ -133,6 +143,7 @@ final class CartStore {
             linesValid: lines.allSatisfy(\.isValid),
             subtotal: subtotal,
             discount: discount,
+            deposit: deposit,
             split: split
         ) && isCashReceivedEnough
     }
@@ -232,13 +243,13 @@ final class CartStore {
     }
 
     /// Fills the cart from an appointment: its service lines (see `serviceLines(for:)`), the client,
-    /// the appointment link and its deposit (kept in `transfer`).
+    /// the appointment link and its held prepayment (applied up to the receipt total).
     func prefill(from appointment: Appointment) {
         clear()
         lines = Self.serviceLines(for: appointment)
         client = appointment.client
         self.appointment = appointment
-        deposit = min(max(0, appointment.deposit), appointment.price)
+        deposit = max(0, appointment.deposit)
         sendsAftercare = appointment.client.telegramLinked
     }
 
@@ -265,7 +276,7 @@ final class CartStore {
             appointmentId: appointmentId,
             items: lines.map(\.body),
             discount: discount,
-            payments: split.payments,
+            payments: payments,
             note: note.nonEmpty
         )
     }
@@ -282,11 +293,8 @@ final class CartStore {
         salesCompleted += 1
     }
 
-    /// Keeps the lines and the client but stops paying for the appointment (and drops its deposit).
+    /// Keeps the lines and the client but stops paying for the appointment: its prepayment stays held for it.
     func detachAppointment() {
-        if paymentMode == .split {
-            manualSplit.transfer = max(0, manualSplit.transfer - depositApplied)
-        }
         appointment = nil
         deposit = 0
         completesAppointment = true

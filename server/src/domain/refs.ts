@@ -2,11 +2,14 @@ import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, appointmentServices, clients, employees, products, saleItems, sales, services } from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
+import { depositLedgerByAppointment, depositStatusOf, heldAmount, latestDepositCodes } from './deposit-ledger.js';
 import {
   appointmentOut,
   appointmentServiceOut,
   clientRef,
+  depositOperationOut,
   employeeRef,
+  qrPaymentOut,
   saleOut,
   serviceRef,
   type AppointmentOut,
@@ -72,18 +75,18 @@ const missingEmployee = (id: number) => ({ id, name: 'Удалённый сот�
 const missingClient = (id: number) => ({ id, name: 'Удалённый клиент', phone: null, telegramLinked: false });
 
 export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): AppointmentOut[] {
+  const ids = rows.map((r) => r.id);
   const cl = clientsByIds(
     db,
     rows.map((r) => r.clientId),
   );
-  const em = employeesByIds(
-    db,
-    rows.map((r) => r.masterId),
-  );
-  const lines = serviceLinesByAppointment(
-    db,
-    rows.map((r) => r.id),
-  );
+  const lines = serviceLinesByAppointment(db, ids);
+  const ledgers = depositLedgerByAppointment(db, ids);
+  const links = latestDepositCodes(db, ids);
+  const em = employeesByIds(db, [
+    ...rows.map((r) => r.masterId),
+    ...[...ledgers.values()].flat().map((op) => op.employeeId),
+  ]);
   const sv = servicesByIds(db, [
     ...rows.map((r) => r.serviceId),
     ...[...lines.values()].flat().map((l) => l.serviceId),
@@ -92,6 +95,8 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
     const client = cl.get(a.clientId);
     const master = em.get(a.masterId);
     const service = a.serviceId != null ? sv.get(a.serviceId) : undefined;
+    const ledger = ledgers.get(a.id) ?? [];
+    const link = links.get(a.id);
     return appointmentOut(
       a,
       client ? clientRef(client) : missingClient(a.clientId),
@@ -100,6 +105,12 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
       (lines.get(a.id) ?? []).map((l) =>
         appointmentServiceOut(l, l.serviceId != null ? (sv.get(l.serviceId)?.category ?? null) : null),
       ),
+      {
+        held: heldAmount(ledger),
+        status: depositStatusOf(ledger, a.depositRequired, a.status),
+        operations: ledger.map((op) => depositOperationOut(op, employeeRefOrMissing(em, op.employeeId))),
+        link: link ? qrPaymentOut(link, null) : null,
+      },
     );
   });
 }

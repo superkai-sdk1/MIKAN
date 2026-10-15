@@ -152,7 +152,7 @@ struct PaymentQueueSection: View {
     }
 }
 
-/// Appointment awaiting payment: time, master color, client, service, price, deposit, status.
+/// Appointment awaiting payment: time, master color, client, service, price, prepayment, status.
 private struct PaymentQueueRow: View {
     let appointment: Appointment
     let isInReceipt: Bool
@@ -182,17 +182,7 @@ private struct PaymentQueueRow: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
-                    HStack(spacing: 8) {
-                        MoneyText(appointment.price)
-                            .font(.subheadline.weight(.semibold))
-                        if appointment.deposit > 0 {
-                            StatusBadge(text: "Предоплата \(Money.format(appointment.deposit))", color: .indigo)
-                        }
-                        Spacer(minLength: 0)
-                        if isInReceipt {
-                            StatusBadge(text: "В чеке", color: .accentColor, systemImage: "cart.fill")
-                        }
-                    }
+                    QueuePriceLine(appointment: appointment, isInReceipt: isInReceipt)
                 }
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
@@ -205,5 +195,58 @@ private struct PaymentQueueRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint(isInReceipt ? "Вернуться к открытому чеку" : "Открыть чек по записи")
+    }
+}
+
+/// Price, prepayment badge and «В чеке»; the prepayment badge moves to its own line when they do not fit.
+private struct QueuePriceLine: View {
+    let appointment: Appointment
+    let isInReceipt: Bool
+
+    private var badge: QueueDepositBadge? { PaymentQueue.depositBadge(for: appointment) }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                price
+                if let badge { QueueDepositBadgeView(badge: badge) }
+                Spacer(minLength: 0)
+                inReceipt
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    price
+                    Spacer(minLength: 0)
+                    inReceipt
+                }
+                if let badge { QueueDepositBadgeView(badge: badge) }
+            }
+        }
+    }
+
+    private var price: some View {
+        MoneyText(appointment.price)
+            .font(.subheadline.weight(.semibold))
+    }
+
+    @ViewBuilder
+    private var inReceipt: some View {
+        if isInReceipt {
+            StatusBadge(text: "В чеке", color: .accentColor, systemImage: "cart.fill")
+        }
+    }
+}
+
+/// «Предоплата N ₽» (held, applied at checkout) or «Ждём предоплату N ₽» (required, not received yet).
+private struct QueueDepositBadgeView: View {
+    let badge: QueueDepositBadge
+
+    var body: some View {
+        switch badge {
+        case .held:
+            StatusBadge(text: badge.text, color: .green, systemImage: PaymentLine.depositSymbol)
+        case .waiting:
+            StatusBadge(text: badge.text, color: .orange, systemImage: "hourglass")
+        }
     }
 }

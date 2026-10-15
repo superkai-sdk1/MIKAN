@@ -12,6 +12,7 @@ import {
 import { badRequest, conflict, scheduleConflict } from '../lib/errors.js';
 import { parseSteps, type AppointmentRow, type AppointmentServiceRow, type ServiceRow } from '../lib/serialize.js';
 import { formatShortDate, formatTime, MINUTE_MS } from '../lib/time.js';
+import { cancelPendingDepositCodes } from './deposits.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
@@ -20,6 +21,8 @@ import { applyMovement } from './stock.js';
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 const INACTIVE_FOR_OVERLAP = ['cancelled', 'no_show'];
+/** Statuses in which nobody waits for a prepayment link to be paid any more. */
+const CLOSED_FOR_DEPOSIT = ['cancelled', 'no_show', 'completed'];
 
 /** One booked service as sent by the app; omitted fields default from the catalog service. */
 export interface ServiceLineInput {
@@ -48,7 +51,8 @@ export interface AppointmentInput {
   startsAt?: number;
   endsAt?: number;
   price?: number;
-  deposit?: number;
+  /** Prepayment the studio asks for; defaults to the lines' catalog `depositAmount`. */
+  depositRequired?: number;
   notes?: string | null;
   status?: AppointmentStatus;
   force?: boolean;
@@ -157,6 +161,12 @@ const firstServiceId = (lines: ServiceLine[]): number | null => lines.find((l) =
 const linesTotal = (lines: ServiceLine[]): number => lines.reduce((sum, l) => sum + l.price, 0);
 const linesMinutes = (lines: ServiceLine[]): number => lines.reduce((sum, l) => sum + (l.durationMin ?? 0), 0);
 
+/** Sum of the catalog prepayments of the lines (a service booked twice counts twice). */
+function linesDeposit(db: DbOrTx, lines: ServiceLine[]): number {
+  const catalog = servicesByIds(db, lines.map((l) => l.serviceId));
+  return lines.reduce((sum, l) => sum + (l.serviceId != null ? (catalog.get(l.serviceId)?.depositAmount ?? 0) : 0), 0);
+}
+
 function sameLines(a: ServiceLine[], b: ServiceLine[]): boolean {
   return (
     a.length === b.length &&
@@ -217,7 +227,7 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
         endsAt,
         status,
         price: input.price ?? linesTotal(lines),
-        deposit: input.deposit ?? 0,
+        depositRequired: input.depositRequired ?? linesDeposit(tx, lines),
         notes: input.notes ?? null,
         completedAt: status === 'completed' ? now : null,
         createdAt: now,
@@ -266,7 +276,8 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
       endsAt: input.endsAt ?? current.endsAt,
       status: input.status ?? current.status,
       price: input.price ?? (input.services !== undefined ? linesTotal(lines) : current.price),
-      deposit: input.deposit ?? current.deposit,
+      depositRequired:
+        input.depositRequired ?? (input.services !== undefined ? linesDeposit(tx, lines) : current.depositRequired),
       notes: input.notes === undefined ? current.notes : input.notes,
     };
     if (input.startsAt !== undefined && input.endsAt === undefined) {
@@ -288,6 +299,7 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
       .returning()
       .get();
     if (replaced) writeLines(tx, id, replaced);
+    if (next.status !== current.status && CLOSED_FOR_DEPOSIT.includes(next.status)) cancelPendingDepositCodes(tx, id, now);
     if (repriced) {
       tx.update(appointmentServices).set({ price: repriced.price }).where(eq(appointmentServices.id, repriced.id)).run();
     }
@@ -347,6 +359,7 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
       .returning()
       .get();
     cancelPendingForAppointment(tx, id, 'reminder');
+    cancelPendingDepositCodes(tx, id, now);
 
     let scheduled = 0;
     if (input.sendAftercare && !hasAftercare(tx, id)) {

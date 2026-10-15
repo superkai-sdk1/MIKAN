@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// «Оплата»: one method with the amount computed from the total (no typing), or a manual split.
-/// Methods: cash, transfer and — when the server has Tochka configured — an SBP QR code.
+/// «Оплата»: what is due now (the total minus the applied prepayment) paid by one method with the amount computed
+/// automatically (no typing), or a manual split. Methods: cash, transfer and — when the server has Tochka
+/// configured — an SBP QR code. A receipt covered by the prepayment needs no method at all.
 struct CheckoutPaymentSection: View {
     @Environment(CartStore.self) private var cart
     @Environment(ReferenceStore.self) private var reference
@@ -11,21 +12,25 @@ struct CheckoutPaymentSection: View {
 
     var body: some View {
         Section {
-            PaymentModePicker(qrEnabled: qrShown)
-            switch cart.paymentMode {
-            case .single(let method):
-                SinglePaymentRows(method: method)
-            case .split:
-                SplitPaymentRows(methods: PaymentMethod.accepted(qrEnabled: qrShown))
+            if cart.isPaidByDeposit {
+                Label("Чек полностью оплачен предоплатой", systemImage: "checkmark.seal.fill")
+                    .font(.headline)
+                    .foregroundStyle(.green)
+            } else {
+                PaymentModePicker(qrEnabled: qrShown)
+                switch cart.paymentMode {
+                case .single(let method):
+                    SinglePaymentRows(method: method)
+                case .split:
+                    SplitPaymentRows(methods: PaymentMethod.accepted(qrEnabled: qrShown))
+                }
             }
         } header: {
             Text("Оплата")
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
-                if cart.deposit > cart.total {
-                    Text("Предоплата \(Money.format(cart.deposit)) больше суммы чека — в чек попадёт \(Money.format(cart.depositApplied)).")
-                } else if cart.paymentMode == .split, cart.depositApplied > 0 {
-                    Text("Предоплата \(Money.format(cart.depositApplied)) уже получена и учтена в «Перевод».")
+                if cart.paymentMode == .split, cart.depositApplied > 0, !cart.isPaidByDeposit {
+                    Text("Распределите \(Money.format(cart.amountDue)) — сумму к оплате без предоплаты.")
                 }
                 if cart.split.qr > 0 {
                     Text("Клиент оплатит \(Money.format(cart.split.qr)) через СБП по QR-коду на экране. Продажа проведётся, как только банк подтвердит оплату.")
@@ -61,18 +66,7 @@ private struct SinglePaymentRows: View {
     let method: PaymentMethod
 
     var body: some View {
-        if cart.amountDue == 0, cart.depositApplied > 0 {
-            Label("Чек полностью оплачен предоплатой", systemImage: "checkmark.seal.fill")
-                .font(.headline)
-                .foregroundStyle(.green)
-        } else {
-            AmountDueRow(method: method, amount: cart.amountDue)
-        }
-        if cart.depositApplied > 0 {
-            Label("Предоплата \(Money.format(cart.depositApplied)) (перевод)", systemImage: "checkmark.circle")
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-        }
+        AmountDueRow(method: method, amount: cart.amountDue)
         if method == .cash, cart.amountDue > 0 {
             CashTenderRows()
         }

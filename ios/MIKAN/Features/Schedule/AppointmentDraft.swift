@@ -18,6 +18,8 @@ struct DraftServiceLine: Identifiable, Hashable {
     /// The catalog price is «от» / a range — the final price is set per appointment.
     var isVariablePrice: Bool
     var category: ServiceCategory?
+    /// Prepayment the catalog service asks for (`Service.depositAmount`); 0 for a custom line.
+    var depositAmount: Int
 
     init(
         id: UUID = UUID(),
@@ -26,7 +28,8 @@ struct DraftServiceLine: Identifiable, Hashable {
         price: Int,
         durationMin: Int?,
         isVariablePrice: Bool = false,
-        category: ServiceCategory? = nil
+        category: ServiceCategory? = nil,
+        depositAmount: Int = 0
     ) {
         self.id = id
         self.serviceId = serviceId
@@ -35,6 +38,7 @@ struct DraftServiceLine: Identifiable, Hashable {
         self.durationMin = durationMin
         self.isVariablePrice = isVariablePrice
         self.category = category
+        self.depositAmount = max(0, depositAmount)
     }
 
     /// A booked catalog service; a variant brings its own name, price and (optionally) duration.
@@ -45,7 +49,8 @@ struct DraftServiceLine: Identifiable, Hashable {
             price: variant?.price ?? service.price,
             durationMin: variant?.durationMin ?? service.durationMin,
             isVariablePrice: variant == nil && service.hasVariablePrice,
-            category: service.category
+            category: service.category,
+            depositAmount: service.depositAmount
         )
     }
 
@@ -63,6 +68,14 @@ struct DraftServiceLine: Identifiable, Hashable {
     var body: AppointmentServiceBody {
         AppointmentServiceBody(serviceId: serviceId, name: name.trimmed, price: price, durationMin: durationMin)
     }
+
+    /// The line with the prepayment of its catalog service; lines of saved appointments don't carry it.
+    func resolvingDeposit(from catalog: [Service]) -> DraftServiceLine {
+        guard let serviceId, let service = catalog.first(where: { $0.id == serviceId }) else { return self }
+        var line = self
+        line.depositAmount = max(0, service.depositAmount)
+        return line
+    }
 }
 
 /// Editable state of the appointment editor.
@@ -78,10 +91,11 @@ struct AppointmentDraft: Identifiable, Hashable {
     var client: ClientRef?
     var clientSuggestion: ClientSuggestion?
     var masterId: Int?
-    /// Any change drops the kept total and lets an automatic duration follow the services.
+    /// Any booking change drops the kept total and lets an automatic duration follow the services
+    /// (prepayment amounts resolved from the catalog are not a booking change).
     var lines: [DraftServiceLine] = [] {
         didSet {
-            guard lines != oldValue else { return }
+            guard lines.map(\.body) != oldValue.map(\.body) else { return }
             priceOverride = nil
             recomputeDuration()
         }
@@ -96,7 +110,11 @@ struct AppointmentDraft: Identifiable, Hashable {
     /// Total of a saved appointment whose price differs from its line sum (set by an older build, the
     /// server or an import); kept until the lines change or «Пересчитать по услугам».
     private(set) var priceOverride: Int?
-    var deposit = 0
+    /// Prepayment set by hand (or a saved one that differs from the services); `nil` — follows the services.
+    /// Kept when the services change, dropped by «Пересчитать по услугам».
+    private(set) var depositOverride: Int?
+    /// Prepayment held for a saved appointment (read-only here: it changes through the prepayment endpoints).
+    private(set) var heldDeposit = 0
     var title = ""
     var notes = ""
 
@@ -106,12 +124,24 @@ struct AppointmentDraft: Identifiable, Hashable {
     /// Appointment total: the kept total or the sum of line prices, or the manual price when there are no lines.
     var total: Int { lines.isEmpty ? price : priceOverride ?? linesTotal }
     var linesTotal: Int { lines.reduce(0) { $0 + $1.price } }
+    /// Sum of the lines' catalog prepayments (a service booked twice counts twice).
+    var linesDeposit: Int { lines.reduce(0) { $0 + $1.depositAmount } }
+
+    /// Prepayment the studio asks for: the services' sum until set by hand. Setting it back to the
+    /// services' sum makes it follow them again.
+    var depositRequired: Int {
+        get { depositOverride ?? linesDeposit }
+        set {
+            let amount = max(0, newValue)
+            depositOverride = amount == linesDeposit ? nil : amount
+        }
+    }
     /// Sum of line durations (lines without one count as 0).
     var linesDuration: Int { lines.reduce(0) { $0 + ($1.durationMin ?? 0) } }
     var canAddLine: Bool { lines.count < Self.maxLines }
 
     var isValid: Bool {
-        client != nil && masterId != nil && durationMin > 0 && total >= 0 && deposit >= 0
+        client != nil && masterId != nil && durationMin > 0 && total >= 0 && depositRequired >= 0
             && lines.allSatisfy { $0.name.nonEmpty != nil && $0.price >= 0 }
     }
 
@@ -143,11 +173,13 @@ struct AppointmentDraft: Identifiable, Hashable {
     }
 
     /// Loads a saved appointment as is: its duration follows the services only if it equals their sum,
-    /// and a price that differs from the line sum is kept.
-    static func edit(_ appointment: Appointment) -> AppointmentDraft {
-        let lines = lines(of: appointment)
+    /// and a price or prepayment that differs from the services is kept. `catalog` resolves the lines'
+    /// prepayments (see `resolveDeposits(from:)` when it loads later).
+    static func edit(_ appointment: Appointment, catalog: [Service] = []) -> AppointmentDraft {
+        let lines = lines(of: appointment).map { $0.resolvingDeposit(from: catalog) }
         let linesDuration = lines.reduce(0) { $0 + ($1.durationMin ?? 0) }
         let linesTotal = lines.reduce(0) { $0 + $1.price }
+        let linesDeposit = lines.reduce(0) { $0 + $1.depositAmount }
         return AppointmentDraft(
             appointmentId: appointment.id,
             client: appointment.client,
@@ -158,7 +190,8 @@ struct AppointmentDraft: Identifiable, Hashable {
             autoDurationMin: linesDuration > 0 ? max(durationStep, linesDuration) : nil,
             price: appointment.price,
             priceOverride: lines.isEmpty || linesTotal == appointment.price ? nil : appointment.price,
-            deposit: appointment.depositRequired,
+            depositOverride: appointment.depositRequired == linesDeposit ? nil : appointment.depositRequired,
+            heldDeposit: appointment.deposit,
             title: appointment.title ?? "",
             notes: appointment.notes ?? ""
         )
@@ -247,6 +280,20 @@ struct AppointmentDraft: Identifiable, Hashable {
         priceOverride = nil
     }
 
+    /// Drops the hand-set prepayment: it follows the services again.
+    mutating func recalculateDeposit() {
+        depositOverride = nil
+    }
+
+    /// Fills the prepayments of lines loaded from a saved appointment once the catalog is known; a kept
+    /// prepayment that turns out to equal the services' sum follows them again.
+    mutating func resolveDeposits(from catalog: [Service]) {
+        lines = lines.map { $0.resolvingDeposit(from: catalog) }
+        if depositOverride == linesDeposit {
+            depositOverride = nil
+        }
+    }
+
     private mutating func append(_ line: DraftServiceLine) {
         guard canAddLine else { return }
         lines.append(line)
@@ -274,7 +321,7 @@ struct AppointmentDraft: Identifiable, Hashable {
             startsAt: start,
             endsAt: end,
             price: total,
-            depositRequired: deposit,
+            depositRequired: depositRequired,
             notes: Nullable(notes.nonEmpty),
             force: force ? true : nil
         )

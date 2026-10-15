@@ -92,16 +92,25 @@ private struct RefundSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Сумма возврата") { MoneyText(sale.total).fontWeight(.semibold) }
+                    // The prepayment part is not paid out: it goes back to the appointment.
+                    LabeledContent("Сумма возврата") { MoneyText(sale.payments.paidNow).fontWeight(.semibold) }
                     if sale.payments.cash > 0 {
                         LabeledContent("Из кассы наличными") { MoneyText(sale.payments.cash) }
                     }
                     if sale.payments.qr > 0 {
                         LabeledContent("Оплачено по QR СБП") { MoneyText(sale.payments.qr) }
                     }
+                    if sale.payments.deposit > 0 {
+                        LabeledContent("Предоплата вернётся на запись") { MoneyText(sale.payments.deposit) }
+                    }
                 } footer: {
-                    if sale.payments.qr > 0 {
-                        Text("Деньги по QR-коду приложение не возвращает: оформите возврат по СБП в интернет-банке Точки.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        if sale.payments.qr > 0 {
+                            Text("Деньги по QR-коду приложение не возвращает: оформите возврат по СБП в интернет-банке Точки.")
+                        }
+                        if let note = SaleRefundText.depositNote(sale.payments) {
+                            Text(note)
+                        }
                     }
                 }
                 Section {
@@ -139,10 +148,10 @@ private struct RefundSheet: View {
                 }
             }
             .confirmationDialog("Оформить возврат?", isPresented: $confirms, titleVisibility: .visible) {
-                Button("Вернуть \(Money.format(sale.total))", role: .destructive, action: refund)
+                Button(SaleRefundText.confirmButton(sale.payments), role: .destructive, action: refund)
                 Button("Отмена", role: .cancel) {}
             } message: {
-                Text("Продажа будет отмечена как возвращённая. Это действие нельзя отменить.")
+                Text(SaleRefundText.confirmationMessage(sale.payments))
             }
             .errorAlert($errorMessage)
             .retryAlert($retryMessage, title: "Возврат мог пройти", retry: refund)
@@ -181,6 +190,33 @@ private struct RefundSheet: View {
                 errorMessage = error.userMessage
             }
         }
+    }
+}
+
+/// Texts of the sale refund confirmation. The prepayment part of a sale is never paid out by the refund:
+/// it is held for the appointment again (staff refund it to the client or apply it to a new receipt later).
+nonisolated enum SaleRefundText {
+    /// «Вернуть 6 000 ₽» — what the client paid at this checkout; «Оформить возврат» when the prepayment paid it all.
+    static func confirmButton(_ payments: Payments) -> String {
+        payments.paidNow > 0 ? "Вернуть \(Money.format(payments.paidNow))" : "Оформить возврат"
+    }
+
+    /// The consequences: the sale is marked refunded, the cash to hand back, where the prepayment goes.
+    static func confirmationMessage(_ payments: Payments) -> String {
+        var parts = ["Продажа будет отмечена как возвращённая. Это действие нельзя отменить."]
+        if payments.cash > 0 {
+            parts.append("Выдайте клиенту \(Money.format(payments.cash)) наличными из кассы.")
+        }
+        if let note = depositNote(payments) {
+            parts.append(note)
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// «Предоплата 2 000 ₽ вернётся на запись — …»; `nil` when the sale used no prepayment.
+    static func depositNote(_ payments: Payments) -> String? {
+        guard payments.deposit > 0 else { return nil }
+        return "Предоплата \(Money.format(payments.deposit)) вернётся на запись — её можно будет вернуть клиенту или зачесть в новом чеке."
     }
 }
 

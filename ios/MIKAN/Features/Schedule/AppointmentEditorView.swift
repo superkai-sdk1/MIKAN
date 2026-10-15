@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Create / reschedule an appointment. Handles `409 schedule_conflict` with «Сохранить всё равно».
+/// A new appointment that needs a prepayment continues to the prepayment screen instead of closing.
 struct AppointmentEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
@@ -12,10 +13,16 @@ struct AppointmentEditorView: View {
     @State private var errorMessage: String?
     @State private var conflictMessage: String?
     @State private var referenceError: String?
+    /// The created appointment whose prepayment is collected next.
+    @State private var depositAppointment: Appointment?
+    /// Telegram chat of the booking request the appointment comes from: the prepayment link goes there.
+    let bookingChatId: Int64?
+    /// Called once saved, and again whenever the prepayment screen changes the appointment.
     let onSaved: (Appointment) -> Void
 
-    init(draft: AppointmentDraft, onSaved: @escaping (Appointment) -> Void) {
+    init(draft: AppointmentDraft, bookingChatId: Int64? = nil, onSaved: @escaping (Appointment) -> Void) {
         _draft = State(initialValue: draft)
+        self.bookingChatId = bookingChatId
         self.onSaved = onSaved
     }
 
@@ -27,6 +34,7 @@ struct AppointmentEditorView: View {
                 AppointmentServicesSection(draft: $draft)
                 timeSection
                 paymentSection
+                depositSection
                 Section("Заметки") {
                     TextField("Пожелания, эскиз, зона…", text: $draft.notes, axis: .vertical)
                         .lineLimit(3...8)
@@ -48,6 +56,10 @@ struct AppointmentEditorView: View {
                 }
             }
             .interactiveDismissDisabled(isSaving)
+            .navigationDestination(item: $depositAppointment) { saved in
+                DepositCollectView(appointment: saved, bookingChatId: bookingChatId, onChange: onSaved) { dismiss() }
+                    .navigationBarBackButtonHidden()
+            }
             .task { await loadReference() }
             .errorAlert($errorMessage)
             .alert("Время занято", isPresented: conflictBinding) {
@@ -125,20 +137,40 @@ struct AppointmentEditorView: View {
                     }
                 }
             }
-            NumberField.money("Предоплата", value: $draft.deposit)
         } header: {
             Text("Оплата")
         } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                if draft.priceOverride != nil {
-                    Text("Отличается от суммы услуг (\(Money.format(draft.linesTotal))). Изменение услуг или их цен пересчитает стоимость.")
-                } else if !draft.lines.isEmpty {
-                    Text("Сумма услуг — цену каждой можно изменить выше.")
+            if draft.priceOverride != nil {
+                Text("Отличается от суммы услуг (\(Money.format(draft.linesTotal))). Изменение услуг или их цен пересчитает стоимость.")
+            } else if !draft.lines.isEmpty {
+                Text("Сумма услуг — цену каждой можно изменить выше.")
+            }
+        }
+    }
+
+    private var depositSection: some View {
+        Section {
+            NumberField.money("Предоплата", value: $draft.depositRequired)
+            if draft.depositOverride != nil, !draft.lines.isEmpty {
+                Button("Пересчитать по услугам", systemImage: "arrow.triangle.2.circlepath") {
+                    draft.recalculateDeposit()
                 }
-                if draft.deposit > draft.total {
+            }
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                if draft.linesDeposit > 0 || (draft.depositOverride != nil && !draft.lines.isEmpty) {
+                    Text(draft.depositOverride == nil
+                        ? "По услугам: \(Money.format(draft.linesDeposit))"
+                        : "Отличается от предоплаты по услугам (\(Money.format(draft.linesDeposit))).")
+                }
+                if draft.isEditing, draft.heldDeposit > 0 || draft.depositRequired > 0 {
+                    Text("Внесено: \(Money.format(draft.heldDeposit))")
+                }
+                if draft.depositRequired > draft.total {
                     Text("Предоплата больше стоимости.").foregroundStyle(.orange)
                 }
             }
+            .monospacedDigit()
         }
     }
 
@@ -160,6 +192,7 @@ struct AppointmentEditorView: View {
         do {
             try await reference.ensureEmployees()
             try await reference.ensureServices()
+            draft.resolveDeposits(from: reference.services)
             referenceError = nil
             if draft.masterId == nil, let me = appState.employee, me.isMaster, me.active {
                 draft.masterId = me.id
@@ -184,7 +217,11 @@ struct AppointmentEditorView: View {
                     saved = try await api.createAppointment(body)
                 }
                 onSaved(saved)
-                dismiss()
+                if !draft.isEditing, DepositSummary.asksForDeposit(afterCreating: saved) {
+                    depositAppointment = saved
+                } else {
+                    dismiss()
+                }
             } catch let error as APIError where error.isScheduleConflict {
                 conflictMessage = error.message
             } catch {

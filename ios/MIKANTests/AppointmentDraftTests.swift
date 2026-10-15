@@ -13,7 +13,7 @@ private enum Sample {
     )
     static let tattoo = Service(
         id: 4, name: "Мини тату", category: .tattoo, group: nil, price: 2000, priceMax: 5000, priceFrom: true,
-        durationMin: 60, aftercareTemplateId: nil, active: true, sort: 1
+        durationMin: 60, depositAmount: 1000, aftercareTemplateId: nil, active: true, sort: 1
     )
     static let nipple = Service(
         id: 5, name: "Соски", category: .piercing, group: "Тело", price: 2500, priceFrom: false, durationMin: 45,
@@ -22,7 +22,7 @@ private enum Sample {
             ServiceVariant(name: "Один", price: 2500, durationMin: nil),
             ServiceVariant(name: "Два", price: 4000, durationMin: 60),
         ],
-        aftercareTemplateId: nil, active: true, sort: 2
+        depositAmount: 500, aftercareTemplateId: nil, active: true, sort: 2
     )
     static let quick = Service(
         id: 6, name: "Замена украшения", category: .other, price: 300, priceFrom: false, durationMin: 5,
@@ -35,13 +35,15 @@ private enum Sample {
         service: ServiceRef? = nil,
         services: [AppointmentServiceLine] = [],
         price: Int,
-        minutes: Int = 90
+        minutes: Int = 90,
+        depositRequired: Int = 0
     ) -> Appointment {
         Appointment(
             id: 7, client: client, master: EmployeeRef(id: 2, name: "Анна", color: nil), service: service,
             services: services, title: "Эскиз согласован", startsAt: start,
             endsAt: start.addingTimeInterval(TimeInterval(minutes * 60)), status: .scheduled, price: price,
-            deposit: 500, notes: nil, saleId: nil, completedAt: nil, createdAt: start, updatedAt: start
+            deposit: 500, depositRequired: depositRequired, notes: nil, saleId: nil, completedAt: nil,
+            createdAt: start, updatedAt: start
         )
     }
 
@@ -82,7 +84,8 @@ struct AppointmentDraftTests {
         #expect(draft.total == 1600)
         #expect(draft.durationMin == 90, "editing never recomputes the saved duration")
         #expect(draft.title == "Эскиз согласован")
-        #expect(draft.deposit == 500)
+        #expect(draft.heldDeposit == 500, "the held prepayment is shown, not edited")
+        #expect(draft.depositRequired == 0)
     }
 
     @Test("edit() falls back to the legacy service with the whole price and duration")
@@ -324,6 +327,126 @@ struct AppointmentDraftTests {
         #expect(draft.durationMin == 120, "a line without duration doesn't reset the duration")
     }
 
+    // MARK: - Prepayment
+
+    @Test("Prepayment follows the booked services; a service booked twice counts twice")
+    func depositFollowsServices() {
+        var draft = Sample.newDraft()
+        #expect(draft.depositRequired == 0)
+
+        draft.add(service: Sample.tattoo)
+        #expect(draft.lines[0].depositAmount == 1000)
+        #expect(draft.depositRequired == 1000)
+
+        draft.add(service: Sample.tattoo)
+        #expect(draft.depositRequired == 2000)
+
+        draft.add(service: Sample.nipple, variant: Sample.nipple.variants[1])
+        #expect(draft.lines[2].depositAmount == 500, "a variant books the service prepayment")
+        #expect(draft.depositRequired == 2500)
+
+        draft.addCustom(name: "Подбор украшения", price: 300)
+        draft.add(service: Sample.lobe)
+        #expect(draft.depositRequired == 2500, "custom lines and services without prepayment add nothing")
+
+        draft.removeLines(serviceId: 4)
+        #expect(draft.depositRequired == 500)
+        #expect(draft.depositOverride == nil)
+    }
+
+    @Test("A hand-set prepayment survives service changes until «Пересчитать по услугам»")
+    func manualDepositIsKept() {
+        var draft = Sample.newDraft()
+        draft.add(service: Sample.tattoo)
+
+        draft.depositRequired = 3000
+        #expect(draft.depositOverride == 3000)
+
+        draft.add(service: Sample.nipple)
+        draft.removeLines(serviceId: 4)
+        #expect(draft.depositRequired == 3000)
+        #expect(draft.linesDeposit == 500)
+
+        draft.recalculateDeposit()
+        #expect(draft.depositOverride == nil)
+        #expect(draft.depositRequired == 500)
+    }
+
+    @Test("Typing the services' sum makes the prepayment follow them again; negatives clamp to 0")
+    func depositBackToServices() {
+        var draft = Sample.newDraft()
+        draft.add(service: Sample.tattoo)
+        draft.depositRequired = 0
+        #expect(draft.depositOverride == 0, "no prepayment for this client")
+
+        draft.depositRequired = 1000
+        #expect(draft.depositOverride == nil)
+        draft.add(service: Sample.nipple)
+        #expect(draft.depositRequired == 1500)
+
+        draft.depositRequired = -10
+        #expect(draft.depositRequired == 0)
+    }
+
+    @Test("edit() resolves line prepayments from the catalog; a saved value equal to their sum follows the services")
+    func editResolvesDepositsFromCatalog() {
+        let appointment = Sample.appointment(services: Self.twoLines, price: 3600, depositRequired: 1000)
+
+        let draft = AppointmentDraft.edit(appointment, catalog: [Sample.lobe, Sample.tattoo])
+
+        #expect(draft.lines.map(\.depositAmount) == [0, 1000])
+        #expect(draft.linesDeposit == 1000)
+        #expect(draft.depositOverride == nil)
+        #expect(draft.depositRequired == 1000)
+    }
+
+    @Test("edit() keeps a saved prepayment that differs from the services as a manual one")
+    func editKeepsDifferentDeposit() throws {
+        var draft = AppointmentDraft.edit(
+            Sample.appointment(services: Self.twoLines, price: 3600, depositRequired: 0),
+            catalog: [Sample.lobe, Sample.tattoo]
+        )
+
+        #expect(draft.depositOverride == 0)
+        #expect(draft.depositRequired == 0, "rescheduling never asks for a prepayment the appointment didn't have")
+
+        draft.notes = "Перенос"
+        let json = try object(#require(draft.body(force: false)))
+        #expect(json["depositRequired"] as? Int == 0)
+
+        draft.recalculateDeposit()
+        #expect(draft.depositRequired == 1000)
+    }
+
+    @Test("resolveDeposits(from:) after the catalog loads keeps the price, duration and a different saved prepayment")
+    func resolveDepositsLater() {
+        var matching = AppointmentDraft.edit(Sample.appointment(services: Self.twoLines, price: 5000, minutes: 120, depositRequired: 1000))
+        #expect(matching.depositOverride == 1000, "unknown catalog: the saved value is kept as is")
+
+        matching.resolveDeposits(from: [Sample.lobe, Sample.tattoo])
+
+        #expect(matching.depositOverride == nil, "equals the services now")
+        #expect(matching.depositRequired == 1000)
+        #expect(matching.priceOverride == 5000, "resolving prepayments is not a booking change")
+        #expect(matching.durationMin == 120)
+
+        var different = AppointmentDraft.edit(Sample.appointment(services: Self.twoLines, price: 3600, depositRequired: 700))
+        different.resolveDeposits(from: [Sample.lobe, Sample.tattoo])
+        #expect(different.depositOverride == 700)
+        #expect(different.linesDeposit == 1000)
+    }
+
+    @Test("Lines of a saved appointment carry no prepayment until resolved; unknown services stay at 0")
+    func lineResolvingDeposit() {
+        let saved = DraftServiceLine(line: AppointmentServiceLine(id: 1, serviceId: 4, name: "Мини тату", category: .tattoo, price: 2000, durationMin: 60))
+        #expect(saved.depositAmount == 0)
+        #expect(saved.resolvingDeposit(from: [Sample.tattoo]).depositAmount == 1000)
+        #expect(saved.resolvingDeposit(from: [Sample.lobe]).depositAmount == 0)
+
+        let custom = DraftServiceLine(serviceId: nil, name: "Консультация", price: 0, durationMin: nil)
+        #expect(custom.resolvingDeposit(from: [Sample.tattoo]).depositAmount == 0)
+    }
+
     // MARK: - Request body
 
     @Test("body() sends every line in order, the total price and a null legacy serviceId")
@@ -333,7 +456,7 @@ struct AppointmentDraftTests {
         draft.addCustom(name: "Подбор украшения", price: 0)
         draft.add(service: Sample.tattoo)
         draft.lines[2].price = 3500
-        draft.deposit = 1000
+        draft.depositRequired = 1200
 
         let json = try object(#require(draft.body(force: false)))
 
@@ -351,7 +474,8 @@ struct AppointmentDraftTests {
         #expect(services[2]["price"] as? Int == 3500)
         #expect(json["serviceId"] is NSNull)
         #expect(json["price"] as? Int == 7500)
-        #expect(json["deposit"] as? Int == 1000)
+        #expect(json["depositRequired"] as? Int == 1200)
+        #expect(json["deposit"] == nil, "prepayments change only through the prepayment endpoints")
         #expect(json["clientId"] as? Int == 1)
         #expect(json["masterId"] as? Int == 2)
         #expect(json["startsAt"] as? String == "2026-10-15T11:00:00.000Z")

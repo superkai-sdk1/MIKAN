@@ -3,8 +3,7 @@ import SwiftUI
 /// The QR step of a checkout: shows the bank's SBP QR code to the client and polls the server until it reports
 /// the payment. The server creates the sale itself, so a paid code hands back the finished `Sale`.
 struct QRPaymentView: View {
-    static let pollInterval: Duration = .seconds(2)
-    private static let offlineText = "Нет связи с сервером — продолжаем проверять"
+    static let pollInterval = QRPaymentPolling.interval
 
     @Environment(APIClient.self) private var api
 
@@ -34,7 +33,7 @@ struct QRPaymentView: View {
         onRenew: @escaping () -> Void
     ) {
         _payment = State(initialValue: payment)
-        deadline = Date.now.addingTimeInterval(max(0, payment.expiresAt.timeIntervalSince(payment.createdAt)))
+        deadline = QRPaymentPolling.deadline(for: payment)
         self.isRenewing = isRenewing
         self.onPaid = onPaid
         self.onPaidWithoutSale = onPaidWithoutSale
@@ -80,9 +79,7 @@ struct QRPaymentView: View {
     private var content: some View {
         switch payment.status {
         case .pending, .cancelled:
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                pendingContent(now: context.date)
-            }
+            QRCodePanel(payment: payment, deadline: deadline, pollProblem: pollProblem)
         case .paid:
             ContentUnavailableView {
                 Label("Оплата получена", systemImage: "exclamationmark.triangle.fill")
@@ -95,42 +92,6 @@ struct QRPaymentView: View {
                 Label("Время оплаты истекло", systemImage: "clock.badge.xmark")
             } description: {
                 Text(payment.error ?? "Клиент не оплатил QR-код. Создайте новый или выберите другой способ оплаты.")
-            }
-        }
-    }
-
-    private func pendingContent(now: Date) -> some View {
-        let isOverdue = now >= deadline
-        return VStack(spacing: 16) {
-            QRCodeImage(payload: payment.payload)
-                .padding(20)
-                .background(.white, in: .rect(cornerRadius: 28))
-                .frame(maxWidth: 320)
-                .opacity(isOverdue ? 0.25 : 1)
-                .animation(.smooth, value: isOverdue)
-            Text("Клиент сканирует код камерой телефона или в приложении банка и подтверждает оплату через СБП.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            HStack(spacing: 8) {
-                ProgressView()
-                if isOverdue {
-                    Text("Срок кода истёк — ждём последнее подтверждение банка")
-                } else {
-                    Text("Ждём оплату · \(Text(timerInterval: now...deadline, countsDown: true))")
-                }
-            }
-            .font(.subheadline.weight(.semibold))
-            .monospacedDigit()
-            if let error = payment.error {
-                Label(error, systemImage: "exclamationmark.circle.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-            }
-            if let pollProblem {
-                Label(pollProblem, systemImage: "wifi.exclamationmark")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -191,14 +152,8 @@ struct QRPaymentView: View {
             do {
                 apply(try await api.qrPayment(id: payment.id))
                 pollProblem = nil
-            } catch let error as APIError {
-                if case .transport = error {
-                    pollProblem = Self.offlineText
-                } else {
-                    pollProblem = error.userMessage
-                }
             } catch {
-                pollProblem = Self.offlineText
+                pollProblem = QRPaymentPolling.problemText(for: error)
             }
         }
     }
@@ -223,6 +178,75 @@ struct QRPaymentView: View {
                 apply(try await api.cancelQrPayment(id: payment.id))
             } catch {
                 cancelFailure = error.userMessage
+            }
+        }
+    }
+}
+
+/// Shared pieces of the SBP QR screens (checkout and prepayment): poll cadence, device-clock expiry, poll errors.
+enum QRPaymentPolling {
+    static let interval: Duration = .seconds(2)
+    static let offlineText = "Нет связи с сервером — продолжаем проверять"
+
+    /// Expiry on the device clock: the code's lifetime counted from when it was shown, immune to clock skew.
+    static func deadline(for payment: QrPayment, shownAt: Date = .now) -> Date {
+        shownAt.addingTimeInterval(max(0, payment.expiresAt.timeIntervalSince(payment.createdAt)))
+    }
+
+    /// Why the latest poll failed; the server keeps checking the bank on its own.
+    static func problemText(for error: any Error) -> String {
+        guard let error = error as? APIError else { return offlineText }
+        if case .transport = error { return offlineText }
+        return error.userMessage
+    }
+}
+
+/// A pending SBP code: the QR image, what the client does, the live countdown and status lines.
+struct QRCodePanel: View {
+    let payment: QrPayment
+    /// Device-clock expiry (`QRPaymentPolling.deadline`).
+    let deadline: Date
+    /// Why the latest poll failed, if it did.
+    let pollProblem: String?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            content(now: context.date)
+        }
+    }
+
+    private func content(now: Date) -> some View {
+        let isOverdue = now >= deadline
+        return VStack(spacing: 16) {
+            QRCodeImage(payload: payment.payload)
+                .padding(20)
+                .background(.white, in: .rect(cornerRadius: 28))
+                .frame(maxWidth: 320)
+                .opacity(isOverdue ? 0.25 : 1)
+                .animation(.smooth, value: isOverdue)
+            Text("Клиент сканирует код камерой телефона или в приложении банка и подтверждает оплату через СБП.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            HStack(spacing: 8) {
+                ProgressView()
+                if isOverdue {
+                    Text("Срок кода истёк — ждём последнее подтверждение банка")
+                } else {
+                    Text("Ждём оплату · \(Text(timerInterval: now...deadline, countsDown: true))")
+                }
+            }
+            .font(.subheadline.weight(.semibold))
+            .monospacedDigit()
+            if let error = payment.error {
+                Label(error, systemImage: "exclamationmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+            if let pollProblem {
+                Label(pollProblem, systemImage: "wifi.exclamationmark")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }

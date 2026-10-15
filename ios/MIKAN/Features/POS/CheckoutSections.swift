@@ -80,10 +80,48 @@ struct CheckoutTotalsSection: View {
             } label: {
                 Text("Итого").font(.title3.weight(.bold))
             }
-        } footer: {
-            if !cart.isDiscountValid {
-                Text("Скидка не может быть больше суммы чека.").foregroundStyle(.red)
+            if cart.depositApplied > 0 {
+                CheckoutDepositRows()
             }
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                if !cart.isDiscountValid {
+                    Text("Скидка не может быть больше суммы чека.").foregroundStyle(.red)
+                }
+                if cart.depositRemainder > 0 {
+                    Text("Остаток предоплаты \(Money.format(cart.depositRemainder)) останется за записью — верните его клиенту в карточке записи.")
+                }
+            }
+        }
+    }
+}
+
+/// «Предоплата −2 000 ₽ · внесена переводом 15 октября» and «К оплате» — what is left after the prepayment.
+private struct CheckoutDepositRows: View {
+    @Environment(CartStore.self) private var cart
+
+    private var receivedNote: String? {
+        ReceiptDraft.depositReceivedNote(cart.appointment?.depositOperations ?? [])
+    }
+
+    var body: some View {
+        LabeledContent {
+            Text(Money.format(-cart.depositApplied))
+                .monospacedDigit()
+                .foregroundStyle(.green)
+        } label: {
+            Label(PaymentLine.depositTitle, systemImage: PaymentLine.depositSymbol)
+            if let receivedNote {
+                Text(receivedNote)
+            }
+        }
+        LabeledContent {
+            MoneyText(cart.amountDue)
+                .fontWeight(.semibold)
+                .contentTransition(.numericText(value: Double(cart.amountDue)))
+                .animation(.snappy, value: cart.amountDue)
+        } label: {
+            Text("К оплате").fontWeight(.semibold)
         }
     }
 }
@@ -129,6 +167,8 @@ struct SaleReceiptView: View {
     let sale: Sale
     /// Change for the cash the client handed over (checkout only, not stored on the server).
     var cashChange: Int?
+    /// Prepayment that stays held for the appointment because it was larger than the receipt.
+    var depositRemainder = 0
     /// Set when this checkout completed the appointment before the sale.
     var completion: CompleteAppointmentResult?
     let onDone: () -> Void
@@ -161,6 +201,15 @@ struct SaleReceiptView: View {
             }
             SaleItemsSection(sale: sale)
             SalePaymentsSection(payments: sale.payments)
+            if depositRemainder > 0 {
+                Section {
+                    Label(
+                        "Остаток предоплаты \(Money.format(depositRemainder)) остался за записью — верните его клиенту в карточке записи.",
+                        systemImage: "info.circle"
+                    )
+                    .font(.subheadline)
+                }
+            }
             if let client = sale.client {
                 Section("Клиент") { Text(client.name) }
             }
@@ -216,19 +265,17 @@ struct SaleItemsSection: View {
     }
 }
 
+/// How a sale was paid: the methods and the part covered by the appointment's prepayment.
 struct SalePaymentsSection: View {
     let payments: Payments
 
     var body: some View {
         Section("Оплата") {
-            ForEach(PaymentMethod.allCases) { method in
-                let amount = PaymentSplit(payments)[method]
-                if amount > 0 {
-                    LabeledContent {
-                        MoneyText(amount)
-                    } label: {
-                        Label(method.title, systemImage: method.symbol)
-                    }
+            ForEach(payments.paymentLines) { line in
+                LabeledContent {
+                    MoneyText(line.amount)
+                } label: {
+                    Label(line.title, systemImage: line.symbol)
                 }
             }
         }

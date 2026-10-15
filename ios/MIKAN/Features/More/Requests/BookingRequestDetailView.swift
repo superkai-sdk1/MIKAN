@@ -93,9 +93,10 @@ struct BookingRequestDetailView: View {
         .navigationTitle("Заявка")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $appointmentDraft) { draft in
-            AppointmentEditorView(draft: draft) { saved in
+            // The request's chat gets the prepayment link when the client has no linked Telegram yet.
+            AppointmentEditorView(draft: draft, bookingChatId: request.chatId) { saved in
                 schedule.upsert(saved)
-                if request.status == .new { setStatus(.processed) }
+                if request.status == .new, !isWorking { setStatus(.processed) }
             }
         }
         .confirmationDialog("Отклонить заявку?", isPresented: $confirmsReject, titleVisibility: .visible) {

@@ -46,7 +46,7 @@ describe('appointments, reminders and aftercare', () => {
       serviceId: service.id,
       title: 'Тату на предплечье',
       startsAt: '2026-10-17T11:00:00.000Z',
-      deposit: 2000,
+      depositRequired: 2000,
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
@@ -58,7 +58,11 @@ describe('appointments, reminders and aftercare', () => {
       endsAt: '2026-10-17T13:00:00.000Z',
       status: 'scheduled',
       price: 8000,
-      deposit: 2000,
+      deposit: 0,
+      depositRequired: 2000,
+      depositStatus: 'waiting',
+      depositOperations: [],
+      depositLink: null,
       saleId: null,
       completedAt: null,
     });

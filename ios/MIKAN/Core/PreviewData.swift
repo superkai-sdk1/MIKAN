@@ -54,7 +54,7 @@ enum PreviewData {
             ServiceVariant(name: "Один", price: 2500, durationMin: nil),
             ServiceVariant(name: "Два", price: 4000, durationMin: 60),
         ],
-        aftercareTemplateId: 2, active: true, sort: 2
+        depositAmount: 1000, aftercareTemplateId: 2, active: true, sort: 2
     )
     static let services = [lobe, tattoo, nipple]
 
@@ -72,11 +72,13 @@ enum PreviewData {
         Appointment(
             id: 1, client: ivanRef, master: anna.ref, service: tattoo.ref, title: "Предплечье, эскиз согласован",
             startsAt: at(hour: 11), endsAt: at(hour: 13), status: .confirmed, price: 8000, deposit: 2000,
+            depositRequired: 2000, depositStatus: .paid, depositOperations: [depositReceived],
             notes: "Принести эскиз в цвете", saleId: nil, completedAt: nil, createdAt: now, updatedAt: now
         ),
         Appointment(
             id: 2, client: mariaRef, master: oleg.ref, service: lobe.ref, title: nil,
             startsAt: at(hour: 14, minute: 30), endsAt: at(hour: 15), status: .scheduled, price: 2500, deposit: 0,
+            depositRequired: 1000, depositStatus: .waiting, depositLink: depositLink,
             notes: nil, saleId: nil, completedAt: nil, createdAt: now, updatedAt: now
         ),
         Appointment(
@@ -120,7 +122,7 @@ enum PreviewData {
             SaleItem(id: 2, type: .service, productId: nil, serviceId: 3, name: "Прокол мочки", quantity: 1, price: 2500, total: 2500),
         ],
         subtotal: 4000, discount: 500, total: 3500,
-        payments: Payments(cash: 1500, card: 2000, transfer: 0),
+        payments: Payments(cash: 1500, card: 0, transfer: 0, deposit: 2000),
         status: .completed, note: nil, refundedAt: nil, refundReason: nil, createdAt: now
     )
 
@@ -136,6 +138,18 @@ enum PreviewData {
             saleId: 9, saleNumber: 17, refunded: true
         ),
     ]
+    /// Prepayment of `appointments[0]`, received by transfer.
+    static let depositReceived = DepositOperation(
+        id: 1, appointmentId: 1, type: .receive, amount: 2000, method: .transfer, saleId: nil, shiftId: 3,
+        qrPaymentId: nil, note: nil, employee: anna.ref, createdAt: at(hour: 14, minute: 5, dayOffset: -2)
+    )
+    /// Prepayment link of `appointments[1]`, sent by the bot.
+    static let depositLink = QrPayment(
+        id: 6, kind: .deposit, appointmentId: 2, status: .pending, amount: 1000,
+        payload: "https://qr.nspk.ru/AD10001B38T99KA99CD8S37FMTH8CFQ8?type=02&bank=100000000065&sum=100000&cur=RUB&crc=43B7",
+        expiresAt: at(hour: 14, minute: 30), sentAt: at(hour: 9), error: nil, sale: nil, createdAt: at(hour: 9)
+    )
+
     static let qrPayment = QrPayment(
         id: 5, status: .pending, amount: 3500,
         payload: "https://qr.nspk.ru/AD10001B38T99KA99CD8S37FMTH8CFQ7?type=02&bank=100000000065&sum=350000&cur=RUB&crc=43B6",
@@ -144,10 +158,24 @@ enum PreviewData {
 
     static let shift = CashShift(
         id: 3, openedAt: at(hour: 10, minute: 2), openedBy: anna.ref, openingCash: 5000,
-        closedAt: nil, closedBy: nil, closingCash: nil, note: nil, expectedCash: 7500, difference: nil,
-        summary: ShiftSummary(salesCount: 3, revenue: 10_000, cash: 2500, card: 5000, transfer: 2500,
-                              refunds: 0, cashRefunds: 0, cashIn: 0, cashOut: 0),
+        closedAt: nil, closedBy: nil, closingCash: nil, note: nil, expectedCash: 8500, difference: nil,
+        summary: ShiftSummary(salesCount: 3, revenue: 10_000, cash: 2500, card: 0, transfer: 5000, deposit: 2500,
+                              refunds: 0, cashRefunds: 0, cashIn: 0, cashOut: 0,
+                              deposits: ShiftDepositSummary(received: 3000, cash: 1000, transfer: 2000)),
         operations: []
+    )
+
+    static let report = ReportSummary(
+        from: today, to: now, revenue: 120_000, salesCount: 40, averageCheck: 3000, refunds: 2500,
+        payments: Payments(cash: 30_000, card: 0, transfer: 20_000, qr: 60_000, deposit: 10_000),
+        deposits: ReportDeposits(received: 15_000, cash: 2000, transfer: 3000, qr: 10_000,
+                                 applied: 10_000, refunded: 1000, retained: 2000, held: 7000),
+        servicesRevenue: 90_000, productsRevenue: 30_000,
+        byDay: [ReportDay(date: CalendarDay.string(from: today), revenue: 8000, salesCount: 3)],
+        topProducts: [TopProduct(productId: 1, name: "Лабрет", quantity: 7, revenue: 10_500)],
+        topServices: [TopService(serviceId: 3, name: "Прокол мочки", quantity: 12, revenue: 30_000)],
+        byMaster: [MasterStat(employee: anna.ref, appointmentsCompleted: 10, revenue: 50_000)],
+        newClients: 14, appointmentsCompleted: 35, noShows: 2
     )
 
     static let messages = [

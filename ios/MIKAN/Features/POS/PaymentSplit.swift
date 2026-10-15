@@ -111,20 +111,24 @@ nonisolated struct PaymentSplit: Equatable, Sendable {
 
     var sum: Int { cash + card + transfer + qr }
     var hasNegative: Bool { cash < 0 || card < 0 || transfer < 0 || qr < 0 }
-    var payments: Payments { Payments(cash: cash, card: card, transfer: transfer, qr: qr) }
+    /// Payments without a prepayment part.
+    var payments: Payments { payments(deposit: 0) }
 
-    /// Positive: still to distribute; negative: overpaid.
-    func remaining(for total: Int) -> Int { total - sum }
+    /// Payments sent with a sale: these methods plus the part covered by the appointment's prepayment.
+    func payments(deposit: Int) -> Payments {
+        Payments(cash: cash, card: card, transfer: transfer, qr: qr, deposit: max(0, deposit))
+    }
 
-    func isBalanced(for total: Int) -> Bool { !hasNegative && sum == total }
+    /// Positive: still to distribute; negative: overpaid. `due` is what is paid now (the prepayment excluded).
+    func remaining(for due: Int) -> Int { due - sum }
 
-    /// The whole total paid by `method`, except an already received deposit, which stays in `transfer`.
-    /// A deposit covering the whole total puts everything into `transfer`.
+    func isBalanced(for due: Int) -> Bool { !hasNegative && sum == due }
+
+    /// What is due now (total minus the applied prepayment), paid entirely by `method`.
+    /// The prepayment is a separate component of the sale (`Payments.deposit`), never a method's share.
     static func single(_ method: PaymentMethod, total: Int, deposit: Int) -> PaymentSplit {
-        let total = max(0, total)
-        let reserved = CheckoutRules.depositApplied(deposit, total: total)
-        var split = PaymentSplit(transfer: reserved)
-        split[method] += total - reserved
+        var split = PaymentSplit()
+        split[method] = CheckoutRules.amountDue(total: total, deposit: deposit)
         return split
     }
 }
@@ -139,14 +143,27 @@ nonisolated enum CheckoutRules {
         max(0, subtotal - max(0, discount))
     }
 
-    /// Part of the deposit that counts towards this receipt (never more than the total).
+    /// Part of the held prepayment counted in this receipt: `min(held, total)`.
     static func depositApplied(_ deposit: Int, total: Int) -> Int {
         min(max(0, deposit), max(0, total))
     }
 
-    static func canSubmit(lineCount: Int, linesValid: Bool, subtotal: Int, discount: Int, split: PaymentSplit) -> Bool {
+    /// What the client pays now: the total minus the applied prepayment.
+    static func amountDue(total: Int, deposit: Int) -> Int {
+        max(0, total) - depositApplied(deposit, total: total)
+    }
+
+    /// Prepayment that stays held for the appointment after this receipt (staff refund or retain it later).
+    static func depositRemainder(_ deposit: Int, total: Int) -> Int {
+        max(0, deposit) - depositApplied(deposit, total: total)
+    }
+
+    /// The payment methods must cover exactly the amount due (the prepayment is applied on top of them).
+    static func canSubmit(
+        lineCount: Int, linesValid: Bool, subtotal: Int, discount: Int, deposit: Int = 0, split: PaymentSplit
+    ) -> Bool {
         guard lineCount > 0, linesValid, isDiscountValid(discount, subtotal: subtotal) else { return false }
-        return split.isBalanced(for: total(subtotal: subtotal, discount: discount))
+        return split.isBalanced(for: amountDue(total: total(subtotal: subtotal, discount: discount), deposit: deposit))
     }
 }
 

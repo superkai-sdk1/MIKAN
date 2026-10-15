@@ -174,7 +174,7 @@ describe('QR payments (SBP)', () => {
     const from = new Date(Date.now() - 60_000).toISOString();
     const to = new Date(Date.now() + 60_000).toISOString();
     const report = (await t.api('GET', `/api/reports/summary?from=${from}&to=${to}`)).json();
-    expect(report.payments).toEqual({ cash: 0, card: 0, transfer: 0, qr: 2500 });
+    expect(report.payments).toEqual({ cash: 0, card: 0, transfer: 0, qr: 2500, deposit: 0 });
   });
 
   it('keeps waiting after a declined attempt and expires an unpaid code', async () => {

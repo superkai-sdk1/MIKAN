@@ -1,12 +1,60 @@
-import { and, count, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, botChats, bookingRequests, clients, products, saleItems, sales } from '../db/schema.js';
+import { appointments, botChats, bookingRequests, clients, depositOperations, products, saleItems, sales } from '../db/schema.js';
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
 import { localDate, localDatesInRange, toIso } from '../lib/time.js';
 import { employeeRefOrMissing, employeesByIds, productsByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 
 const TOP_LIMIT = 10;
+
+/** Prepayment operations in the period, and the amount held for appointments at its end. */
+export interface ReportDeposits {
+  received: number;
+  cash: number;
+  card: number;
+  transfer: number;
+  qr: number;
+  /** Counted in sales, net of sale refunds that returned them to their appointments. */
+  applied: number;
+  refunded: number;
+  retained: number;
+  held: number;
+}
+
+export function reportDeposits(db: DbOrTx, from: number, to: number): ReportDeposits {
+  const op = depositOperations;
+  const sumOf = (condition: SQL) => sql<number>`coalesce(sum(case when ${condition} then ${op.amount} end), 0)`;
+  const inPeriod = sql`${op.createdAt} >= ${from}`;
+  const receive = sql`${op.type} = 'receive'`;
+  const row = db
+    .select({
+      held: sql<number>`coalesce(sum(case when ${op.type} in ('receive', 'unapply') then ${op.amount} else -${op.amount} end), 0)`,
+      received: sumOf(sql`${inPeriod} and ${receive}`),
+      cash: sumOf(sql`${inPeriod} and ${receive} and ${op.method} = 'cash'`),
+      card: sumOf(sql`${inPeriod} and ${receive} and ${op.method} = 'card'`),
+      transfer: sumOf(sql`${inPeriod} and ${receive} and ${op.method} = 'transfer'`),
+      qr: sumOf(sql`${inPeriod} and ${receive} and ${op.method} = 'qr'`),
+      applied: sumOf(sql`${inPeriod} and ${op.type} = 'apply'`),
+      unapplied: sumOf(sql`${inPeriod} and ${op.type} = 'unapply'`),
+      refunded: sumOf(sql`${inPeriod} and ${op.type} = 'refund'`),
+      retained: sumOf(sql`${inPeriod} and ${op.type} = 'retain'`),
+    })
+    .from(op)
+    .where(lt(op.createdAt, to))
+    .get();
+  return {
+    received: row?.received ?? 0,
+    cash: row?.cash ?? 0,
+    card: row?.card ?? 0,
+    transfer: row?.transfer ?? 0,
+    qr: row?.qr ?? 0,
+    applied: (row?.applied ?? 0) - (row?.unapplied ?? 0),
+    refunded: row?.refunded ?? 0,
+    retained: row?.retained ?? 0,
+    held: row?.held ?? 0,
+  };
+}
 
 /**
  * Splits the sale discount across items proportionally to their totals (whole rubles);
@@ -53,6 +101,7 @@ export function reportSummary(db: DbOrTx, from: number, to: number) {
     card: rangeSales.reduce((s, x) => s + x.payCard, 0),
     transfer: rangeSales.reduce((s, x) => s + x.payTransfer, 0),
     qr: rangeSales.reduce((s, x) => s + x.payQr, 0),
+    deposit: rangeSales.reduce((s, x) => s + x.payDeposit, 0),
   };
   const refunds =
     db
@@ -87,6 +136,7 @@ export function reportSummary(db: DbOrTx, from: number, to: number) {
     averageCheck: rangeSales.length ? Math.round(revenue / rangeSales.length) : 0,
     refunds,
     payments,
+    deposits: reportDeposits(db, from, to),
     servicesRevenue,
     productsRevenue,
     byDay: [...byDayMap.values()],

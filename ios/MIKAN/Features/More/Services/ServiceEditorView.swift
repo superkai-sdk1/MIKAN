@@ -36,6 +36,7 @@ struct ServiceEditorView: View {
             Form {
                 mainSection
                 priceSection
+                depositSection
                 durationSection
                 ServiceVariantsEditor(
                     variants: $draft.variants,
@@ -165,6 +166,26 @@ struct ServiceEditorView: View {
                 case .range:
                     Text("Минимум 0 — цена «до …». Итоговая цена указывается в каждой записи.")
                 }
+            }
+        }
+    }
+
+    private var depositSection: some View {
+        Section {
+            Toggle("Нужна предоплата", isOn: $draft.deposit.isRequired.animation())
+            if draft.deposit.isRequired {
+                NumberField.money("Сумма", value: $draft.deposit.requiredAmount)
+            }
+        } header: {
+            Text("Предоплата")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                if let message = draft.deposit.validationMessage {
+                    Text(message).foregroundStyle(.red)
+                } else if let hint = draft.deposit.priceHint(for: draft.price.fields) {
+                    Text(hint).foregroundStyle(.orange)
+                }
+                Text("Сумма предоплаты при записи на услугу. Если в записи несколько услуг, суммы складываются.")
             }
         }
     }

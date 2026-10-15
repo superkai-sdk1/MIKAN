@@ -170,6 +170,9 @@ private struct ServiceRow: View {
         if !service.variants.isEmpty {
             parts.append(Plural.count(service.variants.count, one: "вариант", few: "варианта", many: "вариантов"))
         }
+        if service.requiresDeposit {
+            parts.append("предоплата \(Money.format(service.depositAmount))")
+        }
         return parts.joined(separator: " · ")
     }
 }

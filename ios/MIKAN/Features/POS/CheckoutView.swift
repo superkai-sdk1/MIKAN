@@ -15,6 +15,8 @@ struct CheckoutView: View {
     /// Result of completing the appointment in this checkout (kept across a failed sale and its retry).
     @State private var completion: CompleteAppointmentResult?
     @State private var receiptCashChange: Int?
+    /// Prepayment left held for the appointment after the sale (shown on the receipt).
+    @State private var receiptDepositRemainder = 0
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var errorTitle = CheckoutView.saleFailedTitle
@@ -27,7 +29,12 @@ struct CheckoutView: View {
         NavigationStack {
             Group {
                 if let completedSale {
-                    SaleReceiptView(sale: completedSale, cashChange: receiptCashChange, completion: completion) { finish() }
+                    SaleReceiptView(
+                        sale: completedSale,
+                        cashChange: receiptCashChange,
+                        depositRemainder: receiptDepositRemainder,
+                        completion: completion
+                    ) { finish() }
                 } else if let qrPayment {
                     QRPaymentView(
                         payment: qrPayment,
@@ -140,7 +147,7 @@ struct CheckoutView: View {
     private var submitHint: String {
         if !cart.isDiscountValid { return "Скидка больше суммы чека" }
         if !cart.isCashReceivedEnough { return "Получено меньше суммы к оплате" }
-        if cart.remaining != 0 { return "Распределите сумму между способами оплаты" }
+        if cart.remaining != 0 { return "Распределите сумму к оплате между способами оплаты" }
         return ""
     }
 
@@ -215,6 +222,7 @@ struct CheckoutView: View {
 
     private func complete(_ sale: Sale, cashChange: Int?) async {
         receiptCashChange = cashChange
+        receiptDepositRemainder = sale.appointmentId == nil ? 0 : cart.depositRemainder
         withAnimation(.smooth) {
             completedSale = sale
             qrPayment = nil

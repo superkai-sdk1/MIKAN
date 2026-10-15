@@ -8,7 +8,7 @@ struct ReceiptHeaderSection: View {
     var body: some View {
         Section {
             if let appointment = cart.appointment {
-                ReceiptAppointmentBanner(appointment: appointment, deposit: cart.deposit) {
+                ReceiptAppointmentBanner(appointment: appointment, deposit: cart.deposit, applied: cart.depositApplied) {
                     withAnimation(.snappy) { cart.detachAppointment() }
                 }
             } else if let client = cart.client {
@@ -37,14 +37,15 @@ struct ReceiptHeaderSection: View {
 
 private struct ReceiptAppointmentBanner: View {
     let appointment: Appointment
+    /// Prepayment held for the appointment and the part of it this receipt applies.
     let deposit: Int
+    let applied: Int
     let onDetach: () -> Void
 
     private var masterColor: Color { .master(appointment.master.color) }
 
     private var details: String {
-        let master = "Мастер \(appointment.master.name)"
-        return deposit > 0 ? "\(master) · предоплата \(Money.format(deposit)) зачтётся" : master
+        ReceiptDraft.appointmentDetails(master: appointment.master.name, deposit: deposit, applied: applied)
     }
 
     var body: some View {
@@ -67,7 +68,9 @@ private struct ReceiptAppointmentBanner: View {
             Button("Отвязать", action: onDetach)
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .accessibilityHint("Чек останется, но не будет привязан к записи, предоплата не зачтётся")
+                .accessibilityHint(deposit > 0
+                    ? "Чек останется, но не будет привязан к записи, предоплата останется за записью"
+                    : "Чек останется, но не будет привязан к записи")
         }
         .padding(.vertical, 2)
     }

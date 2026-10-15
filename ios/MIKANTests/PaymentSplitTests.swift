@@ -32,10 +32,13 @@ final class PaymentSplitTests: XCTestCase {
         XCTAssertEqual(PaymentSplit(split.payments), split)
     }
 
-    func testQrTakesTheTotalExceptTheDeposit() {
+    func testQrTakesOnlyTheAmountDueNeverThePrepayment() {
         let split = PaymentSplit.single(.qr, total: 8_000, deposit: 2_000)
-        XCTAssertEqual(split, PaymentSplit(transfer: 2_000, qr: 6_000))
-        XCTAssertTrue(split.isBalanced(for: 8_000))
+        XCTAssertEqual(split, PaymentSplit(qr: 6_000))
+        XCTAssertTrue(split.isBalanced(for: 6_000))
+        XCTAssertFalse(split.isBalanced(for: 8_000))
+        XCTAssertEqual(split.payments(deposit: 2_000), Payments(cash: 0, card: 0, transfer: 0, qr: 6_000, deposit: 2_000))
+        XCTAssertEqual(split.payments(deposit: 2_000).total, 8_000)
         XCTAssertTrue(PaymentSplit(qr: -1).hasNegative)
         XCTAssertEqual(PaymentMethod.qr.instrumentalTitle, "По QR")
         XCTAssertEqual(PaymentMethod.cash.instrumentalTitle, "Наличными")
@@ -49,21 +52,37 @@ final class PaymentSplitTests: XCTestCase {
         }
     }
 
-    func testSingleMethodKeepsDepositInTransfer() {
+    func testSingleMethodPaysTheAmountDueAndReservesNothingInTransfer() {
         let split = PaymentSplit.single(.cash, total: 8_000, deposit: 2_000)
-        XCTAssertEqual(split, PaymentSplit(cash: 6_000, card: 0, transfer: 2_000))
-        XCTAssertTrue(split.isBalanced(for: 8_000))
+        XCTAssertEqual(split, PaymentSplit(cash: 6_000))
+        XCTAssertTrue(split.isBalanced(for: 6_000))
 
         let byTransfer = PaymentSplit.single(.transfer, total: 8_000, deposit: 2_000)
-        XCTAssertEqual(byTransfer, PaymentSplit(cash: 0, card: 0, transfer: 8_000))
+        XCTAssertEqual(byTransfer, PaymentSplit(transfer: 6_000), "the prepayment is not a transfer")
     }
 
-    func testSingleMethodClampsDepositToTotal() {
-        let split = PaymentSplit.single(.card, total: 1_000, deposit: 5_000)
-        XCTAssertEqual(split, PaymentSplit(cash: 0, card: 0, transfer: 1_000))
-        XCTAssertTrue(split.isBalanced(for: 1_000))
+    func testPrepaymentLargerThanTheTotalLeavesNothingDueAndARemainder() {
+        let split = PaymentSplit.single(.cash, total: 1_000, deposit: 5_000)
+        XCTAssertEqual(split, PaymentSplit())
+        XCTAssertTrue(split.isBalanced(for: 0))
         XCTAssertEqual(CheckoutRules.depositApplied(5_000, total: 1_000), 1_000)
+        XCTAssertEqual(CheckoutRules.amountDue(total: 1_000, deposit: 5_000), 0)
+        XCTAssertEqual(CheckoutRules.depositRemainder(5_000, total: 1_000), 4_000, "stays held for the appointment")
+    }
+
+    func testDepositRulesNeverGoNegative() {
         XCTAssertEqual(CheckoutRules.depositApplied(-100, total: 1_000), 0)
+        XCTAssertEqual(CheckoutRules.amountDue(total: 1_000, deposit: -100), 1_000)
+        XCTAssertEqual(CheckoutRules.depositRemainder(-100, total: 1_000), 0)
+        XCTAssertEqual(CheckoutRules.amountDue(total: 8_000, deposit: 2_000), 6_000)
+        XCTAssertEqual(CheckoutRules.depositRemainder(2_000, total: 8_000), 0)
+        XCTAssertEqual(CheckoutRules.depositApplied(2_000, total: -10), 0)
+    }
+
+    func testPaymentsWithoutPrepaymentSendAZeroDeposit() {
+        let split = PaymentSplit(cash: 1_000, transfer: 500)
+        XCTAssertEqual(split.payments, Payments(cash: 1_000, card: 0, transfer: 500, qr: 0, deposit: 0))
+        XCTAssertEqual(split.payments(deposit: -5).deposit, 0, "never negative")
     }
 
     func testPaymentModeChoicesAndTitles() {
@@ -85,6 +104,53 @@ final class PaymentSplitTests: XCTestCase {
         XCTAssertTrue(CheckoutRules.canSubmit(lineCount: 1, linesValid: true, subtotal: 500, discount: 500, split: PaymentSplit()), "free sale with full discount")
         XCTAssertEqual(CheckoutRules.total(subtotal: 4_000, discount: 500), 3_500)
         XCTAssertEqual(CheckoutRules.total(subtotal: 400, discount: 500), 0)
+    }
+
+    func testCheckoutRulesBalanceTheMethodsAgainstTheAmountDue() {
+        let due = PaymentSplit(cash: 6_000)
+        XCTAssertTrue(CheckoutRules.canSubmit(lineCount: 1, linesValid: true, subtotal: 8_000, discount: 0, deposit: 2_000, split: due))
+        XCTAssertFalse(
+            CheckoutRules.canSubmit(lineCount: 1, linesValid: true, subtotal: 8_000, discount: 0, deposit: 2_000, split: PaymentSplit(cash: 8_000)),
+            "the prepayment would be paid twice"
+        )
+        XCTAssertTrue(
+            CheckoutRules.canSubmit(lineCount: 1, linesValid: true, subtotal: 3_000, discount: 0, deposit: 5_000, split: PaymentSplit()),
+            "covered by the prepayment"
+        )
+        XCTAssertTrue(
+            CheckoutRules.canSubmit(lineCount: 1, linesValid: true, subtotal: 8_000, discount: 2_000, deposit: 2_000, split: PaymentSplit(qr: 4_000))
+        )
+    }
+}
+
+final class PaymentLinesTests: XCTestCase {
+    func testLinesListNonZeroMethodsThenThePrepayment() {
+        let payments = Payments(cash: 1_500, card: 0, transfer: 500, qr: 0, deposit: 2_000)
+        XCTAssertEqual(payments.paymentLines.map(\.source), [.method(.cash), .method(.transfer), .deposit])
+        XCTAssertEqual(payments.paymentLines.map(\.amount), [1_500, 500, 2_000])
+        XCTAssertEqual(payments.paymentLines.map(\.title), ["Наличные", "Перевод", "Предоплата"])
+        XCTAssertEqual(payments.paymentLines.last?.symbol, PaymentLine.depositSymbol)
+        XCTAssertTrue(Payments(cash: 0, card: 0, transfer: 0).paymentLines.isEmpty)
+    }
+
+    func testMethodsSummaryIncludesThePrepayment() {
+        XCTAssertEqual(PaymentText.methods(Payments(cash: 1_500, card: 0, transfer: 0, deposit: 2_000)), "наличными и предоплатой")
+        XCTAssertEqual(
+            PaymentText.methods(Payments(cash: 1_000, card: 0, transfer: 500, qr: 0, deposit: 2_000)),
+            "наличными, переводом и предоплатой"
+        )
+        XCTAssertEqual(PaymentText.methods(Payments(cash: 0, card: 0, transfer: 0, deposit: 3_000)), "предоплатой")
+        XCTAssertEqual(PaymentText.methods(Payments(cash: 0, card: 0, transfer: 0, qr: 900)), "по QR СБП")
+        XCTAssertNil(PaymentText.methods(Payments(cash: 0, card: 0, transfer: 0)))
+    }
+
+    func testBreakdownListsNonZeroMethodsWithAmounts() {
+        XCTAssertEqual(
+            PaymentText.breakdown(PaymentSplit(cash: 1_000, transfer: 2_000)),
+            "наличными \(Money.format(1_000)) · переводом \(Money.format(2_000))"
+        )
+        XCTAssertEqual(PaymentText.breakdown(PaymentSplit(qr: 500)), "по QR СБП \(Money.format(500))")
+        XCTAssertNil(PaymentText.breakdown(PaymentSplit()))
     }
 }
 
@@ -108,5 +174,32 @@ final class CashTenderTests: XCTestCase {
         XCTAssertEqual(CashTender.suggestions(for: 1_200), [1_200, 1_500, 2_000, 5_000])
         XCTAssertEqual(CashTender.suggestions(for: 5_000), [5_000])
         XCTAssertEqual(CashTender.suggestions(for: 0), [])
+    }
+}
+
+final class SaleRefundTextTests: XCTestCase {
+    func testPrepaymentPartGoesBackToTheAppointment() {
+        let payments = Payments(cash: 1_500, card: 0, transfer: 0, qr: 0, deposit: 2_000)
+
+        XCTAssertEqual(SaleRefundText.confirmButton(payments), "Вернуть \(Money.format(1_500))", "only what was paid now")
+        let note = "Предоплата \(Money.format(2_000)) вернётся на запись — её можно будет вернуть клиенту или зачесть в новом чеке."
+        XCTAssertEqual(SaleRefundText.depositNote(payments), note)
+        XCTAssertEqual(
+            SaleRefundText.confirmationMessage(payments),
+            "Продажа будет отмечена как возвращённая. Это действие нельзя отменить. "
+                + "Выдайте клиенту \(Money.format(1_500)) наличными из кассы. \(note)"
+        )
+    }
+
+    func testSaleWithoutPrepayment() {
+        let payments = Payments(cash: 0, card: 0, transfer: 3_000)
+        XCTAssertEqual(SaleRefundText.confirmButton(payments), "Вернуть \(Money.format(3_000))")
+        XCTAssertNil(SaleRefundText.depositNote(payments))
+        XCTAssertEqual(SaleRefundText.confirmationMessage(payments), "Продажа будет отмечена как возвращённая. Это действие нельзя отменить.")
+    }
+
+    func testSalePaidEntirelyByPrepayment() {
+        let payments = Payments(cash: 0, card: 0, transfer: 0, qr: 0, deposit: 3_000)
+        XCTAssertEqual(SaleRefundText.confirmButton(payments), "Оформить возврат")
     }
 }

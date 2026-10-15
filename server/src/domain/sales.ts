@@ -5,6 +5,7 @@ import { badRequest, conflict, insufficientStock } from '../lib/errors.js';
 import type { AppointmentRow, SaleRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
 import { getOpenShift } from './cash.js';
+import { applyDeposit, cancelPendingDepositCodes, heldDeposit, unapplyDeposit } from './deposits.js';
 import { getAppointmentRow, getSaleRow, serializeSales } from './refs.js';
 import { cancelPendingForAppointment } from './scheduling.js';
 import { applyMovement, getProductRow, insufficientMessage } from './stock.js';
@@ -24,6 +25,11 @@ export interface SalePayments {
   transfer: number;
   /** Only from a QR payment the bank confirmed (see qr-payments.ts); `POST /sales` rejects it. */
   qr: number;
+  /**
+   * Covered by the appointment's held prepayment. `undefined` = the client predates prepayments (it never sends the
+   * key), which is refused while the appointment holds one, so the prepayment cannot be charged a second time.
+   */
+  deposit?: number;
 }
 
 export interface SaleInput {
@@ -84,6 +90,20 @@ function assertInStock(db: DbOrTx, items: ResolvedItem[]): void {
   }
 }
 
+/** The prepayment part of a checkout must be held for the appointment (and be sent at all while one is held). */
+function assertDepositCovers(db: DbOrTx, appointmentId: number, deposit: number | undefined): void {
+  const held = heldDeposit(db, appointmentId);
+  if (deposit === undefined) {
+    if (held > 0) {
+      throw conflict(`По записи внесена предоплата ${formatRub(held)}. Обновите приложение MIKAN, чтобы зачесть её в чеке.`);
+    }
+    return;
+  }
+  if (deposit > held) {
+    throw conflict(held > 0 ? `За записью только ${formatRub(held)} предоплаты` : 'По записи нет внесённой предоплаты');
+  }
+}
+
 /** Validates a sale without writing anything: items, totals, payments, appointment, client and stock. */
 export function prepareSale(db: DbOrTx, input: SaleInput): PreparedSale {
   if (input.items.length === 0) throw badRequest('Добавьте хотя бы одну позицию');
@@ -92,10 +112,12 @@ export function prepareSale(db: DbOrTx, input: SaleInput): PreparedSale {
   if (input.discount > subtotal) throw badRequest('Скидка не может быть больше суммы чека');
   const total = subtotal - input.discount;
   const { cash, card, transfer, qr } = input.payments;
-  const paid = cash + card + transfer + qr;
+  const deposit = input.payments.deposit ?? 0;
+  const paid = cash + card + transfer + qr + deposit;
   if (paid !== total) {
     throw badRequest(`Сумма оплат (${formatRub(paid)}) не совпадает с итогом (${formatRub(total)})`);
   }
+  if (deposit > 0 && input.appointmentId == null) throw badRequest('Предоплату можно зачесть только в чеке по записи');
 
   let clientId = input.clientId ?? null;
   const appointment = input.appointmentId != null ? getAppointmentRow(db, input.appointmentId) : null;
@@ -105,6 +127,7 @@ export function prepareSale(db: DbOrTx, input: SaleInput): PreparedSale {
       if (linked && linked.status === 'completed') throw conflict(`Запись уже оплачена (чек №${linked.number})`);
     }
     clientId = clientId ?? appointment.clientId;
+    assertDepositCovers(db, appointment.id, input.payments.deposit);
   }
   if (clientId != null && !db.select({ id: clients.id }).from(clients).where(eq(clients.id, clientId)).get()) {
     throw badRequest('Клиент не найден');
@@ -134,6 +157,7 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
         payCard: input.payments.card,
         payTransfer: input.payments.transfer,
         payQr: input.payments.qr,
+        payDeposit: input.payments.deposit ?? 0,
         status: 'completed',
         note: input.note ?? null,
         createdAt: now,
@@ -146,6 +170,7 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
         applyMovement(tx, { productId: item.productId, delta: -item.quantity, type: 'sale', saleId: sale.id, employeeId });
       }
     }
+    applyDeposit(tx, sale, sale.payDeposit, employeeId);
     if (appointment) {
       const completing = appointment.status !== 'completed';
       tx.update(appointments)
@@ -158,6 +183,7 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
         .where(eq(appointments.id, appointment.id))
         .run();
       if (completing) cancelPendingForAppointment(tx, appointment.id, 'reminder');
+      cancelPendingDepositCodes(tx, appointment.id, now);
     }
     return sale;
   });
@@ -185,6 +211,7 @@ export function refundSale(db: DbOrTx, id: number, input: { reason: string; rest
       .where(eq(sales.id, id))
       .returning()
       .get();
+    unapplyDeposit(tx, updated, openShift?.id ?? null, employeeId, now);
     if (input.restock) {
       const items = tx.select().from(saleItems).where(eq(saleItems.saleId, id)).all();
       for (const item of items) {

@@ -28,17 +28,19 @@ struct AppointmentCard: View {
                 HStack(spacing: 8) {
                     MoneyText(appointment.price)
                         .font(.subheadline.weight(.medium))
-                    if appointment.deposit > 0 {
-                        Text("предоплата \(Money.format(appointment.deposit))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                     Spacer(minLength: 0)
                     if appointment.saleId != nil {
                         Label("Оплачено", systemImage: "checkmark.seal.fill")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.green)
                     }
+                }
+                if let mark = DepositMark.of(appointment) {
+                    Label(mark.text, systemImage: mark.symbol)
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption.weight(.medium))
+                        .monospacedDigit()
+                        .foregroundStyle(mark.color)
                 }
             }
         }

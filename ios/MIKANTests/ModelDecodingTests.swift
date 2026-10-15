@@ -117,6 +117,11 @@ final class ModelDecodingTests: XCTestCase {
             XCTAssertEqual(appointment.service?.category, .piercing)
             XCTAssertEqual(appointment.displayTitle, "Прокол мочки")
             XCTAssertFalse(appointment.isActive)
+            XCTAssertEqual(appointment.deposit, 2000)
+            XCTAssertEqual(appointment.depositRequired, 0, "a server without prepayments sends no depositRequired")
+            XCTAssertEqual(appointment.depositStatus, DepositStatus.none)
+            XCTAssertTrue(appointment.depositOperations.isEmpty)
+            XCTAssertNil(appointment.depositLink)
 
             let bare = try Fixtures.decode(Appointment.self, Fixtures.appointmentWithoutService, fractional: fractional)
             XCTAssertNil(bare.service)
@@ -133,6 +138,35 @@ final class ModelDecodingTests: XCTestCase {
         }
     }
 
+    func testAppointmentPrepaymentFields() throws {
+        for fractional in variants {
+            let appointment = try Fixtures.decode(Appointment.self, Fixtures.appointmentWithDeposit, fractional: fractional)
+            XCTAssertEqual(appointment.deposit, 2000, "held")
+            XCTAssertEqual(appointment.depositRequired, 2000)
+            XCTAssertEqual(appointment.depositStatus, .paid)
+            let receive = try XCTUnwrap(appointment.depositOperations.first)
+            XCTAssertEqual(appointment.depositOperations.count, 1)
+            XCTAssertEqual(receive.type, .receive)
+            XCTAssertEqual(receive.method, .transfer)
+            XCTAssertEqual(receive.shiftId, 3)
+            XCTAssertEqual(receive.employee?.name, "Анна")
+            XCTAssertEqual(receive.createdAt, Fixtures.referenceDate)
+            let link = try XCTUnwrap(appointment.depositLink)
+            XCTAssertTrue(link.isDeposit)
+            XCTAssertEqual(link.appointmentId, 4)
+            XCTAssertEqual(link.status, .paid)
+        }
+
+        let apply = try Fixtures.decode(DepositOperation.self, Fixtures.depositApply)
+        XCTAssertEqual(apply.type, .apply)
+        XCTAssertNil(apply.method)
+        XCTAssertEqual(apply.saleId, 1)
+        XCTAssertNil(apply.employee, "migrated entries have no employee")
+
+        let newer = Fixtures.appointmentWithDeposit.replacingOccurrences(of: #""depositStatus": "paid""#, with: #""depositStatus": "partly_paid""#)
+        XCTAssertEqual(try Fixtures.decode(Appointment.self, newer).depositStatus, DepositStatus.none, "unknown statuses are tolerated")
+    }
+
     func testSaleAndHistory() throws {
         for fractional in variants {
             let sale = try Fixtures.decode(Sale.self, Fixtures.sale, fractional: fractional)
@@ -140,6 +174,7 @@ final class ModelDecodingTests: XCTestCase {
             XCTAssertEqual(sale.items.first?.type, .product)
             XCTAssertEqual(sale.payments, Payments(cash: 1500, card: 0, transfer: 0))
             XCTAssertEqual(sale.payments.qr, 0, "a server without QR payments sends no qr key")
+            XCTAssertEqual(sale.payments.deposit, 0, "a server without prepayments sends no deposit key")
             XCTAssertEqual(sale.status, .completed)
             XCTAssertTrue(sale.hasProducts)
 
@@ -153,12 +188,24 @@ final class ModelDecodingTests: XCTestCase {
         }
     }
 
+    func testSalePaymentsWithPrepayment() throws {
+        for fractional in variants {
+            let sale = try Fixtures.decode(Sale.self, Fixtures.saleWithDeposit, fractional: fractional)
+            XCTAssertEqual(sale.appointmentId, 4)
+            XCTAssertEqual(sale.payments, Payments(cash: 6000, card: 0, transfer: 0, qr: 0, deposit: 2000))
+            XCTAssertEqual(sale.payments.total, sale.total)
+            XCTAssertEqual(sale.payments.paidNow, 6000)
+        }
+    }
+
     func testCashShiftAndOperations() throws {
         for fractional in variants {
             let shift = try Fixtures.decode(CashShift.self, Fixtures.cashShift, fractional: fractional)
             XCTAssertTrue(shift.isOpen)
             XCTAssertEqual(shift.expectedCash, 7500)
             XCTAssertEqual(shift.summary.card, 5000)
+            XCTAssertEqual(shift.summary.deposit, 0, "a server without prepayments sends no deposit")
+            XCTAssertEqual(shift.summary.deposits, .zero)
             XCTAssertEqual(shift.operations.first?.type, .withdrawal)
 
             let current = try Fixtures.decode(CurrentShiftResponse.self, #"{ "shift": \#(Fixtures.cashShift) }"#, fractional: fractional)
@@ -166,6 +213,21 @@ final class ModelDecodingTests: XCTestCase {
         }
         let none = try Fixtures.decode(CurrentShiftResponse.self, #"{ "shift": null }"#)
         XCTAssertNil(none.shift)
+    }
+
+    func testCashShiftWithPrepayments() throws {
+        for fractional in variants {
+            let shift = try Fixtures.decode(CashShift.self, Fixtures.cashShiftWithDeposits, fractional: fractional)
+            let summary = shift.summary
+            XCTAssertEqual(summary.deposit, 2500)
+            XCTAssertEqual(summary.revenue, summary.cash + summary.card + summary.transfer + summary.qr + summary.deposit)
+            XCTAssertEqual(summary.deposits.received, 3000)
+            XCTAssertEqual(summary.deposits.cash, 1000)
+            XCTAssertEqual(summary.deposits.transfer, 2000)
+            XCTAssertEqual(summary.deposits.retained, 0)
+            let drawer = ShiftBreakdown.drawer(summary).reduce(0) { $0 + $1.amount }
+            XCTAssertEqual(shift.openingCash + drawer, shift.expectedCash, "the drawer breakdown matches the server")
+        }
     }
 
     func testBotEntities() throws {
@@ -247,6 +309,22 @@ final class ModelDecodingTests: XCTestCase {
             XCTAssertEqual(report.topServices.first?.serviceId, 3)
             XCTAssertEqual(report.byMaster.first?.employee.id, 2)
             XCTAssertEqual(report.payments.total, 120_000)
+            XCTAssertEqual(report.payments.deposit, 0)
+            XCTAssertNil(report.deposits, "a server without prepayments sends no deposits")
+        }
+    }
+
+    func testReportSummaryWithPrepayments() throws {
+        for fractional in variants {
+            let report = try Fixtures.decode(ReportSummary.self, Fixtures.reportWithDeposits, fractional: fractional)
+            XCTAssertEqual(report.payments.deposit, 10_000)
+            XCTAssertEqual(report.payments.total, report.revenue)
+            let deposits = try XCTUnwrap(report.deposits)
+            XCTAssertEqual(deposits.received, deposits.cash + deposits.card + deposits.transfer + deposits.qr)
+            XCTAssertEqual(deposits.applied, 10_000)
+            XCTAssertEqual(deposits.refunded, 1000)
+            XCTAssertEqual(deposits.retained, 2000)
+            XCTAssertEqual(deposits.held, 7000)
         }
     }
 
@@ -257,6 +335,17 @@ final class ModelDecodingTests: XCTestCase {
             XCTAssertEqual(pending.amount, 3000)
             XCTAssertTrue(pending.payload.hasPrefix("https://qr.nspk.ru/"))
             XCTAssertNil(pending.sale)
+            XCTAssertEqual(pending.kind, .sale, "a server without prepayment codes sends no kind")
+            XCTAssertFalse(pending.isDeposit)
+            XCTAssertNil(pending.appointmentId)
+            XCTAssertNil(pending.sentAt)
+
+            let deposit = try Fixtures.decode(QrPayment.self, Fixtures.qrPaymentDeposit, fractional: fractional)
+            XCTAssertEqual(deposit.kind, .deposit)
+            XCTAssertTrue(deposit.isDeposit)
+            XCTAssertEqual(deposit.appointmentId, 4)
+            XCTAssertEqual(deposit.sentAt, Fixtures.referenceDate)
+            XCTAssertNil(deposit.sale, "a paid prepayment creates no sale")
 
             let paid = try Fixtures.decode(QrPayment.self, Fixtures.qrPaymentPaid, fractional: fractional)
             XCTAssertEqual(paid.status, .paid)

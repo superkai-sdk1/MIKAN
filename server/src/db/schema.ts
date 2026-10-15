@@ -1,4 +1,5 @@
-import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /** All instants are stored as integer milliseconds since epoch (UTC). Money is integer rubles. */
 
@@ -72,6 +73,8 @@ export const services = sqliteTable('services', {
   photosJson: text('photos_json').notNull().default('[]'),
   /** JSON array of `{ name, price, durationMin | null }` — priced options such as «один / два». */
   variantsJson: text('variants_json').notNull().default('[]'),
+  /** Prepayment required to book this service (rubles); 0 = none. */
+  depositAmount: integer('deposit_amount').notNull().default(0),
   aftercareTemplateId: integer('aftercare_template_id').references(() => aftercareTemplates.id, {
     onDelete: 'set null',
   }),
@@ -142,7 +145,8 @@ export const appointments = sqliteTable(
     endsAt: ms('ends_at').notNull(),
     status: text('status').notNull(),
     price: integer('price').notNull().default(0),
-    deposit: integer('deposit').notNull().default(0),
+    /** Prepayment the studio asks for; what was actually received lives in `deposit_operations`. */
+    depositRequired: integer('deposit_required').notNull().default(0),
     notes: text('notes'),
     saleId: integer('sale_id'),
     completedAt: ms('completed_at'),
@@ -199,6 +203,8 @@ export const sales = sqliteTable(
     payTransfer: integer('pay_transfer').notNull().default(0),
     /** Paid by an SBP QR code; only set from a confirmed `qr_payments` row, never directly by the app. */
     payQr: integer('pay_qr').notNull().default(0),
+    /** Covered by the appointment's prepayment (received earlier; see `deposit_operations` type `apply`). */
+    payDeposit: integer('pay_deposit').notNull().default(0),
     status: text('status').notNull(),
     note: text('note'),
     refundedAt: ms('refunded_at'),
@@ -234,13 +240,18 @@ export const saleItems = sqliteTable(
 );
 
 /**
- * A dynamic SBP QR code shown at checkout. The sale is created on the server only once the bank confirms the
- * payment, from the cart stored in `saleInputJson`, so a paid QR maps to exactly one sale.
+ * A dynamic SBP QR code: the QR part of a checkout (`kind = sale`) or an appointment's prepayment (`kind = deposit`).
+ * A sale is created on the server only once the bank confirms the payment, from the cart stored in `saleInputJson`,
+ * so a paid QR maps to exactly one sale; a paid prepayment code records one `receive` deposit operation.
  */
 export const qrPayments = sqliteTable(
   'qr_payments',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
+    /** `sale` | `deposit` */
+    kind: text('kind').notNull().default('sale'),
+    /** The appointment of a `deposit` code. */
+    appointmentId: integer('appointment_id').references(() => appointments.id),
     /** `tochka` */
     provider: text('provider').notNull(),
     /** The bank's QR id (Tochka `qrcId`). */
@@ -250,7 +261,8 @@ export const qrPayments = sqliteTable(
     amount: integer('amount').notNull(),
     /** `pending` | `paid` | `expired` | `cancelled` */
     status: text('status').notNull(),
-    saleInputJson: text('sale_input_json').notNull(),
+    /** The frozen cart of a `sale` code; null for `deposit`. */
+    saleInputJson: text('sale_input_json'),
     saleId: integer('sale_id').references(() => sales.id),
     /** For staff: a declined attempt / unreachable bank while pending, or why paid money was not sold. */
     error: text('error'),
@@ -261,10 +273,49 @@ export const qrPayments = sqliteTable(
     /** Last successful bank check. */
     checkedAt: ms('checked_at'),
     paidAt: ms('paid_at'),
+    /** When the bot last sent the link to the client (`deposit` codes). */
+    sentAt: ms('sent_at'),
     createdAt: ms('created_at').notNull(),
     updatedAt: ms('updated_at').notNull(),
   },
-  (t) => [index('qr_payments_status_idx').on(t.status, t.expiresAt)],
+  (t) => [index('qr_payments_status_idx').on(t.status, t.expiresAt), index('qr_payments_appointment_idx').on(t.appointmentId)],
+);
+
+/**
+ * The prepayment ledger: every movement of an appointment's prepayment. The held amount is
+ * Σ receive − Σ apply + Σ unapply − Σ refund − Σ retain; rows are never updated.
+ */
+export const depositOperations = sqliteTable(
+  'deposit_operations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    appointmentId: integer('appointment_id')
+      .notNull()
+      .references(() => appointments.id),
+    /** `receive` | `apply` | `unapply` | `refund` | `retain` */
+    type: text('type').notNull(),
+    amount: integer('amount').notNull(),
+    /** `cash` | `card` | `transfer` | `qr` for receive/refund; null otherwise. */
+    method: text('method'),
+    /** The shift open at that moment (always set for cash). */
+    shiftId: integer('shift_id').references(() => cashShifts.id),
+    /** apply / unapply: the sale. */
+    saleId: integer('sale_id').references(() => sales.id),
+    /** receive by QR: the code it came from. */
+    qrPaymentId: integer('qr_payment_id').references(() => qrPayments.id),
+    note: text('note'),
+    employeeId: integer('employee_id').references(() => employees.id),
+    createdAt: ms('created_at').notNull(),
+  },
+  (t) => [
+    index('deposit_operations_appointment_idx').on(t.appointmentId, t.id),
+    index('deposit_operations_shift_idx').on(t.shiftId),
+    index('deposit_operations_created_idx').on(t.createdAt),
+    // A paid QR code is recorded once; a sale applies (and, when refunded, returns) a prepayment once.
+    uniqueIndex('deposit_operations_qr_receive_unique').on(t.qrPaymentId).where(sql`type = 'receive'`),
+    uniqueIndex('deposit_operations_sale_type_unique').on(t.saleId, t.type).where(sql`sale_id is not null`),
+    check('deposit_operations_amount_positive', sql`${t.amount} > 0`),
+  ],
 );
 
 export const stockMovements = sqliteTable(

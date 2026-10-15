@@ -1,11 +1,23 @@
 import { asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { cashOperations, cashShifts, sales } from '../db/schema.js';
+import { cashOperations, cashShifts, depositOperations, sales } from '../db/schema.js';
 import { conflict, notFound } from '../lib/errors.js';
 import { cashOpOut, type ShiftRow } from '../lib/serialize.js';
 import { formatShortDateTime, toIso } from '../lib/time.js';
 import { employeeRefOrMissing, employeesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
+
+/** Prepayment operations recorded while the shift was open (`deposit_operations.shift_id`). */
+export interface ShiftDeposits {
+  received: number;
+  cash: number;
+  card: number;
+  transfer: number;
+  qr: number;
+  refunded: number;
+  cashRefunded: number;
+  retained: number;
+}
 
 export interface ShiftSummary {
   salesCount: number;
@@ -14,10 +26,45 @@ export interface ShiftSummary {
   card: number;
   transfer: number;
   qr: number;
+  /** Part of `revenue` covered by prepayments received earlier (not cash in the drawer now). */
+  deposit: number;
   refunds: number;
   cashRefunds: number;
   cashIn: number;
   cashOut: number;
+  deposits: ShiftDeposits;
+}
+
+const sumWhen = (condition: ReturnType<typeof sql>) =>
+  sql<number>`coalesce(sum(case when ${condition} then ${depositOperations.amount} end), 0)`;
+
+function shiftDeposits(db: DbOrTx, shiftId: number): ShiftDeposits {
+  const receive = sql`${depositOperations.type} = 'receive'`;
+  const refund = sql`${depositOperations.type} = 'refund'`;
+  const row = db
+    .select({
+      received: sumWhen(receive),
+      cash: sumWhen(sql`${receive} and ${depositOperations.method} = 'cash'`),
+      card: sumWhen(sql`${receive} and ${depositOperations.method} = 'card'`),
+      transfer: sumWhen(sql`${receive} and ${depositOperations.method} = 'transfer'`),
+      qr: sumWhen(sql`${receive} and ${depositOperations.method} = 'qr'`),
+      refunded: sumWhen(refund),
+      cashRefunded: sumWhen(sql`${refund} and ${depositOperations.method} = 'cash'`),
+      retained: sumWhen(sql`${depositOperations.type} = 'retain'`),
+    })
+    .from(depositOperations)
+    .where(eq(depositOperations.shiftId, shiftId))
+    .get();
+  return {
+    received: row?.received ?? 0,
+    cash: row?.cash ?? 0,
+    card: row?.card ?? 0,
+    transfer: row?.transfer ?? 0,
+    qr: row?.qr ?? 0,
+    refunded: row?.refunded ?? 0,
+    cashRefunded: row?.cashRefunded ?? 0,
+    retained: row?.retained ?? 0,
+  };
 }
 
 export function getOpenShift(db: DbOrTx): ShiftRow | null {
@@ -26,7 +73,8 @@ export function getOpenShift(db: DbOrTx): ShiftRow | null {
 
 /**
  * Sales made in the shift (whatever their later status) are counted as income; refunds processed
- * while the shift was open are counted separately, so cash in the drawer stays consistent.
+ * while the shift was open are counted separately, so cash in the drawer stays consistent. Prepayments enter the
+ * drawer when received (`deposits.cash`); a sale only consumes them (`deposit`), so they are never counted twice.
  */
 export function shiftSummary(db: DbOrTx, shiftId: number): ShiftSummary {
   const salesAgg = db
@@ -37,6 +85,7 @@ export function shiftSummary(db: DbOrTx, shiftId: number): ShiftSummary {
       card: sql<number>`coalesce(sum(${sales.payCard}), 0)`,
       transfer: sql<number>`coalesce(sum(${sales.payTransfer}), 0)`,
       qr: sql<number>`coalesce(sum(${sales.payQr}), 0)`,
+      deposit: sql<number>`coalesce(sum(${sales.payDeposit}), 0)`,
     })
     .from(sales)
     .where(eq(sales.shiftId, shiftId))
@@ -64,15 +113,17 @@ export function shiftSummary(db: DbOrTx, shiftId: number): ShiftSummary {
     card: salesAgg?.card ?? 0,
     transfer: salesAgg?.transfer ?? 0,
     qr: salesAgg?.qr ?? 0,
+    deposit: salesAgg?.deposit ?? 0,
     refunds: refundAgg?.refunds ?? 0,
     cashRefunds: refundAgg?.cashRefunds ?? 0,
     cashIn: opsAgg?.cashIn ?? 0,
     cashOut: opsAgg?.cashOut ?? 0,
+    deposits: shiftDeposits(db, shiftId),
   };
 }
 
 export function expectedCashFor(openingCash: number, s: ShiftSummary): number {
-  return openingCash + s.cash - s.cashRefunds + s.cashIn - s.cashOut;
+  return openingCash + s.cash - s.cashRefunds + s.deposits.cash - s.deposits.cashRefunded + s.cashIn - s.cashOut;
 }
 
 export function serializeShift(db: DbOrTx, shift: ShiftRow, withOperations: boolean) {

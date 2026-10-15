@@ -220,6 +220,36 @@ nonisolated enum ServiceVariantDrafts {
     }
 }
 
+// MARK: - Prepayment
+
+/// «Нужна предоплата» toggle and its amount; the amount is kept while the toggle is off.
+nonisolated struct ServiceDepositDraft: Hashable, Sendable {
+    var isRequired: Bool
+    var requiredAmount: Int
+
+    init(isRequired: Bool = false, requiredAmount: Int = 0) {
+        self.isRequired = isRequired
+        self.requiredAmount = requiredAmount
+    }
+
+    init(depositAmount: Int) {
+        self.init(isRequired: depositAmount > 0, requiredAmount: max(0, depositAmount))
+    }
+
+    /// `ServiceBody.depositAmount`: 0 — no prepayment.
+    var amount: Int { isRequired ? max(0, requiredAmount) : 0 }
+
+    var validationMessage: String? {
+        isRequired && requiredAmount <= 0 ? "Укажите сумму предоплаты." : nil
+    }
+
+    /// Non-blocking hint: a prepayment above a fixed price is most likely a typo.
+    func priceHint(for price: ServicePriceFields) -> String? {
+        guard isRequired, !price.priceFrom, price.price > 0, requiredAmount > price.price else { return nil }
+        return "Предоплата больше цены услуги (\(Money.format(price.price)))."
+    }
+}
+
 // MARK: - Whole card
 
 /// Everything the service editor edits; validates it and builds the API body.
@@ -234,6 +264,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
     var imagePrompt: String
     var photos: [String]
     var description: String
+    var deposit: ServiceDepositDraft
     var aftercareTemplateId: Int?
     var active: Bool
     var sort: Int
@@ -253,6 +284,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
         imagePrompt = service?.imagePrompt ?? ""
         photos = service?.photos ?? []
         description = service?.description ?? ""
+        deposit = ServiceDepositDraft(depositAmount: service?.depositAmount ?? 0)
         aftercareTemplateId = service?.aftercareTemplateId
         active = service?.active ?? true
         sort = service?.sort ?? max(0, nextSort)
@@ -275,6 +307,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
             ?? variantsMessage
             ?? imagePromptMessage
             ?? photosMessage
+            ?? deposit.validationMessage
     }
 
     var canSave: Bool { validationMessage == nil }
@@ -294,6 +327,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
             imagePrompt: Nullable(imagePrompt.nonEmpty),
             photos: photos,
             variants: ServiceVariantDrafts.variants(from: variants),
+            depositAmount: deposit.amount,
             aftercareTemplateId: Nullable(aftercareTemplateId),
             active: active,
             sort: sort
@@ -317,6 +351,7 @@ nonisolated extension ServiceBody {
             imagePrompt: Nullable(service.imagePrompt.nonEmpty),
             photos: service.photos,
             variants: service.variants,
+            depositAmount: service.depositAmount,
             aftercareTemplateId: Nullable(service.aftercareTemplateId),
             active: service.active,
             sort: service.sort

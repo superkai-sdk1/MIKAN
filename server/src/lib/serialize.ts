@@ -14,6 +14,7 @@ export type SaleRow = Row<typeof s.sales>;
 export type SaleItemRow = Row<typeof s.saleItems>;
 export type ShiftRow = Row<typeof s.cashShifts>;
 export type QrPaymentRow = Row<typeof s.qrPayments>;
+export type DepositOperationRow = Row<typeof s.depositOperations>;
 export type CashOpRow = Row<typeof s.cashOperations>;
 export type BotChatRow = Row<typeof s.botChats>;
 export type BotMessageRow = Row<typeof s.botMessages>;
@@ -106,6 +107,7 @@ export const serviceOut = (sv: ServiceRow) => ({
   imagePrompt: sv.imagePrompt,
   photos: parsePhotos(sv.photosJson),
   variants: parseVariants(sv.variantsJson),
+  depositAmount: sv.depositAmount,
   aftercareTemplateId: sv.aftercareTemplateId,
   active: sv.active,
   sort: sv.sort,
@@ -196,12 +198,52 @@ export const appointmentServiceOut = (line: AppointmentServiceRow, category: str
 });
 export type AppointmentServiceOut = ReturnType<typeof appointmentServiceOut>;
 
+export const depositOperationOut = (op: DepositOperationRow, employee: EmployeeRef | null) => ({
+  id: op.id,
+  appointmentId: op.appointmentId,
+  type: op.type,
+  amount: op.amount,
+  method: op.method,
+  saleId: op.saleId,
+  shiftId: op.shiftId,
+  qrPaymentId: op.qrPaymentId,
+  note: op.note,
+  employee,
+  createdAt: toIso(op.createdAt),
+});
+export type DepositOperationOut = ReturnType<typeof depositOperationOut>;
+
+/** `sale` is the sale created from a paid checkout code (always `null` for prepayment codes). */
+export const qrPaymentOut = (row: QrPaymentRow, sale: SaleOut | null) => ({
+  id: row.id,
+  kind: row.kind,
+  appointmentId: row.appointmentId,
+  status: row.status,
+  amount: row.amount,
+  payload: row.payload,
+  expiresAt: toIso(row.expiresAt),
+  sentAt: toIso(row.sentAt),
+  error: row.error,
+  sale,
+  createdAt: toIso(row.createdAt),
+});
+export type QrPaymentOut = ReturnType<typeof qrPaymentOut>;
+
+/** An appointment's prepayment as shown with it (see `deposit-ledger.ts`). */
+export interface AppointmentDepositOut {
+  held: number;
+  status: string;
+  operations: DepositOperationOut[];
+  link: QrPaymentOut | null;
+}
+
 export const appointmentOut = (
   a: AppointmentRow,
   client: ClientRef,
   master: EmployeeRef,
   service: ServiceRef | null,
   services: AppointmentServiceOut[],
+  deposit: AppointmentDepositOut,
 ) => ({
   id: a.id,
   client,
@@ -213,7 +255,11 @@ export const appointmentOut = (
   endsAt: toIso(a.endsAt),
   status: a.status,
   price: a.price,
-  deposit: a.deposit,
+  deposit: deposit.held,
+  depositRequired: a.depositRequired,
+  depositStatus: deposit.status,
+  depositOperations: deposit.operations,
+  depositLink: deposit.link,
   notes: a.notes,
   saleId: a.saleId,
   completedAt: toIso(a.completedAt),
@@ -244,7 +290,7 @@ export const saleOut = (sale: SaleRow, items: SaleItemRow[], client: ClientRef |
   subtotal: sale.subtotal,
   discount: sale.discount,
   total: sale.total,
-  payments: { cash: sale.payCash, card: sale.payCard, transfer: sale.payTransfer, qr: sale.payQr },
+  payments: { cash: sale.payCash, card: sale.payCard, transfer: sale.payTransfer, qr: sale.payQr, deposit: sale.payDeposit },
   status: sale.status,
   note: sale.note,
   refundedAt: toIso(sale.refundedAt),

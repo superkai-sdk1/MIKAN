@@ -16,6 +16,7 @@ struct AppointmentDetailView: View {
     @State private var confirmsCancel = false
     @State private var confirmsNoShow = false
     @State private var showsChat = false
+    @State private var depositFlow: DepositFlow?
     @State private var successCount = 0
 
     init(appointment: Appointment) {
@@ -28,6 +29,11 @@ struct AppointmentDetailView: View {
             clientSection
             servicesSection
             detailsSection
+            if DepositSummary.showsSection(appointment) {
+                AppointmentDepositSection(appointment: appointment, qrEnabled: reference.qrPaymentsEnabled) { flow in
+                    depositFlow = flow
+                }
+            }
             if let notes = appointment.notes.nonEmpty {
                 Section("Заметки") { Text(notes) }
             }
@@ -41,7 +47,7 @@ struct AppointmentDetailView: View {
         .toolbar {
             if appointment.isOpen {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Изменить") { editorDraft = .edit(appointment) }
+                    Button("Изменить") { editorDraft = .edit(appointment, catalog: reference.services) }
                 }
             }
         }
@@ -50,12 +56,15 @@ struct AppointmentDetailView: View {
         .task { await reload() }
         // Catalog only adds thumbnails; the screen works without it (APIClient logs failures).
         .task { try? await reference.ensureServices() }
+        // Without it the card only hides the QR-based prepayment actions.
+        .task { try? await reference.ensureQrPaymentsConfig() }
         .navigationDestination(isPresented: $showsChat) {
             ClientChatView(client: appointment.client)
         }
         .sheet(item: $editorDraft) { draft in
             AppointmentEditorView(draft: draft) { saved in apply(saved) }
         }
+        .appointmentDepositFlows($depositFlow, appointment: appointment, onChange: apply)
         .sheet(isPresented: $showsComplete, onDismiss: startPendingCheckout) {
             CompleteAppointmentSheet(appointment: appointment) { completed in
                 apply(completed)
@@ -67,7 +76,11 @@ struct AppointmentDetailView: View {
             Button("Отменить запись", role: .destructive) { setStatus(.cancelled) }
             Button("Не отменять", role: .cancel) {}
         } message: {
-            Text("Клиенту не придёт напоминание об этой записи.")
+            if appointment.deposit > 0 {
+                Text("Клиенту не придёт напоминание об этой записи. Предоплату \(Money.format(appointment.deposit)) затем можно вернуть или удержать.")
+            } else {
+                Text("Клиенту не придёт напоминание об этой записи.")
+            }
         }
         .confirmationDialog("Отметить неявку?", isPresented: $confirmsNoShow, titleVisibility: .visible) {
             Button("Клиент не пришёл", role: .destructive) { setStatus(.noShow) }
@@ -136,9 +149,6 @@ struct AppointmentDetailView: View {
             if appointment.services.isEmpty, appointment.service == nil {
                 LabeledContent("Стоимость") { MoneyText(appointment.price) }
             }
-            if appointment.deposit > 0 {
-                LabeledContent("Предоплата") { MoneyText(appointment.deposit) }
-            }
         }
     }
 
@@ -195,7 +205,9 @@ struct AppointmentDetailView: View {
                 case .complete:
                     Button("Завершить", systemImage: "flag.checkered") { showsComplete = true }
                 case .reschedule:
-                    Button("Перенести", systemImage: "calendar.badge.clock") { editorDraft = .edit(appointment) }
+                    Button("Перенести", systemImage: "calendar.badge.clock") {
+                        editorDraft = .edit(appointment, catalog: reference.services)
+                    }
                 case .noShow:
                     Button("Неявка", systemImage: "person.fill.xmark") { confirmsNoShow = true }
                 case .cancel:
@@ -229,8 +241,11 @@ struct AppointmentDetailView: View {
         Task {
             defer { isWorking = false }
             do {
-                apply(try await api.setAppointmentStatus(id: appointment.id, status))
+                let updated = try await api.setAppointmentStatus(id: appointment.id, status)
+                apply(updated)
                 successCount += 1
+                // Cancelled / no-show with money held: refund or retain is the staff's call.
+                if DepositFlow.needsDecision(updated) { depositFlow = .decide }
             } catch {
                 errorMessage = error.userMessage
             }

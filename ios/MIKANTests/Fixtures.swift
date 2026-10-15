@@ -82,6 +82,33 @@ enum Fixtures {
       "saleId": 7, "completedAt": "<T>", "createdAt": "<T>", "updatedAt": "<T>" }
     """#
 
+    static let depositReceive = #"""
+    { "id": 7, "appointmentId": 4, "type": "receive", "amount": 2000, "method": "transfer",
+      "saleId": null, "shiftId": 3, "qrPaymentId": null, "note": null,
+      "employee": \#(employeeRef), "createdAt": "<T>" }
+    """#
+
+    static let depositApply = #"""
+    { "id": 8, "appointmentId": 4, "type": "apply", "amount": 2000, "method": null,
+      "saleId": 1, "shiftId": null, "qrPaymentId": null, "note": null, "employee": null, "createdAt": "<T>" }
+    """#
+
+    static let qrPaymentDeposit = #"""
+    { "id": 6, "kind": "deposit", "appointmentId": 4, "status": "paid", "amount": 2000,
+      "payload": "https://qr.nspk.ru/AD10001B38T99KA99CD8S37FMTH8CFQ7",
+      "expiresAt": "<T>", "sentAt": "<T>", "error": null, "sale": null, "createdAt": "<T>" }
+    """#
+
+    /// Prepayment of 2 000 ₽ received by transfer and held; the latest QR link for it is paid.
+    static let appointmentWithDeposit = #"""
+    { "id": 4, "client": \#(clientRef), "master": \#(employeeRef), "service": \#(serviceRef), "services": [],
+      "title": null, "startsAt": "<T>", "endsAt": "<T>",
+      "status": "confirmed", "price": 8000, "notes": null,
+      "deposit": 2000, "depositRequired": 2000, "depositStatus": "paid",
+      "depositOperations": [ \#(depositReceive) ], "depositLink": \#(qrPaymentDeposit),
+      "saleId": null, "completedAt": null, "createdAt": "<T>", "updatedAt": "<T>" }
+    """#
+
     static let sale = #"""
     { "id": 1, "number": 17, "client": \#(clientRef), "employee": \#(employeeRef),
       "appointmentId": null, "shiftId": 3,
@@ -89,6 +116,17 @@ enum Fixtures {
                    "name": "Лабрет", "quantity": 1, "price": 1500, "total": 1500 } ],
       "subtotal": 1500, "discount": 0, "total": 1500,
       "payments": { "cash": 1500, "card": 0, "transfer": 0 },
+      "status": "completed", "note": null, "refundedAt": null, "refundReason": null, "createdAt": "<T>" }
+    """#
+
+    /// Pays for appointment 4: 2 000 ₽ of the total comes from its prepayment.
+    static let saleWithDeposit = #"""
+    { "id": 3, "number": 19, "client": \#(clientRef), "employee": \#(employeeRef),
+      "appointmentId": 4, "shiftId": 3,
+      "items": [ { "id": 4, "type": "service", "productId": null, "serviceId": 3,
+                   "name": "Прокол мочки", "quantity": 1, "price": 8000, "total": 8000 } ],
+      "subtotal": 8000, "discount": 0, "total": 8000,
+      "payments": { "cash": 6000, "card": 0, "transfer": 0, "qr": 0, "deposit": 2000 },
       "status": "completed", "note": null, "refundedAt": null, "refundReason": null, "createdAt": "<T>" }
     """#
 
@@ -119,6 +157,18 @@ enum Fixtures {
       "summary": { "salesCount": 3, "revenue": 10000, "cash": 2500, "card": 5000, "transfer": 2500,
                    "refunds": 0, "cashRefunds": 0, "cashIn": 0, "cashOut": 0 },
       "operations": [ \#(cashOperation) ] }
+    """#
+
+    /// docs/API.md example; `expectedCash` follows the documented formula (5000 + 2500 + 1000).
+    static let cashShiftWithDeposits = #"""
+    { "id": 3, "openedAt": "<T>", "openedBy": \#(employeeRef), "openingCash": 5000,
+      "closedAt": null, "closedBy": null, "closingCash": null, "note": null,
+      "expectedCash": 8500, "difference": null,
+      "summary": { "salesCount": 3, "revenue": 10000, "cash": 2500, "card": 5000, "transfer": 0, "qr": 0, "deposit": 2500,
+                   "refunds": 0, "cashRefunds": 0, "cashIn": 0, "cashOut": 0,
+                   "deposits": { "received": 3000, "cash": 1000, "card": 0, "transfer": 2000, "qr": 0,
+                                 "refunded": 0, "cashRefunded": 0, "retained": 0 } },
+      "operations": [] }
     """#
 
     static let botMessage = #"""
@@ -175,6 +225,17 @@ enum Fixtures {
       "topProducts": [ { "productId": 1, "name": "Лабрет", "quantity": 7, "revenue": 10500 } ],
       "topServices": [ { "serviceId": 3, "name": "Прокол мочки", "quantity": 12, "revenue": 30000 } ],
       "byMaster": [ { "employee": \#(employeeRef), "appointmentsCompleted": 10, "revenue": 50000 } ],
+      "newClients": 14, "appointmentsCompleted": 35, "noShows": 2 }
+    """#
+
+    static let reportWithDeposits = #"""
+    { "from": "<T>", "to": "<T>",
+      "revenue": 120000, "salesCount": 40, "averageCheck": 3000, "refunds": 2500,
+      "payments": { "cash": 30000, "card": 0, "transfer": 20000, "qr": 60000, "deposit": 10000 },
+      "deposits": { "received": 15000, "cash": 2000, "card": 0, "transfer": 3000, "qr": 10000,
+                    "applied": 10000, "refunded": 1000, "retained": 2000, "held": 7000 },
+      "servicesRevenue": 90000, "productsRevenue": 30000,
+      "byDay": [], "topProducts": [], "topServices": [], "byMaster": [],
       "newClients": 14, "appointmentsCompleted": 35, "noShows": 2 }
     """#
 }

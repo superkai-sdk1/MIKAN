@@ -8,6 +8,7 @@ struct AppointmentBlock: View {
 
     private var color: Color { .master(appointment.master.color) }
     private var showsTitle: Bool { !compact && height >= 44 }
+    private var depositMark: DepositMark? { DepositMark.of(appointment) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -20,7 +21,7 @@ struct AppointmentBlock: View {
                     ViewThatFits(in: .horizontal) {
                         details
                         VStack(alignment: .leading, spacing: 1) {
-                            timeLabel
+                            timeRow
                             initialsLabel
                         }
                         initialsLabel
@@ -49,14 +50,7 @@ struct AppointmentBlock: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 3) {
-                timeLabel
-                if appointment.status == .completed {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.green)
-                }
-            }
+            timeRow
             Text(compact ? shortName : appointment.client.name)
                 .font(compact ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                 .lineLimit(compact ? 2 : 1)
@@ -65,6 +59,23 @@ struct AppointmentBlock: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+            }
+        }
+    }
+
+    /// Start time with the prepayment glyph and the completion check.
+    private var timeRow: some View {
+        HStack(spacing: 3) {
+            timeLabel
+            if let depositMark {
+                Image(systemName: depositMark.symbol)
+                    .font(.caption2)
+                    .foregroundStyle(depositMark.color)
+            }
+            if appointment.status == .completed {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
             }
         }
     }
@@ -94,6 +105,7 @@ struct AppointmentBlock: View {
             "мастер \(appointment.master.name)",
         ]
         if appointment.status != .scheduled { parts.append(appointment.status.title) }
+        if let depositMark { parts.append(depositMark.accessibilityText) }
         return parts.joined(separator: ", ")
     }
 }
