@@ -87,7 +87,8 @@ private struct PaymentBreakdownCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Способы оплаты").font(.headline)
-            ForEach(PaymentMethod.allCases.filter { $0 != .qr || payments.qr > 0 }) { method in
+            // Card is no longer taken and QR may be off: they show only for periods that have them.
+            ForEach(PaymentMethod.allCases.filter { ![.card, .qr].contains($0) || PaymentSplit(payments)[$0] > 0 }) { method in
                 let amount = PaymentSplit(payments)[method]
                 ShareRow(title: method.title, systemImage: method.symbol, amount: amount, total: payments.total)
             }

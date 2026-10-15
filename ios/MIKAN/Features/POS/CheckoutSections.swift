@@ -88,84 +88,49 @@ struct CheckoutTotalsSection: View {
     }
 }
 
-struct PaymentSplitSection: View {
+/// «Запись»: completes the appointment (and schedules aftercare) right before the sale.
+struct CheckoutAppointmentSection: View {
     @Environment(CartStore.self) private var cart
-    var methods: [PaymentMethod] = PaymentMethod.allCases
-
-    /// Four labels do not fit one row on a phone: two rows of two.
-    private var oneTapColumns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 8), count: methods.count > 3 ? 2 : max(methods.count, 1))
-    }
 
     var body: some View {
         @Bindable var cart = cart
-        Section {
-            ForEach(methods) { method in
-                NumberField.money(method.title, value: $cart.split[method], systemImage: method.symbol)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(cart.deposit > 0 ? "Остаток одним способом" : "Всё одним способом")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                LazyVGrid(columns: oneTapColumns, spacing: 8) {
-                    ForEach(methods) { method in
-                        Button {
-                            withAnimation(.snappy) { cart.applyOneTap(method) }
-                        } label: {
-                            Label(method.oneTapTitle, systemImage: method.symbol)
-                                .labelStyle(.titleOnly)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.small)
-                        .accessibilityLabel(cart.deposit > 0 ? "Остаток \(method.instrumental)" : "Всё \(method.instrumental)")
-                    }
+        if let appointment = cart.appointment, cart.hasPendingAppointment {
+            Section {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(appointment.displayTitle).font(.headline)
+                    Text("\(DateText.dateTime(appointment.startsAt)) · \(appointment.master.name)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .padding(.vertical, 4)
-            RemainingIndicator(remaining: cart.remaining)
-        } header: {
-            Text("Оплата")
-        } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                if cart.deposit > 0 {
-                    Text("Предоплата \(Money.format(cart.deposit)) уже получена и учтена в «Перевод». Если её вносили иначе — перенесите сумму в нужный способ.")
-                }
-                if cart.split.qr > 0 {
-                    Text("Сумму «QR-код» клиент оплатит через СБП по коду на экране. Продажа проведётся, как только банк подтвердит оплату.")
+                .accessibilityElement(children: .combine)
+                Toggle("Завершить запись при оплате", isOn: $cart.completesAppointment)
+                Toggle("Отправить памятку по уходу", isOn: Binding(
+                    get: { cart.sendsAftercare && cart.canSendAftercare && cart.completesAppointment },
+                    set: { cart.sendsAftercare = $0 }
+                ))
+                .disabled(!cart.canSendAftercare || !cart.completesAppointment)
+            } header: {
+                Text("Запись")
+            } footer: {
+                if !cart.completesAppointment {
+                    Text("После оплаты запись всё равно отметится завершённой, но без памятки по уходу.")
+                } else if !cart.canSendAftercare {
+                    Text("Клиент не подключил Telegram-бота")
+                } else if cart.sendsAftercare {
+                    Text("Памятка по шаблону услуги придёт клиенту в Telegram.")
                 }
             }
         }
-    }
-}
-
-private struct RemainingIndicator: View {
-    let remaining: Int
-
-    var body: some View {
-        Group {
-            if remaining == 0 {
-                Label("Сумма распределена", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            } else if remaining > 0 {
-                Label("Осталось распределить: \(Money.format(remaining))", systemImage: "exclamationmark.circle.fill")
-                    .foregroundStyle(.orange)
-            } else {
-                Label("Лишние \(Money.format(-remaining)) — уменьшите оплату", systemImage: "xmark.circle.fill")
-                    .foregroundStyle(.red)
-            }
-        }
-        .font(.subheadline.weight(.semibold))
-        .monospacedDigit()
-        .contentTransition(.numericText())
-        .animation(.snappy, value: remaining)
     }
 }
 
 /// Receipt summary shown after a successful sale.
 struct SaleReceiptView: View {
     let sale: Sale
+    /// Change for the cash the client handed over (checkout only, not stored on the server).
+    var cashChange: Int?
+    /// Set when this checkout completed the appointment before the sale.
+    var completion: CompleteAppointmentResult?
     let onDone: () -> Void
 
     var body: some View {
@@ -185,10 +150,30 @@ struct SaleReceiptView: View {
                 .padding(.vertical, 8)
             }
             .listRowBackground(Color.clear)
+            if let cashChange, cashChange > 0 {
+                Section {
+                    LabeledContent {
+                        MoneyText(cashChange).font(.title2.weight(.bold))
+                    } label: {
+                        Label("Сдача", systemImage: "banknote").font(.title3.weight(.semibold))
+                    }
+                }
+            }
             SaleItemsSection(sale: sale)
             SalePaymentsSection(payments: sale.payments)
             if let client = sale.client {
                 Section("Клиент") { Text(client.name) }
+            }
+            if let completion {
+                Section("Запись") {
+                    Label("Запись завершена", systemImage: "checkmark.circle")
+                    if completion.scheduledMessages > 0 {
+                        Label(
+                            "Памятка по уходу: " + Plural.count(completion.scheduledMessages, one: "сообщение", few: "сообщения", many: "сообщений"),
+                            systemImage: "paperplane"
+                        )
+                    }
+                }
             }
         }
         .safeAreaBar(edge: .bottom) {

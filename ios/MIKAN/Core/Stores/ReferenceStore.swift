@@ -13,7 +13,6 @@ final class ReferenceStore {
     private var loadedEmployees = false
     private var loadedServices = false
     private var loadedTemplates = false
-    private var loadedQrConfig = false
 
     init(api: APIClient) {
         self.api = api
@@ -51,10 +50,10 @@ final class ReferenceStore {
         loadedTemplates = true
     }
 
+    /// Asked again on every checkout until enabled, so turning QR on at the server needs no app restart.
     func ensureQrPaymentsConfig() async throws {
-        guard !loadedQrConfig else { return }
+        guard !qrPaymentsEnabled else { return }
         qrPaymentsEnabled = try await api.qrPaymentsConfig().enabled
-        loadedQrConfig = true
     }
 
     func replaceEmployees(_ items: [Employee]) {
@@ -80,6 +79,5 @@ final class ReferenceStore {
         loadedServices = false
         loadedTemplates = false
         qrPaymentsEnabled = false
-        loadedQrConfig = false
     }
 }

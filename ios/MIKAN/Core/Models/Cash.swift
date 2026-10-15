@@ -14,6 +14,9 @@ nonisolated struct ShiftSummary: Codable, Hashable, Sendable {
 }
 
 extension ShiftSummary {
+    /// Everything not in the drawer: transfers, QR and card (older sales).
+    var nonCash: Int { card + transfer + qr }
+
     /// Tolerates a server without QR payments (no `qr` key).
     nonisolated init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)

@@ -324,6 +324,8 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 - `subtotal = Σ quantity × price`; `total = subtotal − discount` (`0 ≤ discount ≤ subtotal`);
   `payments.cash + payments.card + payments.transfer + payments.qr` must equal `total` (`400` otherwise).
 - `payments.qr > 0` is rejected here (`400`): a sale with a QR share is created by the server through `/qr-payments`.
+- The app no longer offers card payments (cash, transfer and QR only); `payments.card` stays in the API for older
+  sales and older app builds.
 - Product items decrement stock (`sale` movements); insufficient stock → `409 insufficient_stock`
   ("Недостаточно на складе: Лабрет (осталось 0)"). Whole sale is one transaction.
 - With `appointmentId`, the appointment gets `saleId` (and is marked `completed` if not already, without aftercare).

@@ -97,7 +97,7 @@ private struct RefundSheet: View {
                         LabeledContent("Из кассы наличными") { MoneyText(sale.payments.cash) }
                     }
                     if sale.payments.qr > 0 {
-                        LabeledContent("Оплачено по QR-коду") { MoneyText(sale.payments.qr) }
+                        LabeledContent("Оплачено по QR СБП") { MoneyText(sale.payments.qr) }
                     }
                 } footer: {
                     if sale.payments.qr > 0 {

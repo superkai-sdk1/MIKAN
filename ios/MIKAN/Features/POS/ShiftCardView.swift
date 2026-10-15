@@ -90,7 +90,7 @@ struct ShiftCardView: View {
             HStack(spacing: 20) {
                 metric("Выручка", Money.format(current.summary.revenue))
                 metric("Продажи", "\(current.summary.salesCount)")
-                metric("Картой", Money.format(current.summary.card))
+                metric("Безнал", Money.format(current.summary.nonCash))
             }
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
