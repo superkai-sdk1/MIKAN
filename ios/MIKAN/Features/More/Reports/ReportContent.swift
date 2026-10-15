@@ -87,8 +87,8 @@ private struct PaymentBreakdownCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Способы оплаты").font(.headline)
-            ForEach(PaymentMethod.allCases) { method in
-                let amount = PaymentSplit(cash: payments.cash, card: payments.card, transfer: payments.transfer)[method]
+            ForEach(PaymentMethod.allCases.filter { $0 != .qr || payments.qr > 0 }) { method in
+                let amount = PaymentSplit(payments)[method]
                 ShareRow(title: method.title, systemImage: method.symbol, amount: amount, total: payments.total)
             }
             Divider()

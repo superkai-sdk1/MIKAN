@@ -25,6 +25,8 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
+# Russian Trusted Root CA: trusted for Tochka Bank API calls only (see src/payments/tochka.ts).
+COPY --chown=node:node certs ./certs
 COPY --chown=node:node package.json ./
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node

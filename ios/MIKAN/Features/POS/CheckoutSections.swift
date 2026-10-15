@@ -90,23 +90,29 @@ struct CheckoutTotalsSection: View {
 
 struct PaymentSplitSection: View {
     @Environment(CartStore.self) private var cart
+    var methods: [PaymentMethod] = PaymentMethod.allCases
+
+    /// Four labels do not fit one row on a phone: two rows of two.
+    private var oneTapColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 8), count: methods.count > 3 ? 2 : max(methods.count, 1))
+    }
 
     var body: some View {
         @Bindable var cart = cart
         Section {
-            ForEach(PaymentMethod.allCases) { method in
+            ForEach(methods) { method in
                 NumberField.money(method.title, value: $cart.split[method], systemImage: method.symbol)
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text(cart.deposit > 0 ? "Остаток одним способом" : "Всё одним способом")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    ForEach(PaymentMethod.allCases) { method in
+                LazyVGrid(columns: oneTapColumns, spacing: 8) {
+                    ForEach(methods) { method in
                         Button {
                             withAnimation(.snappy) { cart.applyOneTap(method) }
                         } label: {
-                            Label(method.instrumental.capitalized, systemImage: method.symbol)
+                            Label(method.oneTapTitle, systemImage: method.symbol)
                                 .labelStyle(.titleOnly)
                                 .frame(maxWidth: .infinity)
                         }
@@ -122,8 +128,13 @@ struct PaymentSplitSection: View {
         } header: {
             Text("Оплата")
         } footer: {
-            if cart.deposit > 0 {
-                Text("Предоплата \(Money.format(cart.deposit)) уже получена и учтена в «Перевод». Если её вносили иначе — перенесите сумму в нужный способ.")
+            VStack(alignment: .leading, spacing: 6) {
+                if cart.deposit > 0 {
+                    Text("Предоплата \(Money.format(cart.deposit)) уже получена и учтена в «Перевод». Если её вносили иначе — перенесите сумму в нужный способ.")
+                }
+                if cart.split.qr > 0 {
+                    Text("Сумму «QR-код» клиент оплатит через СБП по коду на экране. Продажа проведётся, как только банк подтвердит оплату.")
+                }
             }
         }
     }
@@ -226,7 +237,7 @@ struct SalePaymentsSection: View {
     var body: some View {
         Section("Оплата") {
             ForEach(PaymentMethod.allCases) { method in
-                let amount = PaymentSplit(cash: payments.cash, card: payments.card, transfer: payments.transfer)[method]
+                let amount = PaymentSplit(payments)[method]
                 if amount > 0 {
                     LabeledContent {
                         MoneyText(amount)

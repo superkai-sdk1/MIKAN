@@ -52,6 +52,7 @@ export function reportSummary(db: DbOrTx, from: number, to: number) {
     cash: rangeSales.reduce((s, x) => s + x.payCash, 0),
     card: rangeSales.reduce((s, x) => s + x.payCard, 0),
     transfer: rangeSales.reduce((s, x) => s + x.payTransfer, 0),
+    qr: rangeSales.reduce((s, x) => s + x.payQr, 0),
   };
   const refunds =
     db

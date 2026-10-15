@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { BotGateway } from './bot/gateway.js';
 import type { Config } from './config.js';
 import type { Db, Sqlite } from './db/client.js';
+import type { QrProvider } from './payments/qr-provider.js';
 
 export interface Logger {
   debug(obj: unknown, msg?: string): void;
@@ -26,6 +27,8 @@ export interface AppContext {
   gateway: BotGateway;
   /** null when no AI key is configured. */
   ai: AiClient | null;
+  /** SBP QR payments (Tochka); null when the bank credentials are not configured. */
+  qr: QrProvider | null;
   /** Invoked after bot settings change (start/stop polling). */
   onBotSettingsChanged: () => void;
 }

@@ -12,6 +12,7 @@ export type AppointmentRow = Row<typeof s.appointments>;
 export type SaleRow = Row<typeof s.sales>;
 export type SaleItemRow = Row<typeof s.saleItems>;
 export type ShiftRow = Row<typeof s.cashShifts>;
+export type QrPaymentRow = Row<typeof s.qrPayments>;
 export type CashOpRow = Row<typeof s.cashOperations>;
 export type BotChatRow = Row<typeof s.botChats>;
 export type BotMessageRow = Row<typeof s.botMessages>;
@@ -200,7 +201,7 @@ export const saleOut = (sale: SaleRow, items: SaleItemRow[], client: ClientRef |
   subtotal: sale.subtotal,
   discount: sale.discount,
   total: sale.total,
-  payments: { cash: sale.payCash, card: sale.payCard, transfer: sale.payTransfer },
+  payments: { cash: sale.payCash, card: sale.payCard, transfer: sale.payTransfer, qr: sale.payQr },
   status: sale.status,
   note: sale.note,
   refundedAt: toIso(sale.refundedAt),

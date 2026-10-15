@@ -139,6 +139,7 @@ final class ModelDecodingTests: XCTestCase {
             XCTAssertEqual(sale.number, 17)
             XCTAssertEqual(sale.items.first?.type, .product)
             XCTAssertEqual(sale.payments, Payments(cash: 1500, card: 0, transfer: 0))
+            XCTAssertEqual(sale.payments.qr, 0, "a server without QR payments sends no qr key")
             XCTAssertEqual(sale.status, .completed)
             XCTAssertTrue(sale.hasProducts)
 
@@ -247,6 +248,22 @@ final class ModelDecodingTests: XCTestCase {
             XCTAssertEqual(report.byMaster.first?.employee.id, 2)
             XCTAssertEqual(report.payments.total, 120_000)
         }
+    }
+
+    func testQrPayment() throws {
+        for fractional in variants {
+            let pending = try Fixtures.decode(QrPayment.self, Fixtures.qrPaymentPending, fractional: fractional)
+            XCTAssertEqual(pending.status, .pending)
+            XCTAssertEqual(pending.amount, 3000)
+            XCTAssertTrue(pending.payload.hasPrefix("https://qr.nspk.ru/"))
+            XCTAssertNil(pending.sale)
+
+            let paid = try Fixtures.decode(QrPayment.self, Fixtures.qrPaymentPaid, fractional: fractional)
+            XCTAssertEqual(paid.status, .paid)
+            XCTAssertEqual(paid.sale?.payments, Payments(cash: 0, card: 0, transfer: 0, qr: 1500))
+            XCTAssertEqual(paid.sale?.payments.total, 1500)
+        }
+        XCTAssertTrue(try Fixtures.decode(QrPaymentsConfig.self, #"{ "enabled": true }"#).enabled)
     }
 
     func testPaginatedListWrapper() throws {

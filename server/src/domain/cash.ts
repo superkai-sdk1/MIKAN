@@ -13,6 +13,7 @@ export interface ShiftSummary {
   cash: number;
   card: number;
   transfer: number;
+  qr: number;
   refunds: number;
   cashRefunds: number;
   cashIn: number;
@@ -35,6 +36,7 @@ export function shiftSummary(db: DbOrTx, shiftId: number): ShiftSummary {
       cash: sql<number>`coalesce(sum(${sales.payCash}), 0)`,
       card: sql<number>`coalesce(sum(${sales.payCard}), 0)`,
       transfer: sql<number>`coalesce(sum(${sales.payTransfer}), 0)`,
+      qr: sql<number>`coalesce(sum(${sales.payQr}), 0)`,
     })
     .from(sales)
     .where(eq(sales.shiftId, shiftId))
@@ -61,6 +63,7 @@ export function shiftSummary(db: DbOrTx, shiftId: number): ShiftSummary {
     cash: salesAgg?.cash ?? 0,
     card: salesAgg?.card ?? 0,
     transfer: salesAgg?.transfer ?? 0,
+    qr: salesAgg?.qr ?? 0,
     refunds: refundAgg?.refunds ?? 0,
     cashRefunds: refundAgg?.cashRefunds ?? 0,
     cashIn: opsAgg?.cashIn ?? 0,

@@ -7,6 +7,7 @@ export type ErrorCode =
   | 'insufficient_stock'
   | 'schedule_conflict'
   | 'rate_limited'
+  | 'payment_provider_error'
   | 'internal';
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
@@ -18,6 +19,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   insufficient_stock: 409,
   schedule_conflict: 409,
   rate_limited: 429,
+  payment_provider_error: 502,
   internal: 500,
 };
 

@@ -21,6 +21,7 @@ import { clientRoutes } from './routes/clients.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { employeeRoutes } from './routes/employees.js';
 import { productRoutes } from './routes/products.js';
+import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { salesRoutes } from './routes/sales.js';
 import { settingsRoutes } from './routes/settings.js';
 import { uploadRoutes } from './routes/uploads.js';
@@ -158,6 +159,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         uploadRoutes(secured, ctx);
         appointmentRoutes(secured, ctx);
         salesRoutes(secured, ctx);
+        qrPaymentRoutes(secured, ctx);
         cashRoutes(secured, ctx);
         botRoutes(secured, ctx);
         settingsRoutes(secured, ctx);

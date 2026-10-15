@@ -138,6 +138,7 @@ private struct PaymentIcons: View {
             if payments.cash > 0 { icon(.cash) }
             if payments.card > 0 { icon(.card) }
             if payments.transfer > 0 { icon(.transfer) }
+            if payments.qr > 0 { icon(.qr) }
         }
         .font(.caption)
         .foregroundStyle(.secondary)

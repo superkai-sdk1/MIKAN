@@ -139,6 +139,9 @@ struct ShiftDetailView: View {
             LabeledContent("Наличные") { MoneyText(shift.summary.cash) }
             LabeledContent("Карта") { MoneyText(shift.summary.card) }
             LabeledContent("Перевод") { MoneyText(shift.summary.transfer) }
+            if shift.summary.qr > 0 {
+                LabeledContent("QR-код") { MoneyText(shift.summary.qr) }
+            }
             if shift.summary.refunds > 0 {
                 LabeledContent("Возвраты") { MoneyText(shift.summary.refunds) }
             }

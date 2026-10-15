@@ -110,6 +110,13 @@ final class CartStore {
             : PaymentSplit.all(method, total: total)
     }
 
+    /// The bank took the QR share but the server could not sell the cart: the money is already on the account,
+    /// so staff finish the sale with it recorded as a transfer.
+    func moveQrShareToTransfer() {
+        split.transfer += split.qr
+        split.qr = 0
+    }
+
     /// Fills the cart from a completed appointment: service line at the appointment price,
     /// the client, the appointment link and the deposit pre-filled into the transfer payment.
     func prefill(from appointment: Appointment) {

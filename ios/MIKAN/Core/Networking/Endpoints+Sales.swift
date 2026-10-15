@@ -25,6 +25,23 @@ extension APIClient {
         try await request(.post, "sales/\(id)/refund", body: body, idempotencyKey: idempotencyKey)
     }
 
+    func qrPaymentsConfig() async throws -> QrPaymentsConfig {
+        try await request(.get, "qr-payments/config")
+    }
+
+    /// Registers an SBP QR code for `payments.qr`; the sale is created by the server once the bank confirms it.
+    func createQrPayment(_ body: SaleBody) async throws -> QrPayment {
+        try await request(.post, "qr-payments", body: body)
+    }
+
+    func qrPayment(id: Int) async throws -> QrPayment {
+        try await request(.get, "qr-payments/\(id)")
+    }
+
+    func cancelQrPayment(id: Int) async throws -> QrPayment {
+        try await request(.post, "qr-payments/\(id)/cancel")
+    }
+
     func currentShift() async throws -> CashShift? {
         let response: CurrentShiftResponse = try await request(.get, "cash/shift/current")
         return response.shift

@@ -14,8 +14,23 @@ nonisolated struct Payments: Codable, Hashable, Sendable {
     var cash: Int
     var card: Int
     var transfer: Int
+    /// Confirmed SBP QR payment; the server rejects it in `POST /sales` (see `QrPayment`).
+    var qr: Int = 0
 
-    var total: Int { cash + card + transfer }
+    var total: Int { cash + card + transfer + qr }
+}
+
+extension Payments {
+    /// Tolerates a server without QR payments (no `qr` key).
+    nonisolated init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            cash: try container.decode(Int.self, forKey: .cash),
+            card: try container.decode(Int.self, forKey: .card),
+            transfer: try container.decode(Int.self, forKey: .transfer),
+            qr: try container.decodeIfPresent(Int.self, forKey: .qr) ?? 0
+        )
+    }
 }
 
 nonisolated struct SaleItem: Codable, Hashable, Identifiable, Sendable {

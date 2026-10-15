@@ -4,6 +4,8 @@ nonisolated enum PaymentMethod: String, CaseIterable, Identifiable, Sendable {
     case cash
     case card
     case transfer
+    /// SBP QR code through Tochka: counted only once the bank confirms the payment.
+    case qr
 
     var id: String { rawValue }
 
@@ -12,16 +14,23 @@ nonisolated enum PaymentMethod: String, CaseIterable, Identifiable, Sendable {
         case .cash: "Наличные"
         case .card: "Карта"
         case .transfer: "Перевод"
+        case .qr: "QR-код"
         }
     }
 
-    /// "наличными" / "картой" / "переводом"
+    /// "наличными" / "картой" / "переводом" / "по QR-коду"
     var instrumental: String {
         switch self {
         case .cash: "наличными"
         case .card: "картой"
         case .transfer: "переводом"
+        case .qr: "по QR-коду"
         }
+    }
+
+    /// One-tap button label: "Наличными" / "Картой" / "Переводом" / "По QR".
+    var oneTapTitle: String {
+        self == .qr ? "По QR" : instrumental.capitalized
     }
 
     var symbol: String {
@@ -29,15 +38,28 @@ nonisolated enum PaymentMethod: String, CaseIterable, Identifiable, Sendable {
         case .cash: "banknote"
         case .card: "creditcard"
         case .transfer: "arrow.left.arrow.right"
+        case .qr: "qrcode"
         }
     }
 }
 
-/// How a sale total is split between cash, card and transfer.
+/// How a sale total is split between cash, card, transfer and an SBP QR code.
 nonisolated struct PaymentSplit: Equatable, Sendable {
     var cash = 0
     var card = 0
     var transfer = 0
+    var qr = 0
+
+    init(cash: Int = 0, card: Int = 0, transfer: Int = 0, qr: Int = 0) {
+        self.cash = cash
+        self.card = card
+        self.transfer = transfer
+        self.qr = qr
+    }
+
+    init(_ payments: Payments) {
+        self.init(cash: payments.cash, card: payments.card, transfer: payments.transfer, qr: payments.qr)
+    }
 
     subscript(method: PaymentMethod) -> Int {
         get {
@@ -45,6 +67,7 @@ nonisolated struct PaymentSplit: Equatable, Sendable {
             case .cash: cash
             case .card: card
             case .transfer: transfer
+            case .qr: qr
             }
         }
         set {
@@ -52,13 +75,14 @@ nonisolated struct PaymentSplit: Equatable, Sendable {
             case .cash: cash = newValue
             case .card: card = newValue
             case .transfer: transfer = newValue
+            case .qr: qr = newValue
             }
         }
     }
 
-    var sum: Int { cash + card + transfer }
-    var hasNegative: Bool { cash < 0 || card < 0 || transfer < 0 }
-    var payments: Payments { Payments(cash: cash, card: card, transfer: transfer) }
+    var sum: Int { cash + card + transfer + qr }
+    var hasNegative: Bool { cash < 0 || card < 0 || transfer < 0 || qr < 0 }
+    var payments: Payments { Payments(cash: cash, card: card, transfer: transfer, qr: qr) }
 
     /// Positive: still to distribute; negative: overpaid.
     func remaining(for total: Int) -> Int { total - sum }

@@ -24,8 +24,21 @@ final class PaymentSplitTests: XCTestCase {
         split[.cash] = 100
         split[.card] = 200
         split[.transfer] = 300
-        XCTAssertEqual(split, PaymentSplit(cash: 100, card: 200, transfer: 300))
-        XCTAssertEqual(PaymentMethod.allCases.map { split[$0] }, [100, 200, 300])
+        split[.qr] = 400
+        XCTAssertEqual(split, PaymentSplit(cash: 100, card: 200, transfer: 300, qr: 400))
+        XCTAssertEqual(PaymentMethod.allCases.map { split[$0] }, [100, 200, 300, 400])
+        XCTAssertEqual(split.sum, 1_000)
+        XCTAssertEqual(split.payments, Payments(cash: 100, card: 200, transfer: 300, qr: 400))
+        XCTAssertEqual(PaymentSplit(split.payments), split)
+    }
+
+    func testQrShareCountsTowardsTheTotal() {
+        let split = PaymentSplit.oneTap(.qr, total: 8_000, deposit: 2_000)
+        XCTAssertEqual(split, PaymentSplit(cash: 0, card: 0, transfer: 2_000, qr: 6_000))
+        XCTAssertTrue(split.isBalanced(for: 8_000))
+        XCTAssertTrue(PaymentSplit(cash: 0, card: 0, transfer: 0, qr: -1).hasNegative)
+        XCTAssertEqual(PaymentMethod.qr.oneTapTitle, "По QR")
+        XCTAssertEqual(PaymentMethod.cash.oneTapTitle, "Наличными")
     }
 
     func testAllInOneMethod() {
@@ -102,6 +115,20 @@ final class CartStoreTests: XCTestCase {
         XCTAssertEqual(item.name, "Прокол мочки")
         XCTAssertEqual(item.price, 8_000)
         XCTAssertEqual(body.payments, Payments(cash: 0, card: 6_000, transfer: 2_000))
+    }
+
+    func testQrOneTapSendsTheRestAsQrShare() {
+        let cart = CartStore()
+        cart.prefill(from: appointment(price: 8_000, deposit: 2_000))
+
+        cart.applyOneTap(.qr)
+
+        XCTAssertTrue(cart.canSubmit)
+        XCTAssertEqual(cart.makeSaleBody().payments, Payments(cash: 0, card: 0, transfer: 2_000, qr: 6_000))
+
+        cart.moveQrShareToTransfer()
+        XCTAssertEqual(cart.split, PaymentSplit(cash: 0, card: 0, transfer: 8_000, qr: 0), "paid by QR but not sold: finish as a transfer")
+        XCTAssertTrue(cart.canSubmit)
     }
 
     func testAddingProductsMergesLinesAndDiscountChangesTotal() {

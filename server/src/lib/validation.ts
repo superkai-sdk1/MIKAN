@@ -28,6 +28,7 @@ const FIELD_LABELS: Record<string, string> = {
   cash: 'Наличные',
   card: 'Карта',
   transfer: 'Перевод',
+  qr: 'QR-код',
   openingCash: 'Наличные на начало смены',
   closingCash: 'Наличные в кассе',
   amount: 'Сумма',

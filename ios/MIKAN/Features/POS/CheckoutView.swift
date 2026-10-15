@@ -1,16 +1,20 @@
 import SwiftUI
 
 /// Checkout sheet: lines, client, discount, payment split → «Провести продажу» → receipt.
+/// With a QR share the button shows the bank's QR code first; the server sells the cart once it is paid.
 struct CheckoutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
     @Environment(CartStore.self) private var cart
     @Environment(ShiftStore.self) private var shift
     @Environment(ScheduleStore.self) private var schedule
+    @Environment(ReferenceStore.self) private var reference
 
     @State private var completedSale: Sale?
+    @State private var qrPayment: QrPayment?
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var qrErrorMessage: String?
     @State private var confirmsClear = false
     @State private var retryMessage: String?
 
@@ -19,14 +23,30 @@ struct CheckoutView: View {
             Group {
                 if let completedSale {
                     SaleReceiptView(sale: completedSale) { finish() }
+                } else if let qrPayment {
+                    QRPaymentView(
+                        payment: qrPayment,
+                        isRenewing: isSubmitting,
+                        onPaid: { sale in Task { await complete(sale) } },
+                        onPaidWithoutSale: {
+                            withAnimation(.smooth) {
+                                cart.moveQrShareToTransfer()
+                                self.qrPayment = nil
+                            }
+                        },
+                        onBack: { withAnimation(.smooth) { self.qrPayment = nil } },
+                        onRenew: startQrPayment
+                    )
+                    .id(qrPayment.id)
                 } else {
                     form
                 }
             }
-            .navigationTitle(completedSale == nil ? "Оформление" : "Продажа проведена")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .errorAlert($errorMessage, title: "Продажа не проведена")
+            .errorAlert($qrErrorMessage, title: "QR-код не создан")
             .retryAlert($retryMessage, title: "Продажа могла пройти", retry: submit)
             .confirmationDialog("Очистить корзину?", isPresented: $confirmsClear, titleVisibility: .visible) {
                 Button("Очистить", role: .destructive) {
@@ -37,15 +57,26 @@ struct CheckoutView: View {
             }
             .sensoryFeedback(.success, trigger: completedSale != nil)
         }
-        .interactiveDismissDisabled(isSubmitting)
+        .interactiveDismissDisabled(isSubmitting || qrPayment != nil)
+        .task { try? await reference.ensureQrPaymentsConfig() }
         .onDisappear {
             if completedSale != nil { cart.clear() }
         }
     }
 
+    private var title: String {
+        if completedSale != nil { return "Продажа проведена" }
+        return qrPayment == nil ? "Оформление" : "Оплата по QR"
+    }
+
+    /// QR appears once the server says it takes QR payments (or the cart already has a QR share).
+    private var paymentMethods: [PaymentMethod] {
+        reference.qrPaymentsEnabled || cart.split.qr > 0 ? PaymentMethod.allCases : PaymentMethod.allCases.filter { $0 != .qr }
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if completedSale == nil {
+        if completedSale == nil && qrPayment == nil {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Закрыть", role: .close) { dismiss() }
             }
@@ -61,7 +92,7 @@ struct CheckoutView: View {
             CheckoutLinesSection()
             CheckoutClientSection()
             CheckoutTotalsSection()
-            PaymentSplitSection()
+            PaymentSplitSection(methods: paymentMethods)
         }
         .safeAreaBar(edge: .bottom) {
             submitButton
@@ -82,9 +113,15 @@ struct CheckoutView: View {
     private var submitButton: some View {
         Button(action: submit) {
             ZStack {
-                Text("Провести продажу · \(Money.format(cart.total))")
-                    .monospacedDigit()
-                    .opacity(isSubmitting ? 0 : 1)
+                Group {
+                    if cart.split.qr > 0 {
+                        Label("Показать QR-код · \(Money.format(cart.split.qr))", systemImage: "qrcode")
+                    } else {
+                        Text("Провести продажу · \(Money.format(cart.total))")
+                    }
+                }
+                .monospacedDigit()
+                .opacity(isSubmitting ? 0 : 1)
                 if isSubmitting { ProgressView().tint(.white) }
             }
             .font(.headline)
@@ -98,6 +135,14 @@ struct CheckoutView: View {
     }
 
     private func submit() {
+        if cart.split.qr > 0 {
+            startQrPayment()
+        } else {
+            createSale()
+        }
+    }
+
+    private func createSale() {
         let body = cart.makeSaleBody()
         // The same cart resends the same key, so a retry after a lost response cannot create a second sale.
         let key = cart.saleIdempotencyKey(for: body)
@@ -114,8 +159,26 @@ struct CheckoutView: View {
         }
     }
 
+    /// Nothing is sold yet: a lost response only leaves an unseen code behind, so no idempotency key is needed.
+    private func startQrPayment() {
+        let body = cart.makeSaleBody()
+        isSubmitting = true
+        Task {
+            defer { isSubmitting = false }
+            do {
+                let payment = try await api.createQrPayment(body)
+                withAnimation(.smooth) { qrPayment = payment }
+            } catch {
+                qrErrorMessage = error.userMessage
+            }
+        }
+    }
+
     private func complete(_ sale: Sale) async {
-        withAnimation(.smooth) { completedSale = sale }
+        withAnimation(.smooth) {
+            completedSale = sale
+            qrPayment = nil
+        }
         await shift.refresh()
         if sale.appointmentId != nil {
             await schedule.refreshVisible()

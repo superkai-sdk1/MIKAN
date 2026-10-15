@@ -109,6 +109,12 @@ enum PreviewData {
         status: .completed, note: nil, refundedAt: nil, refundReason: nil, createdAt: now
     )
 
+    static let qrPayment = QrPayment(
+        id: 5, status: .pending, amount: 3500,
+        payload: "https://qr.nspk.ru/AD10001B38T99KA99CD8S37FMTH8CFQ7?type=02&bank=100000000065&sum=350000&cur=RUB&crc=43B6",
+        expiresAt: Date.now.addingTimeInterval(9 * 60), error: nil, sale: nil, createdAt: .now
+    )
+
     static let shift = CashShift(
         id: 3, openedAt: at(hour: 10, minute: 2), openedBy: anna.ref, openingCash: 5000,
         closedAt: nil, closedBy: nil, closingCash: nil, note: nil, expectedCash: 7500, difference: nil,
