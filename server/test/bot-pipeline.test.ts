@@ -42,7 +42,7 @@ describe('bot AI pipeline', () => {
     });
 
     it('answers with a cached stable system prompt, low effort, auto tool choice and no fallbacks', async () => {
-      await make(t, '/api/services', { name: 'Прокол мочки', category: 'piercing', price: 2500, durationMin: 30 });
+      const lobe = await make(t, '/api/services', { name: 'Прокол мочки', category: 'piercing', price: 2500, durationMin: 30 });
       ai.push(message([text('Прокол мочки стоит 2 500 ₽.')]));
       await say('Сколько стоит прокол мочки?');
 
@@ -53,10 +53,10 @@ describe('bot AI pipeline', () => {
       expect(params.tool_choice).toEqual({ type: 'auto' });
       expect(params).not.toHaveProperty('fallbacks');
       expect(params).not.toHaveProperty('thinking');
-      expect(params.tools?.map((tool) => (tool as Anthropic.Tool).name)).toEqual(['create_booking_request', 'handoff_to_staff', 'show_products']);
+      expect(params.tools?.map((tool) => (tool as Anthropic.Tool).name)).toEqual(['create_booking_request', 'handoff_to_staff', 'show_products', 'show_service']);
       const system = params.system as Anthropic.TextBlockParam[];
       expect(system[0]!.cache_control).toEqual({ type: 'ephemeral' });
-      expect(system[0]!.text).toContain('• Прокол мочки (пирсинг): 2 500 ₽, около 30 мин');
+      expect(system[0]!.text).toContain(`### Пирсинг\n• [id ${lobe.id}] Прокол мочки · 2 500 ₽ · около 30 мин`);
       expect(system[0]!.text).toContain('### Возраст 18+ и согласие родителей');
       expect(system[0]!.text).not.toContain('⚠️');
       expect(system[1]!.text).toContain('Клиент не идентифицирован, имя в Telegram: Мария');

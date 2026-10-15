@@ -60,7 +60,10 @@ describe('settings, catalog, knowledge and uploads', () => {
     await make(t, '/api/services', { name: 'Б-услуга', category: 'tattoo', price: 5000, priceFrom: true, durationMin: 60, sort: 1 });
     const a = await make(t, '/api/services', { name: 'А-услуга', category: 'piercing', price: 2500, durationMin: 30, sort: 1, aftercareTemplateId: 2 });
     const first = await make(t, '/api/services', { name: 'Я-первая', category: 'other', price: 0, durationMin: 15, sort: 0, description: 'Консультация' });
-    expect(first).toEqual({ id: first.id, name: 'Я-первая', category: 'other', price: 0, priceFrom: false, durationMin: 15, description: 'Консультация', aftercareTemplateId: null, active: true, sort: 0 });
+    expect(first).toEqual({
+      id: first.id, name: 'Я-первая', category: 'other', group: null, price: 0, priceMax: null, priceFrom: false, durationMin: 15,
+      description: 'Консультация', imageUrl: null, imagePrompt: null, photos: [], variants: [], aftercareTemplateId: null, active: true, sort: 0,
+    });
     const names = async (q = '') => (await t.api('GET', `/api/services${q}`)).json().items.map((s: { name: string }) => s.name);
     expect(await names()).toEqual(['Я-первая', 'А-услуга', 'Б-услуга']);
     await t.api('PATCH', `/api/services/${a.id}`, { active: false, aftercareTemplateId: null, price: 3000 });

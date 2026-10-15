@@ -20,6 +20,7 @@ import { catalogRoutes } from './routes/catalog.js';
 import { clientRoutes } from './routes/clients.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { employeeRoutes } from './routes/employees.js';
+import { historyRoutes } from './routes/history.js';
 import { productRoutes } from './routes/products.js';
 import { salesRoutes } from './routes/sales.js';
 import { settingsRoutes } from './routes/settings.js';
@@ -155,6 +156,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         clientRoutes(secured, ctx);
         catalogRoutes(secured, ctx);
         productRoutes(secured, ctx);
+        historyRoutes(secured, ctx);
         uploadRoutes(secured, ctx);
         appointmentRoutes(secured, ctx);
         salesRoutes(secured, ctx);

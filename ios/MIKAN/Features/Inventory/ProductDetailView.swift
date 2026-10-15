@@ -7,10 +7,13 @@ struct ProductDetailView: View {
 
     @State private var product: Product
     @State private var movements = Remote<[StockMovement]>()
+    @State private var purchases = Remote<[HistoryEntry]>()
+    @State private var purchasesTotal = 0
     @State private var movementType: MovementType?
     @State private var showsEditor = false
 
     private static let historyLimit = 30
+    private static let purchasesPreviewLimit = 5
 
     init(product: Product, categories: Set<String>, onChange: @escaping (Product) -> Void) {
         _product = State(initialValue: product)
@@ -27,6 +30,7 @@ struct ProductDetailView: View {
                     quantityCard
                     actions
                     infoCard
+                    if showsPurchases { purchasesCard }
                     historyCard
                 }
                 .padding(.horizontal, 16)
@@ -161,6 +165,47 @@ struct ProductDetailView: View {
         .cardStyle()
     }
 
+    /// Jewelry is sold at the POS; consumables only show buyers when someone actually bought one.
+    private var showsPurchases: Bool { product.kind == .jewelry || purchasesTotal > 0 }
+
+    /// Last buyers with a link to the full list.
+    private var purchasesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Кто покупал").font(.headline)
+            if let items = purchases.value {
+                if items.isEmpty {
+                    Text("Покупок пока не было").foregroundStyle(.secondary)
+                }
+                ForEach(items) { entry in
+                    HistoryEntryLink(entry: entry, showsClient: true)
+                        .buttonStyle(.plain)
+                    if entry.id != items.last?.id || purchasesTotal > items.count { Divider() }
+                }
+                if purchasesTotal > items.count {
+                    NavigationLink {
+                        ProductPurchasesView(product: product)
+                    } label: {
+                        HStack {
+                            Text("Все покупки (\(purchasesTotal))")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(.rect)
+                    }
+                }
+            } else if let failure = purchases.failure {
+                Text(failure).foregroundStyle(.secondary)
+                Button("Повторить") { Task { await loadPurchases() } }
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        }
+        .cardStyle()
+        .remoteErrorAlert(purchases)
+    }
+
     private func reload() async {
         do {
             apply(try await api.product(id: product.id))
@@ -169,12 +214,23 @@ struct ProductDetailView: View {
         } catch {
             movements.transientError = error.userMessage
         }
-        await loadMovements()
+        async let movementsLoad: Void = loadMovements()
+        async let purchasesLoad: Void = loadPurchases()
+        _ = await (movementsLoad, purchasesLoad)
     }
 
     private func loadMovements() async {
         let id = product.id
         await movements.load { try await api.productMovements(productId: id, limit: Self.historyLimit).items }
+    }
+
+    private func loadPurchases() async {
+        let id = product.id
+        await purchases.load {
+            let page = try await api.productHistory(id: id, limit: Self.purchasesPreviewLimit)
+            purchasesTotal = page.total ?? page.items.count
+            return page.items
+        }
     }
 
     private func apply(_ updated: Product) {

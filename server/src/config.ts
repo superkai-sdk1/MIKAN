@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
+import { SERVICE_IMAGE_MODEL } from './lib/service-images.js';
 
 /** Treat empty env strings as "not set". */
 const optionalString = z.preprocess(
@@ -42,6 +43,10 @@ const envSchema = z.object({
     z.enum(['bearer', 'x-api-key']).optional(),
   ),
   AI_MODEL: z.string().trim().min(1).default('claude-opus-5-5'),
+  AI_IMAGE_MODEL: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined),
+    z.string().default(SERVICE_IMAGE_MODEL),
+  ),
   AI_HTTPS_PROXY: optionalString,
   AI_MAX_TOKENS: intWithDefault(4096, 256, 64_000),
   AI_DAILY_LIMIT: intWithDefault(500, 0, 1_000_000),
@@ -62,6 +67,8 @@ export interface Config {
     apiKey: string | null;
     auth: 'bearer' | 'x-api-key';
     model: string;
+    /** Polza Media API model for service cover pictures. */
+    imageModel: string;
     maxTokens: number;
     httpsProxy: string | null;
     dailyLimit: number;
@@ -94,6 +101,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       // A custom gateway (e.g. Polza) usually expects a Bearer token; Anthropic direct uses x-api-key.
       auth: e.AI_AUTH ?? (baseUrl ? 'bearer' : 'x-api-key'),
       model: e.AI_MODEL,
+      imageModel: e.AI_IMAGE_MODEL,
       maxTokens: e.AI_MAX_TOKENS,
       httpsProxy: e.AI_HTTPS_PROXY ?? null,
       dailyLimit: e.AI_DAILY_LIMIT,

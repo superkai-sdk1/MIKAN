@@ -21,6 +21,15 @@ nonisolated enum Money {
         isFrom ? "от " + format(amount) : format(amount)
     }
 
+    /// Catalog price of a service: «2 500 ₽», «от 15 000 ₽», «от 2 000 до 5 000 ₽», «до 10 000 ₽», «Бесплатно».
+    static func servicePrice(_ price: Int, max: Int?, from isFrom: Bool) -> String {
+        if let max {
+            return price > 0 ? "от " + group(UInt(Swift.max(0, price))) + " до " + format(max) : "до " + format(max)
+        }
+        if isFrom { return "от " + format(price) }
+        return price == 0 ? "Бесплатно" : format(price)
+    }
+
     /// Compact axis labels: 1500 → "1,5 тыс.", 120000 → "120 тыс.".
     static func compact(_ amount: Int) -> String {
         let value = Double(amount)

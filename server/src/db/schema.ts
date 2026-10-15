@@ -56,10 +56,22 @@ export const services = sqliteTable('services', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   category: text('category').notNull(),
+  /** Free-text subgroup inside the category, e.g. «Ухо», «Лицо», «Доп. услуги». */
+  groupName: text('group_name'),
   price: integer('price').notNull(),
+  /** Upper bound of a price range («от 2 000 до 5 000 ₽», or «до 10 000 ₽» when `price` is 0). */
+  priceMax: integer('price_max'),
   priceFrom: bool('price_from').notNull().default(false),
   durationMin: integer('duration_min').notNull(),
   description: text('description'),
+  /** Schematic cover picture (upload path): the card/catalog image the bot also sends to clients. */
+  imageUrl: text('image_url'),
+  /** What the cover picture shows (prompt subject for regeneration); `null` = derived from name and description. */
+  imagePrompt: text('image_prompt'),
+  /** JSON array of upload paths: photos of real works. */
+  photosJson: text('photos_json').notNull().default('[]'),
+  /** JSON array of `{ name, price, durationMin | null }` — priced options such as «один / два». */
+  variantsJson: text('variants_json').notNull().default('[]'),
   aftercareTemplateId: integer('aftercare_template_id').references(() => aftercareTemplates.id, {
     onDelete: 'set null',
   }),
@@ -141,6 +153,30 @@ export const appointments = sqliteTable(
     index('appointments_starts_idx').on(t.startsAt),
     index('appointments_master_idx').on(t.masterId, t.startsAt),
     index('appointments_client_idx').on(t.clientId),
+  ],
+);
+
+/**
+ * Services booked into an appointment (one row per service line). `name`, `price` and `durationMin` are snapshots,
+ * so the history keeps what was actually done even after the catalog changes. `appointments.service_id` mirrors the
+ * first line with a catalog service for older app builds.
+ */
+export const appointmentServices = sqliteTable(
+  'appointment_services',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    appointmentId: integer('appointment_id')
+      .notNull()
+      .references(() => appointments.id, { onDelete: 'cascade' }),
+    serviceId: integer('service_id').references(() => services.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    price: integer('price').notNull(),
+    durationMin: integer('duration_min'),
+    position: integer('position').notNull(),
+  },
+  (t) => [
+    index('appointment_services_appointment_idx').on(t.appointmentId, t.position),
+    index('appointment_services_service_idx').on(t.serviceId),
   ],
 );
 

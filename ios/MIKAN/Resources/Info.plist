@@ -34,7 +34,7 @@
 		<true/>
 	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>MIKAN использует фото из медиатеки, чтобы добавлять снимки украшений и расходников в каталог склада.</string>
+	<string>MIKAN использует фото из медиатеки, чтобы добавлять снимки украшений, расходников и работ в каталог склада и услуг.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

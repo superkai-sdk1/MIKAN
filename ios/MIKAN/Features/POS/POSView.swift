@@ -1,16 +1,21 @@
 import SwiftUI
 
-/// «Касса»: shift card, jewelry catalog, floating glass cart bar.
+/// «Касса»: shift card, jewelry / service catalog, floating glass cart bar.
 struct POSView: View {
     @Environment(APIClient.self) private var api
     @Environment(CartStore.self) private var cart
     @Environment(ShiftStore.self) private var shift
+    @Environment(ReferenceStore.self) private var reference
 
+    @State private var catalogKind = POSCatalog.jewelry
     @State private var catalog = Remote<[Product]>()
+    /// Load state of the service catalog; the services themselves live in `ReferenceStore`.
+    @State private var serviceCatalog = Remote<Void>()
     @State private var search = ""
     @State private var category: String?
     @State private var showsServiceSheet = false
     @State private var addCount = 0
+    @State private var hint: CatalogHint?
 
     private var categories: [String] {
         Array(Set((catalog.value ?? []).compactMap(\.category.nonEmpty))).sorted()
@@ -45,12 +50,14 @@ struct POSView: View {
             }
             .background { AuraBackground() }
             .scrollEdgeEffectStyle(.soft, for: .top)
+            .catalogHint($hint)
             .safeAreaBar(edge: .bottom) {
                 CartBar { showsServiceSheet = true }
             }
-            .searchable(text: $search, prompt: "Поиск украшений")
+            .searchable(text: $search, prompt: catalogKind.searchPrompt)
             .refreshable {
                 await load()
+                if catalogKind == .services { await loadServices(force: true) }
                 await shift.refresh()
             }
             .task {
@@ -80,17 +87,34 @@ struct POSView: View {
                 CheckoutView()
             }
             .sheet(isPresented: $showsServiceSheet) {
-                AddServiceSheet()
+                AddServiceSheet { text in showHint(text) }
             }
             .sensoryFeedback(.impact(weight: .light), trigger: addCount)
         }
     }
 
-    @ViewBuilder
     private var catalogSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Украшения")
-                .font(.title3.weight(.semibold))
+            Picker("Каталог", selection: $catalogKind) {
+                ForEach(POSCatalog.allCases) { kind in
+                    Text(kind.title).tag(kind)
+                }
+            }
+            .pickerStyle(.segmented)
+            switch catalogKind {
+            case .jewelry:
+                jewelryCatalog
+            case .services:
+                POSServiceCatalogSection(state: serviceCatalog, search: search, load: { await loadServices() }) { text in
+                    addCount += 1
+                    showHint(text)
+                }
+            }
+        }
+    }
+
+    private var jewelryCatalog: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if !categories.isEmpty {
                 CategoryChips(categories: categories, selection: $category)
             }
@@ -130,6 +154,15 @@ struct POSView: View {
 
     private func load() async {
         await catalog.load { try await api.products(kind: .jewelry) }
+    }
+
+    private func loadServices(force: Bool = false) async {
+        await serviceCatalog.load { try await reference.ensureServices(force: force) }
+    }
+
+    private func showHint(_ text: String?) {
+        guard let text else { return }
+        hint = CatalogHint(text: text)
     }
 }
 

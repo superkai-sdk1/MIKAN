@@ -84,6 +84,10 @@ final class CartStore {
         lines.filter { $0.productId == productId }.reduce(0) { $0 + $1.quantity }
     }
 
+    func quantity(ofService serviceId: Int) -> Int {
+        lines.filter { $0.kind == .service(id: serviceId) }.reduce(0) { $0 + $1.quantity }
+    }
+
     func add(product: Product) {
         if let index = lines.firstIndex(where: { $0.productId == product.id }) {
             lines[index].quantity += 1
@@ -92,8 +96,19 @@ final class CartStore {
         }
     }
 
-    func add(service: Service) {
-        lines.append(CartLine(kind: .service(id: service.id), name: service.name, unitPrice: service.price))
+    /// Adds a catalog service (or one of its variants) at its catalog price. Repeating the same service
+    /// at the same price bumps the quantity; a line whose price was edited in the receipt stays separate.
+    func add(service: Service, variant: ServiceVariant? = nil) {
+        let line = CartLine(
+            kind: .service(id: service.id),
+            name: service.lineName(variant: variant),
+            unitPrice: variant?.price ?? service.price
+        )
+        if let index = lines.firstIndex(where: { $0.kind == line.kind && $0.name == line.name && $0.unitPrice == line.unitPrice }) {
+            lines[index].quantity += 1
+        } else {
+            lines.append(line)
+        }
     }
 
     func addCustomService(name: String, price: Int) {
@@ -110,19 +125,30 @@ final class CartStore {
             : PaymentSplit.all(method, total: total)
     }
 
-    /// Fills the cart from a completed appointment: service line at the appointment price,
+    /// Fills the cart from a completed appointment: its service lines (see `serviceLines(for:)`),
     /// the client, the appointment link and the deposit pre-filled into the transfer payment.
     func prefill(from appointment: Appointment) {
         clear()
-        lines = [CartLine(
-            kind: .service(id: appointment.service?.id),
-            name: appointment.displayTitle,
-            unitPrice: appointment.price
-        )]
+        lines = Self.serviceLines(for: appointment)
         client = appointment.client
         appointmentId = appointment.id
         deposit = min(max(0, appointment.deposit), appointment.price)
         split = PaymentSplit(cash: 0, card: 0, transfer: deposit)
+    }
+
+    /// One line per booked service when their prices add up to the appointment price; otherwise
+    /// (no lines, or the price was changed for the whole appointment) a single line at the appointment price.
+    static func serviceLines(for appointment: Appointment) -> [CartLine] {
+        let booked = appointment.services
+        let bookedSum = booked.reduce(0) { $0 + $1.price }
+        guard !booked.isEmpty, bookedSum == appointment.price else {
+            return [CartLine(
+                kind: .service(id: appointment.service?.id),
+                name: appointment.displayTitle,
+                unitPrice: appointment.price
+            )]
+        }
+        return booked.map { CartLine(kind: .service(id: $0.serviceId), name: $0.name, unitPrice: $0.price) }
     }
 
     func makeSaleBody() -> SaleBody {

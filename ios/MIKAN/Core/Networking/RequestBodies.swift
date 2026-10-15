@@ -56,13 +56,24 @@ nonisolated struct ArchiveBody: Encodable, Sendable {
 nonisolated struct ServiceBody: Encodable, Sendable {
     var name: String
     var category: ServiceCategory
+    var group: Nullable<String> = nil
     var price: Int
+    var priceMax: Nullable<Int> = nil
     var priceFrom: Bool
     var durationMin: Int
     var description: Nullable<String>
+    var imageUrl: Nullable<String> = nil
+    var imagePrompt: Nullable<String> = nil
+    var photos: [String] = []
+    var variants: [ServiceVariant] = []
     var aftercareTemplateId: Nullable<Int>
     var active: Bool
     var sort: Int
+}
+
+nonisolated struct GenerateImageBody: Encodable, Sendable {
+    /// Omitted to reuse the saved `imagePrompt`.
+    var prompt: String?
 }
 
 nonisolated struct AftercareTemplateBody: Encodable, Sendable {
@@ -95,9 +106,29 @@ nonisolated struct MovementBody: Encodable, Sendable {
     var note: Nullable<String>
 }
 
+/// A booked service line; variants are resolved by the app (name/price/duration of the variant).
+nonisolated struct AppointmentServiceBody: Encodable, Hashable, Sendable {
+    var serviceId: Int?
+    var name: String
+    var price: Int
+    var durationMin: Int?
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(serviceId, forKey: .serviceId)
+        try c.encode(name, forKey: .name)
+        try c.encode(price, forKey: .price)
+        try c.encode(durationMin, forKey: .durationMin)
+    }
+
+    private enum CodingKeys: String, CodingKey { case serviceId, name, price, durationMin }
+}
+
 nonisolated struct AppointmentBody: Encodable, Sendable {
     var clientId: Int
     var masterId: Int
+    /// Replaces all service lines when set (`[]` clears them); takes precedence over the legacy `serviceId`.
+    var services: [AppointmentServiceBody]?
     var serviceId: Nullable<Int>
     var title: Nullable<String>
     var startsAt: Date

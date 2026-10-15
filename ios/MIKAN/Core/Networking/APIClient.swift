@@ -24,8 +24,10 @@ final class APIClient {
     @ObservationIgnored private let decoder = JSONCoding.makeDecoder()
     @ObservationIgnored private let logger = Logger(subsystem: "com.mikanstudio.crm", category: "api")
 
-    private static let requestTimeout: TimeInterval = 20
+    static let requestTimeout: TimeInterval = 20
     private static let uploadTimeout: TimeInterval = 60
+    /// AI picture generation answers in 1–2 minutes.
+    static let imageGenerationTimeout: TimeInterval = 240
 
     init(serverURL: URL, token: String? = nil, session: URLSession? = nil) {
         self.serverURL = serverURL
@@ -58,12 +60,13 @@ final class APIClient {
         _ path: String,
         query: [URLQueryItem] = [],
         body: (any Encodable)? = nil,
-        idempotencyKey: UUID? = nil
+        idempotencyKey: UUID? = nil,
+        timeout: TimeInterval = APIClient.requestTimeout
     ) async throws -> T {
         let payload = try body.map { try encoder.encode($0) }
         let data = try await send(
             method, path, query: query, body: payload,
-            contentType: "application/json", idempotencyKey: idempotencyKey
+            contentType: "application/json", timeout: timeout, idempotencyKey: idempotencyKey
         )
         return try decode(T.self, from: data, path: path)
     }

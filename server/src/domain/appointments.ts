@@ -1,10 +1,18 @@
 import { and, asc, eq, gt, inArray, lt, ne, notInArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { aftercareTemplates, appointments, clients, employees, services, stockMovements } from '../db/schema.js';
+import {
+  aftercareTemplates,
+  appointments,
+  appointmentServices,
+  clients,
+  employees,
+  services,
+  stockMovements,
+} from '../db/schema.js';
 import { badRequest, conflict, scheduleConflict } from '../lib/errors.js';
-import { parseSteps, type AppointmentRow } from '../lib/serialize.js';
+import { parseSteps, type AppointmentRow, type AppointmentServiceRow, type ServiceRow } from '../lib/serialize.js';
 import { formatShortDate, formatTime, MINUTE_MS } from '../lib/time.js';
-import { getAppointmentRow, getClientRow } from './refs.js';
+import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
 import { applyMovement } from './stock.js';
@@ -13,9 +21,28 @@ export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'can
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 const INACTIVE_FOR_OVERLAP = ['cancelled', 'no_show'];
 
+/** One booked service as sent by the app; omitted fields default from the catalog service. */
+export interface ServiceLineInput {
+  serviceId?: number | null;
+  name?: string | null;
+  price?: number | null;
+  durationMin?: number | null;
+}
+
+/** A resolved service line, ready to be stored in `appointment_services`. */
+interface ServiceLine {
+  serviceId: number | null;
+  name: string;
+  price: number;
+  durationMin: number | null;
+}
+
 export interface AppointmentInput {
   clientId?: number;
   masterId?: number;
+  /** Replaces all service lines when present (`[]` clears them). */
+  services?: ServiceLineInput[];
+  /** Legacy single service (older app builds); used only when `services` is absent. */
   serviceId?: number | null;
   title?: string | null;
   startsAt?: number;
@@ -86,6 +113,83 @@ function clientMustExist(db: DbOrTx, clientId: number): void {
   }
 }
 
+function resolveLines(db: DbOrTx, inputs: ServiceLineInput[]): ServiceLine[] {
+  const catalog = servicesByIds(db, inputs.map((l) => l.serviceId));
+  return inputs.map((line, index) => {
+    const name = line.name?.trim() || null;
+    if (line.serviceId != null) {
+      const service = catalog.get(line.serviceId);
+      if (!service) throw badRequest('Услуга не найдена');
+      return {
+        serviceId: service.id,
+        name: name ?? service.name,
+        price: line.price ?? service.price,
+        durationMin: line.durationMin ?? service.durationMin,
+      };
+    }
+    if (!name) throw badRequest(`Позиция №${index + 1}: укажите название услуги`);
+    return { serviceId: null, name, price: line.price ?? 0, durationMin: line.durationMin ?? null };
+  });
+}
+
+const singleServiceLine = (service: ServiceRow, price: number | undefined): ServiceLine => ({
+  serviceId: service.id,
+  name: service.name,
+  price: price ?? service.price,
+  durationMin: service.durationMin,
+});
+
+/**
+ * The service lines the appointment should have after this write, or `undefined` when they stay as they are.
+ * `services` wins; the legacy `serviceId` keeps the lines when it names the current first catalog service
+ * (`null` included: older builds always send `serviceId: null` for appointments with custom lines only), replaces
+ * them with that single service otherwise, and clears them when `null` drops the current catalog service.
+ */
+function proposedLines(db: DbOrTx, input: AppointmentInput, current: ServiceLine[]): ServiceLine[] | undefined {
+  if (input.services !== undefined) return resolveLines(db, input.services);
+  if (input.serviceId === undefined) return undefined;
+  if (input.serviceId === firstServiceId(current)) return undefined;
+  if (input.serviceId === null) return [];
+  return [singleServiceLine(loadService(db, input.serviceId), input.price)];
+}
+
+const firstServiceId = (lines: ServiceLine[]): number | null => lines.find((l) => l.serviceId != null)?.serviceId ?? null;
+const linesTotal = (lines: ServiceLine[]): number => lines.reduce((sum, l) => sum + l.price, 0);
+const linesMinutes = (lines: ServiceLine[]): number => lines.reduce((sum, l) => sum + (l.durationMin ?? 0), 0);
+
+function sameLines(a: ServiceLine[], b: ServiceLine[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (l, i) =>
+        l.serviceId === b[i]!.serviceId &&
+        l.name === b[i]!.name &&
+        l.price === b[i]!.price &&
+        l.durationMin === b[i]!.durationMin,
+    )
+  );
+}
+
+function currentLines(db: DbOrTx, appointmentId: number): AppointmentServiceRow[] {
+  return serviceLinesByAppointment(db, [appointmentId]).get(appointmentId) ?? [];
+}
+
+function writeLines(db: DbOrTx, appointmentId: number, lines: ServiceLine[]): void {
+  db.delete(appointmentServices).where(eq(appointmentServices.appointmentId, appointmentId)).run();
+  if (lines.length === 0) return;
+  db.insert(appointmentServices)
+    .values(lines.map((line, position) => ({ ...line, appointmentId, position })))
+    .run();
+}
+
+/** Default end: start + the lines' total duration, else the legacy service's duration. */
+function defaultEndsAt(db: DbOrTx, input: AppointmentInput, startsAt: number, lines: ServiceLine[]): number | undefined {
+  const minutes = linesMinutes(lines);
+  if (minutes > 0) return startsAt + minutes * MINUTE_MS;
+  if (input.serviceId != null) return startsAt + loadService(db, input.serviceId).durationMin * MINUTE_MS;
+  return undefined;
+}
+
 export function createAppointment(db: DbOrTx, input: AppointmentInput): AppointmentRow {
   return db.transaction((tx) => {
     if (input.clientId === undefined) throw badRequest('«Клиент»: обязательное поле');
@@ -93,8 +197,8 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
     if (input.startsAt === undefined) throw badRequest('«Начало»: обязательное поле');
     clientMustExist(tx, input.clientId);
     assertMaster(tx, input.masterId);
-    const service = input.serviceId != null ? loadService(tx, input.serviceId) : null;
-    const endsAt = input.endsAt ?? (service ? input.startsAt + service.durationMin * MINUTE_MS : undefined);
+    const lines = proposedLines(tx, input, []) ?? [];
+    const endsAt = input.endsAt ?? defaultEndsAt(tx, input, input.startsAt, lines);
     if (endsAt === undefined) throw badRequest('«Окончание»: обязательное поле');
     if (endsAt <= input.startsAt) throw badRequest('Окончание записи должно быть позже начала');
     const status = input.status ?? 'scheduled';
@@ -107,12 +211,12 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
       .values({
         clientId: input.clientId,
         masterId: input.masterId,
-        serviceId: service?.id ?? null,
+        serviceId: firstServiceId(lines),
         title: input.title ?? null,
         startsAt: input.startsAt,
         endsAt,
         status,
-        price: input.price ?? service?.price ?? 0,
+        price: input.price ?? linesTotal(lines),
         deposit: input.deposit ?? 0,
         notes: input.notes ?? null,
         completedAt: status === 'completed' ? now : null,
@@ -121,9 +225,25 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
       })
       .returning()
       .get();
+    writeLines(tx, row.id, lines);
     syncReminder(tx, row, now);
     return row;
   });
+}
+
+/**
+ * Older builds edit only the appointment price. When the lines are kept and the appointment has exactly one line
+ * that carried the old total, that line follows the new price (so the history shows what was charged).
+ */
+function repricedSingleLine(
+  input: AppointmentInput,
+  current: AppointmentRow,
+  keptLines: AppointmentServiceRow[],
+): { id: number; price: number } | undefined {
+  if (input.services !== undefined || input.price === undefined || input.price === current.price) return undefined;
+  const [only, ...rest] = keptLines;
+  if (!only || rest.length > 0 || only.price !== current.price) return undefined;
+  return { id: only.id, price: input.price };
 }
 
 export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInput): AppointmentRow {
@@ -131,16 +251,21 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
     const current = getAppointmentRow(tx, id);
     if (input.clientId !== undefined) clientMustExist(tx, input.clientId);
     if (input.masterId !== undefined && input.masterId !== current.masterId) assertMaster(tx, input.masterId);
-    const service = input.serviceId != null ? loadService(tx, input.serviceId) : null;
+    const before = currentLines(tx, id);
+    const proposed = proposedLines(tx, input, before);
+    // Re-sending identical lines keeps the stored rows (and their ids, used by the history).
+    const replaced = proposed !== undefined && !sameLines(proposed, before) ? proposed : undefined;
+    const lines = replaced ?? before;
+    const repriced = repricedSingleLine(input, current, replaced === undefined ? before : []);
     const next = {
       clientId: input.clientId ?? current.clientId,
       masterId: input.masterId ?? current.masterId,
-      serviceId: input.serviceId === undefined ? current.serviceId : (service?.id ?? null),
+      serviceId: firstServiceId(lines),
       title: input.title === undefined ? current.title : input.title,
       startsAt: input.startsAt ?? current.startsAt,
       endsAt: input.endsAt ?? current.endsAt,
       status: input.status ?? current.status,
-      price: input.price ?? current.price,
+      price: input.price ?? (input.services !== undefined ? linesTotal(lines) : current.price),
       deposit: input.deposit ?? current.deposit,
       notes: input.notes === undefined ? current.notes : input.notes,
     };
@@ -162,12 +287,28 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
       .where(eq(appointments.id, id))
       .returning()
       .get();
+    if (replaced) writeLines(tx, id, replaced);
+    if (repriced) {
+      tx.update(appointmentServices).set({ price: repriced.price }).where(eq(appointmentServices.id, repriced.id)).run();
+    }
     const reminderRelevant =
-      timingChanged || next.status !== current.status || next.clientId !== current.clientId ||
-      next.serviceId !== current.serviceId;
+      timingChanged || next.status !== current.status || next.clientId !== current.clientId || replaced !== undefined;
     if (reminderRelevant) syncReminder(tx, row, now);
     return row;
   });
+}
+
+/** The template of the first line (by position) whose catalog service has one; falls back to the legacy service. */
+function defaultAftercareTemplateId(db: DbOrTx, appointment: AppointmentRow): number | null {
+  const lines = currentLines(db, appointment.id);
+  const catalog = servicesByIds(db, [...lines.map((l) => l.serviceId), appointment.serviceId]);
+  const templateOf = (serviceId: number | null) =>
+    serviceId != null ? (catalog.get(serviceId)?.aftercareTemplateId ?? null) : null;
+  for (const line of lines) {
+    const templateId = templateOf(line.serviceId);
+    if (templateId != null) return templateId;
+  }
+  return templateOf(appointment.serviceId);
 }
 
 export interface CompleteInput {
@@ -209,8 +350,7 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
 
     let scheduled = 0;
     if (input.sendAftercare && !hasAftercare(tx, id)) {
-      const service = row.serviceId != null ? tx.select().from(services).where(eq(services.id, row.serviceId)).get() : undefined;
-      const templateId = input.aftercareTemplateId ?? service?.aftercareTemplateId ?? null;
+      const templateId = input.aftercareTemplateId ?? defaultAftercareTemplateId(tx, row);
       if (templateId != null) {
         const template = tx.select().from(aftercareTemplates).where(eq(aftercareTemplates.id, templateId)).get();
         if (!template) throw badRequest('Памятка по уходу не найдена');

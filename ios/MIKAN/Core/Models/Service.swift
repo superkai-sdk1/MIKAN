@@ -24,20 +24,86 @@ nonisolated enum ServiceCategory: String, Codable, CaseIterable, Identifiable, S
     }
 }
 
+/// A priced option of a service («Один» / «Два»). Booking it books `"<service> — <variant>"` at the variant price.
+nonisolated struct ServiceVariant: Codable, Hashable, Sendable {
+    var name: String
+    var price: Int
+    /// Overrides the service duration when set.
+    var durationMin: Int?
+}
+
 nonisolated struct Service: Codable, Hashable, Identifiable, Sendable {
     let id: Int
     var name: String
     var category: ServiceCategory
+    /// Subgroup inside the category («Ухо», «Лицо», «Доп. услуги»).
+    var group: String?
+    /// Base / minimal price — the default amount of a booked line.
     var price: Int
-    /// `true` means "от N ₽" — the final price is set per appointment.
+    /// Upper bound of a price range: «от 2 000 до 5 000 ₽», or «до 10 000 ₽» when `price` is 0.
+    var priceMax: Int?
+    /// `true` means the final price is set per appointment («от N ₽», or any range).
     var priceFrom: Bool
     var durationMin: Int
     var description: String?
+    /// Schematic cover picture (server-relative path); the bot sends it to clients.
+    var imageUrl: String?
+    /// What the cover picture shows — the generation prompt subject; `nil` = derived from name and description.
+    var imagePrompt: String?
+    /// Photos of real works (server-relative paths).
+    var photos: [String] = []
+    var variants: [ServiceVariant] = []
     var aftercareTemplateId: Int?
     var active: Bool
     var sort: Int
 
     var ref: ServiceRef { ServiceRef(id: id, name: name, category: category) }
+
+    /// «2 500 ₽», «от 15 000 ₽», «от 2 000 до 5 000 ₽», «до 10 000 ₽», «Бесплатно».
+    var priceText: String { Money.servicePrice(price, max: priceMax, from: priceFrom) }
+
+    /// The final price is chosen per appointment (range or «от»).
+    var hasVariablePrice: Bool { priceFrom || priceMax != nil }
+
+    /// Picture for lists and cards: the schematic cover, else the first work photo.
+    var coverPath: String? { imageUrl.nonEmpty ?? photos.first }
+
+    /// Group title used for sectioning, «Другое» when empty.
+    var groupTitle: String { group.nonEmpty ?? "Другое" }
+
+    /// Name of a booked line for the given variant: «Соски — Два».
+    func lineName(variant: ServiceVariant?) -> String {
+        guard let variant else { return name }
+        return "\(name) — \(variant.name)"
+    }
+}
+
+nonisolated extension Service {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, category, group, price, priceMax, priceFrom, durationMin, description
+        case imageUrl, imagePrompt, photos, variants, aftercareTemplateId, active, sort
+    }
+
+    /// Tolerates servers that predate service cards (no group, photos, variants, cover).
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        category = try c.decode(ServiceCategory.self, forKey: .category)
+        group = try c.decodeIfPresent(String.self, forKey: .group)
+        price = try c.decode(Int.self, forKey: .price)
+        priceMax = try c.decodeIfPresent(Int.self, forKey: .priceMax)
+        priceFrom = try c.decode(Bool.self, forKey: .priceFrom)
+        durationMin = try c.decode(Int.self, forKey: .durationMin)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        imageUrl = try c.decodeIfPresent(String.self, forKey: .imageUrl)
+        imagePrompt = try c.decodeIfPresent(String.self, forKey: .imagePrompt)
+        photos = try c.decodeIfPresent([String].self, forKey: .photos) ?? []
+        variants = try c.decodeIfPresent([ServiceVariant].self, forKey: .variants) ?? []
+        aftercareTemplateId = try c.decodeIfPresent(Int.self, forKey: .aftercareTemplateId)
+        active = try c.decode(Bool.self, forKey: .active)
+        sort = try c.decode(Int.self, forKey: .sort)
+    }
 }
 
 /// Embedded service summary used inside other entities.

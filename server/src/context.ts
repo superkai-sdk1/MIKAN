@@ -2,6 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { BotGateway } from './bot/gateway.js';
 import type { Config } from './config.js';
 import type { Db, Sqlite } from './db/client.js';
+import type { GeneratedImage, ImageGenConfig } from './lib/service-images.js';
 
 export interface Logger {
   debug(obj: unknown, msg?: string): void;
@@ -18,6 +19,9 @@ export interface AiClient {
   createMessage(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
 }
 
+/** Generates one picture from a prompt (Polza Media API in prod, a fake in tests). */
+export type ImageGenerator = (config: ImageGenConfig, prompt: string) => Promise<GeneratedImage>;
+
 export interface AppContext {
   db: Db;
   sqlite: Sqlite;
@@ -26,6 +30,8 @@ export interface AppContext {
   gateway: BotGateway;
   /** null when no AI key is configured. */
   ai: AiClient | null;
+  /** Overrides the real image generator (tests); defaults to `generateImage` from lib/service-images. */
+  generateImage?: ImageGenerator;
   /** Invoked after bot settings change (start/stop polling). */
   onBotSettingsChanged: () => void;
 }

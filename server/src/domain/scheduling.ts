@@ -3,6 +3,7 @@ import type { DbOrTx } from '../db/client.js';
 import { appointments, clients, employees, scheduledMessages, services } from '../db/schema.js';
 import type { AftercareStep, AppointmentRow, ClientRow } from '../lib/serialize.js';
 import { aftercareSendAt, formatHumanDateTime, HOUR_MS } from '../lib/time.js';
+import { serviceLinesByAppointment } from './refs.js';
 import { getBotSettings, getStudioSettings, type StudioSettings } from './settings.js';
 
 export const ACTIVE_APPOINTMENT_STATUSES = ['scheduled', 'confirmed'] as const;
@@ -15,14 +16,14 @@ export function aftercareText(studioName: string, dayOffset: number, text: strin
 export function reminderText(
   studio: StudioSettings,
   startsAt: number,
-  serviceName: string | null,
+  serviceNames: string[],
   masterName: string | null,
 ): string {
   const lines = [
     `🗓 Напоминаем о записи в ${studio.name}`,
     `Когда: ${formatHumanDateTime(startsAt, studio.timezone)}`,
   ];
-  if (serviceName) lines.push(`Услуга: ${serviceName}`);
+  if (serviceNames.length > 0) lines.push(`${serviceNames.length > 1 ? 'Услуги' : 'Услуга'}: ${serviceNames.join(', ')}`);
   if (masterName) lines.push(`Мастер: ${masterName}`);
   if (studio.address.trim()) lines.push(`Адрес: ${studio.address.trim()}`);
   lines.push('', 'Если планы изменились — пожалуйста, напишите нам здесь.');
@@ -44,6 +45,18 @@ export function cancelPendingForAppointment(db: DbOrTx, appointmentId: number, k
   return result.changes;
 }
 
+/** What the reminder names: the booked service lines, else the legacy service, else the appointment title. */
+function reminderServiceNames(db: DbOrTx, appointment: AppointmentRow): string[] {
+  const lines = serviceLinesByAppointment(db, [appointment.id]).get(appointment.id) ?? [];
+  if (lines.length > 0) return lines.map((l) => l.name);
+  const legacy =
+    appointment.serviceId != null
+      ? db.select().from(services).where(eq(services.id, appointment.serviceId)).get()
+      : undefined;
+  const name = legacy?.name ?? appointment.title;
+  return name ? [name] : [];
+}
+
 /** Replaces the pending reminder of an appointment according to its current state. */
 export function syncReminder(db: DbOrTx, appointment: AppointmentRow, now = Date.now()): void {
   cancelPendingForAppointment(db, appointment.id, 'reminder');
@@ -55,9 +68,6 @@ export function syncReminder(db: DbOrTx, appointment: AppointmentRow, now = Date
   const sendAt = appointment.startsAt - bot.reminderHoursBefore * HOUR_MS;
   if (sendAt <= now) return;
   const studio = getStudioSettings(db);
-  const service = appointment.serviceId
-    ? db.select().from(services).where(eq(services.id, appointment.serviceId)).get()
-    : undefined;
   const master = db.select().from(employees).where(eq(employees.id, appointment.masterId)).get();
   db.insert(scheduledMessages)
     .values({
@@ -66,7 +76,7 @@ export function syncReminder(db: DbOrTx, appointment: AppointmentRow, now = Date
       appointmentId: appointment.id,
       kind: 'reminder',
       sendAt,
-      text: reminderText(studio, appointment.startsAt, service?.name ?? appointment.title, master?.name ?? null),
+      text: reminderText(studio, appointment.startsAt, reminderServiceNames(db, appointment), master?.name ?? null),
       status: 'pending',
       createdAt: now,
     })

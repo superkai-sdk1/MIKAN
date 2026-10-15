@@ -39,14 +39,24 @@ enum PreviewData {
     static let clients = [ivan, maria]
 
     static let lobe = Service(
-        id: 3, name: "Прокол мочки", category: .piercing, price: 2500, priceFrom: false, durationMin: 30,
-        description: "Прокол титаном G23", aftercareTemplateId: 2, active: true, sort: 0
+        id: 3, name: "Прокол мочки", category: .piercing, group: "Ухо", price: 1600, priceFrom: false, durationMin: 30,
+        description: "Lobe — классический прокол мочки уха.", aftercareTemplateId: 2, active: true, sort: 0
     )
     static let tattoo = Service(
-        id: 4, name: "Тату до 10 см", category: .tattoo, price: 8000, priceFrom: true, durationMin: 120,
-        description: nil, aftercareTemplateId: 1, active: true, sort: 1
+        id: 4, name: "Мини тату до 5 см", category: .tattoo, group: "Тату", price: 2000, priceMax: 5000, priceFrom: true,
+        durationMin: 60, description: "Итоговая стоимость зависит от объёма и сложности.", aftercareTemplateId: 1,
+        active: true, sort: 1
     )
-    static let services = [lobe, tattoo]
+    static let nipple = Service(
+        id: 5, name: "Соски", category: .piercing, group: "Тело", price: 2500, priceFrom: false, durationMin: 45,
+        description: "Nipple — прокол проходит через сосок, избегая ареолы.",
+        variants: [
+            ServiceVariant(name: "Один", price: 2500, durationMin: nil),
+            ServiceVariant(name: "Два", price: 4000, durationMin: 60),
+        ],
+        aftercareTemplateId: 2, active: true, sort: 2
+    )
+    static let services = [lobe, tattoo, nipple]
 
     static let template = AftercareTemplate(
         id: 1, name: "Уход за татуировкой", category: .tattoo,
@@ -70,7 +80,12 @@ enum PreviewData {
             notes: nil, saleId: nil, completedAt: nil, createdAt: now, updatedAt: now
         ),
         Appointment(
-            id: 3, client: ivanRef, master: anna.ref, service: lobe.ref, title: nil,
+            id: 3, client: ivanRef, master: anna.ref, service: lobe.ref,
+            services: [
+                AppointmentServiceLine(id: 1, serviceId: 3, name: "Прокол мочки", category: .piercing, price: 1600, durationMin: 30),
+                AppointmentServiceLine(id: 2, serviceId: 5, name: "Соски — Один", category: .piercing, price: 900, durationMin: nil),
+            ],
+            title: nil,
             startsAt: at(hour: 17), endsAt: at(hour: 17, minute: 30), status: .completed, price: 2500, deposit: 0,
             notes: nil, saleId: 9, completedAt: now, createdAt: now, updatedAt: now
         ),
@@ -108,6 +123,19 @@ enum PreviewData {
         payments: Payments(cash: 1500, card: 2000, transfer: 0),
         status: .completed, note: nil, refundedAt: nil, refundReason: nil, createdAt: now
     )
+
+    static let historyEntries = [
+        HistoryEntry(
+            id: "as1", kind: .service, date: at(hour: 17), name: "Прокол мочки", serviceId: 3, productId: nil,
+            quantity: 1, price: 1600, total: 1600, client: ivanRef, employee: anna.ref, appointmentId: 3,
+            saleId: 9, saleNumber: 17, refunded: false
+        ),
+        HistoryEntry(
+            id: "si1", kind: .product, date: at(hour: 17, minute: 40), name: "Лабрет", serviceId: nil, productId: 1,
+            quantity: 2, price: 1500, total: 3000, client: ivanRef, employee: anna.ref, appointmentId: nil,
+            saleId: 9, saleNumber: 17, refunded: true
+        ),
+    ]
 
     static let shift = CashShift(
         id: 3, openedAt: at(hour: 10, minute: 2), openedBy: anna.ref, openingCash: 5000,

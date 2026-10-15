@@ -19,6 +19,23 @@ extension APIClient {
         try await request(.patch, "services/\(id)", body: body)
     }
 
+    /// Who got this service and when, newest first.
+    func serviceHistory(id: Int, limit: Int = 50, offset: Int = 0) async throws -> ItemsResponse<HistoryEntry> {
+        try await request(.get, "services/\(id)/history", query: queryItems([
+            "limit": String(limit),
+            "offset": String(offset),
+        ]))
+    }
+
+    /// Generates the schematic cover with AI (takes 1–2 minutes).
+    func generateServiceImage(id: Int, prompt: String?) async throws -> Service {
+        try await request(
+            .post, "services/\(id)/image/generate",
+            body: GenerateImageBody(prompt: prompt.nonEmpty),
+            timeout: Self.imageGenerationTimeout
+        )
+    }
+
     func aftercareTemplates() async throws -> [AftercareTemplate] {
         let response: ItemsResponse<AftercareTemplate> = try await request(.get, "aftercare-templates")
         return response.items
@@ -69,6 +86,14 @@ extension APIClient {
 
     func productMovements(productId: Int, limit: Int = 50, offset: Int = 0) async throws -> ItemsResponse<StockMovement> {
         try await request(.get, "products/\(productId)/movements", query: queryItems([
+            "limit": String(limit),
+            "offset": String(offset),
+        ]))
+    }
+
+    /// Who bought this product and when, newest first.
+    func productHistory(id: Int, limit: Int = 50, offset: Int = 0) async throws -> ItemsResponse<HistoryEntry> {
+        try await request(.get, "products/\(id)/history", query: queryItems([
             "limit": String(limit),
             "offset": String(offset),
         ]))

@@ -2,11 +2,23 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// Product photo thumbnail (server-relative `photoUrl`) with a neutral placeholder.
+/// Service cover (schematic picture, else first work photo) with the category icon as placeholder.
+struct ServiceThumbnail: View {
+    let service: Service
+    var size: CGFloat = 56
+
+    var body: some View {
+        ProductThumbnail(path: service.coverPath, size: size, placeholderSymbol: service.category.symbol)
+    }
+}
+
+/// Media thumbnail for a server-relative path (`/uploads/…`) with a neutral placeholder.
 struct ProductThumbnail: View {
     @Environment(APIClient.self) private var api
     let path: String?
     var size: CGFloat = 56
+    /// Shown when there is no picture.
+    var placeholderSymbol = "sparkles"
 
     var body: some View {
         Group {
@@ -22,7 +34,7 @@ struct ProductThumbnail: View {
                     }
                 }
             } else {
-                placeholder(symbol: "sparkles")
+                placeholder(symbol: placeholderSymbol)
             }
         }
         .frame(width: size, height: size)

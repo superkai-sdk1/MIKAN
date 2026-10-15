@@ -158,14 +158,8 @@ struct CompleteAppointmentSheet: View {
         await consumables.load { try await api.products(kind: .consumable) }
     }
 
-    /// The service's template, or the first template of the same category.
     private func defaultTemplateId() -> Int? {
-        if let id = reference.service(id: appointment.service?.id)?.aftercareTemplateId,
-           reference.template(id: id) != nil {
-            return id
-        }
-        guard let category = appointment.service?.category else { return nil }
-        return reference.templates.first { $0.category == category }?.id
+        AftercareDefaults.templateId(for: appointment, services: reference.services, templates: reference.templates)
     }
 
     private func submit() {
@@ -189,6 +183,28 @@ struct CompleteAppointmentSheet: View {
                 errorMessage = error.userMessage
             }
         }
+    }
+}
+
+/// Default aftercare template of an appointment, mirroring the server's choice.
+nonisolated enum AftercareDefaults {
+    /// The template of the first line whose catalog service has one; else the first template of the category
+    /// of the first line with a category; then the legacy single `service`.
+    static func templateId(
+        for appointment: Appointment,
+        services: [Service],
+        templates: [AftercareTemplate]
+    ) -> Int? {
+        let serviceIds = appointment.services.compactMap(\.serviceId) + [appointment.service?.id].compactMap(\.self)
+        for serviceId in serviceIds {
+            let templateId = services.first { $0.id == serviceId }?.aftercareTemplateId
+            if let templateId, templates.contains(where: { $0.id == templateId }) {
+                return templateId
+            }
+        }
+        let category = appointment.services.lazy.compactMap(\.category).first ?? appointment.service?.category
+        guard let category else { return nil }
+        return templates.first { $0.category == category }?.id
     }
 }
 

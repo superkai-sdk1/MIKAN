@@ -1,15 +1,17 @@
-import { eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, clients, employees, products, saleItems, sales, services } from '../db/schema.js';
+import { appointments, appointmentServices, clients, employees, products, saleItems, sales, services } from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
 import {
   appointmentOut,
+  appointmentServiceOut,
   clientRef,
   employeeRef,
   saleOut,
   serviceRef,
   type AppointmentOut,
   type AppointmentRow,
+  type AppointmentServiceRow,
   type ClientRow,
   type EmployeeRow,
   type ProductRow,
@@ -47,6 +49,25 @@ export function productsByIds(db: DbOrTx, ids: Array<number | null | undefined>)
   return new Map(db.select().from(products).where(inArray(products.id, list)).all().map((r) => [r.id, r]));
 }
 
+/** Service lines of the given appointments, grouped by appointment and ordered by position. */
+export function serviceLinesByAppointment(db: DbOrTx, appointmentIds: number[]): Map<number, AppointmentServiceRow[]> {
+  const result = new Map<number, AppointmentServiceRow[]>();
+  const ids = unique(appointmentIds);
+  if (ids.length === 0) return result;
+  const rows = db
+    .select()
+    .from(appointmentServices)
+    .where(inArray(appointmentServices.appointmentId, ids))
+    .orderBy(asc(appointmentServices.appointmentId), asc(appointmentServices.position), asc(appointmentServices.id))
+    .all();
+  for (const row of rows) {
+    const list = result.get(row.appointmentId) ?? [];
+    list.push(row);
+    result.set(row.appointmentId, list);
+  }
+  return result;
+}
+
 const missingEmployee = (id: number) => ({ id, name: 'Удалённый сотрудник', color: '#8E8E93' });
 const missingClient = (id: number) => ({ id, name: 'Удалённый клиент', phone: null, telegramLinked: false });
 
@@ -59,10 +80,14 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
     db,
     rows.map((r) => r.masterId),
   );
-  const sv = servicesByIds(
+  const lines = serviceLinesByAppointment(
     db,
-    rows.map((r) => r.serviceId),
+    rows.map((r) => r.id),
   );
+  const sv = servicesByIds(db, [
+    ...rows.map((r) => r.serviceId),
+    ...[...lines.values()].flat().map((l) => l.serviceId),
+  ]);
   return rows.map((a) => {
     const client = cl.get(a.clientId);
     const master = em.get(a.masterId);
@@ -72,6 +97,9 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
       client ? clientRef(client) : missingClient(a.clientId),
       master ? employeeRef(master) : missingEmployee(a.masterId),
       service ? serviceRef(service) : null,
+      (lines.get(a.id) ?? []).map((l) =>
+        appointmentServiceOut(l, l.serviceId != null ? (sv.get(l.serviceId)?.category ?? null) : null),
+      ),
     );
   });
 }

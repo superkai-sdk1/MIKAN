@@ -10,6 +10,7 @@ import {
   updateClient,
 } from '../domain/clients.js';
 import { findClientChat, serializeChat } from '../domain/bot-chats.js';
+import { historyEntries } from '../domain/history.js';
 import { getClientRow, serializeAppointments, serializeSales } from '../domain/refs.js';
 import { conflict } from '../lib/errors.js';
 import { clientOut } from '../lib/serialize.js';
@@ -76,7 +77,11 @@ export function clientRoutes(app: FastifyInstance, ctx: AppContext): void {
     const { id } = parse(idParams, request.params);
     getClientRow(db, id);
     const { appts, saleRows } = clientHistory(db, id);
-    return { appointments: serializeAppointments(db, appts), sales: serializeSales(db, saleRows) };
+    return {
+      items: historyEntries(db, { clientId: id }),
+      appointments: serializeAppointments(db, appts),
+      sales: serializeSales(db, saleRows),
+    };
   });
 
   app.get('/clients/:id/chat', async (request) => {

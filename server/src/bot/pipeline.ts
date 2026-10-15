@@ -1,16 +1,15 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { and, asc, count, eq, gt, gte } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { aiUsage, botMessages, clients } from '../db/schema.js';
 import { findChat, storeMessage, updateChatFlags, upsertChat } from '../domain/bot-chats.js';
 import { getBotSettings, studioTimezone } from '../domain/settings.js';
 import { AppError, conflict, errorMessage } from '../lib/errors.js';
-import type { BotChatRow, BotMessageRow, ProductRow } from '../lib/serialize.js';
-import { formatRub, truncate } from '../lib/text.js';
+import type { BotChatRow, BotMessageRow, ProductRow, ServiceRow } from '../lib/serialize.js';
+import { truncate } from '../lib/text.js';
 import { HOUR_MS, localDayBounds } from '../lib/time.js';
 import { runAi, type AiRunResult } from './ai.js';
 import type { PhotoSource } from './gateway.js';
+import { photoMessageText, photoSourceFor, productCaption, serviceCaption, servicePhotoSource } from './media.js';
 import { buildClientContext, buildHistory, buildStablePrompt, buildSystem, type PendingImage } from './prompt.js';
 import { clientLabel, notifyStaff } from './staff.js';
 import { buildToolHandlers, TOOLS, type ToolSink } from './tools.js';
@@ -31,18 +30,6 @@ export interface IncomingFrom {
   chatId: number;
   telegramName: string | null;
   username: string | null;
-}
-
-export function productCaption(p: ProductRow): string {
-  return [p.name, p.material, p.size].filter(Boolean).join(' · ') + ` — ${formatRub(p.price)}`;
-}
-
-export function photoSourceFor(dataDir: string, photoUrl: string | null): PhotoSource | null {
-  if (!photoUrl || /\.hei[cf]$/i.test(photoUrl)) return null; // Telegram can't show HEIC as a photo
-  if (/^https?:\/\//.test(photoUrl)) return { kind: 'url', url: photoUrl };
-  if (!photoUrl.startsWith('/uploads/')) return null;
-  const file = path.join(dataDir, 'uploads', path.basename(photoUrl));
-  return fs.existsSync(file) ? { kind: 'file', path: file } : null;
 }
 
 function recordUsage(ctx: AppContext, chatId: number | null, result: AiRunResult): void {
@@ -79,7 +66,7 @@ export function aiLimitReached(ctx: AppContext, chatId: number | null, now = Dat
 export async function runTest(ctx: AppContext, text: string): Promise<string> {
   if (!ctx.ai) throw conflict('ИИ не настроен: укажите AI_API_KEY в настройках сервера');
   if (aiLimitReached(ctx, null)) throw conflict('Дневной лимит ИИ-ответов исчерпан — попробуйте завтра');
-  const sink: ToolSink = { products: [], notes: [], done: new Set() };
+  const sink: ToolSink = { products: [], services: [], notes: [], done: new Set() };
   const scope = { mode: 'test' as const, chatId: null, clientId: null, telegramName: null, username: null, lastUserText: text };
   const result = await runAi(
     ctx.ai,
@@ -247,7 +234,7 @@ export class BotPipeline {
     }
 
     const client = chat.clientId != null ? (ctx.db.select().from(clients).where(eq(clients.id, chat.clientId)).get() ?? null) : null;
-    const sink: ToolSink = { products: [], notes: [], done: new Set() };
+    const sink: ToolSink = { products: [], services: [], notes: [], done: new Set() };
     const scope = {
       mode: 'live' as const,
       chatId,
@@ -277,11 +264,12 @@ export class BotPipeline {
     // The model may finish with no text after a successful action — confirm the action instead of an error.
     const text = result.text || (result.outcome === 'ok' && sink.done.has('booking') ? REPLIES.booked : '') ||
       (result.outcome === 'ok' && sink.done.has('handoff') ? REPLIES.handedOff : '');
-    if (result.outcome === 'ok' && (text || sink.products.length)) {
+    if (result.outcome === 'ok' && (text || sink.products.length || sink.services.length)) {
       if (text && !(await this.deliver(chatId, text))) {
         await this.escalate(chatId, 'не удалось доставить ответ бота в Telegram', last);
         return;
       }
+      for (const service of sink.services) await this.sendService(chatId, service);
       for (const product of sink.products) await this.sendProduct(chatId, product);
       if (result.loopCapped) await this.escalate(chatId, 'бот не завершил обработку запроса (слишком много шагов)', last);
       return;
@@ -327,14 +315,23 @@ export class BotPipeline {
   }
 
   private async sendProduct(chatId: number, product: ProductRow): Promise<void> {
-    const caption = productCaption(product);
     const source = photoSourceFor(this.ctx.config.dataDir, product.photoUrl);
+    await this.sendPicture(chatId, source, productCaption(product), { productId: product.id });
+  }
+
+  private async sendService(chatId: number, service: ServiceRow): Promise<void> {
+    const source = servicePhotoSource(this.ctx.config.dataDir, service);
+    await this.sendPicture(chatId, source, serviceCaption(service), { serviceId: service.id });
+  }
+
+  /** Sends a captioned picture (or just the caption when there is none / it fails) and stores it in the chat. */
+  private async sendPicture(chatId: number, source: PhotoSource | null, caption: string, ref: Record<string, number>): Promise<void> {
     try {
       if (source) await this.ctx.gateway.sendPhoto(chatId, source, caption);
       else await this.ctx.gateway.sendText(chatId, caption);
-      storeMessage(this.ctx.db, chatId, 'assistant', source ? `[Фото] ${caption}` : caption);
+      storeMessage(this.ctx.db, chatId, 'assistant', source ? photoMessageText(caption) : caption);
     } catch (err) {
-      this.ctx.log.warn({ chatId, productId: product.id, err: errorMessage(err) }, 'failed to send product photo');
+      this.ctx.log.warn({ chatId, ...ref, err: errorMessage(err) }, 'failed to send photo');
       await this.deliver(chatId, caption);
     }
   }

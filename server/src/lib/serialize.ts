@@ -9,6 +9,7 @@ export type TemplateRow = Row<typeof s.aftercareTemplates>;
 export type ProductRow = Row<typeof s.products>;
 export type MovementRow = Row<typeof s.stockMovements>;
 export type AppointmentRow = Row<typeof s.appointments>;
+export type AppointmentServiceRow = Row<typeof s.appointmentServices>;
 export type SaleRow = Row<typeof s.sales>;
 export type SaleItemRow = Row<typeof s.saleItems>;
 export type ShiftRow = Row<typeof s.cashShifts>;
@@ -38,6 +39,11 @@ export interface ServiceRef {
 export interface AftercareStep {
   dayOffset: number;
   text: string;
+}
+export interface ServiceVariant {
+  name: string;
+  price: number;
+  durationMin: number | null;
 }
 export interface ClientStats {
   visits: number;
@@ -89,14 +95,39 @@ export const serviceOut = (sv: ServiceRow) => ({
   id: sv.id,
   name: sv.name,
   category: sv.category,
+  group: sv.groupName,
   price: sv.price,
+  priceMax: sv.priceMax,
   priceFrom: sv.priceFrom,
   durationMin: sv.durationMin,
   description: sv.description,
+  imageUrl: sv.imageUrl,
+  imagePrompt: sv.imagePrompt,
+  photos: parsePhotos(sv.photosJson),
+  variants: parseVariants(sv.variantsJson),
   aftercareTemplateId: sv.aftercareTemplateId,
   active: sv.active,
   sort: sv.sort,
 });
+
+function parseJsonArray(json: string): unknown[] {
+  try {
+    const value: unknown = JSON.parse(json);
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+export function parsePhotos(json: string): string[] {
+  return parseJsonArray(json).filter((x): x is string => typeof x === 'string');
+}
+
+export function parseVariants(json: string): ServiceVariant[] {
+  return parseJsonArray(json)
+    .filter((x): x is ServiceVariant => typeof (x as ServiceVariant)?.name === 'string' && typeof (x as ServiceVariant)?.price === 'number')
+    .map((x) => ({ name: x.name, price: x.price, durationMin: typeof x.durationMin === 'number' ? x.durationMin : null }));
+}
 
 export function parseSteps(json: string): AftercareStep[] {
   try {
@@ -154,16 +185,28 @@ export const movementOut = (m: MovementRow, productName: string, employee: Emplo
   createdAt: toIso(m.createdAt),
 });
 
+export const appointmentServiceOut = (line: AppointmentServiceRow, category: string | null) => ({
+  id: line.id,
+  serviceId: line.serviceId,
+  name: line.name,
+  category,
+  price: line.price,
+  durationMin: line.durationMin,
+});
+export type AppointmentServiceOut = ReturnType<typeof appointmentServiceOut>;
+
 export const appointmentOut = (
   a: AppointmentRow,
   client: ClientRef,
   master: EmployeeRef,
   service: ServiceRef | null,
+  services: AppointmentServiceOut[],
 ) => ({
   id: a.id,
   client,
   master,
   service,
+  services,
   title: a.title,
   startsAt: toIso(a.startsAt),
   endsAt: toIso(a.endsAt),
@@ -208,6 +251,30 @@ export const saleOut = (sale: SaleRow, items: SaleItemRow[], client: ClientRef |
   createdAt: toIso(sale.createdAt),
 });
 export type SaleOut = ReturnType<typeof saleOut>;
+
+/**
+ * One line of a client's / service's / product's history: a service performed in a completed appointment, or an
+ * item of a sale. Built by `domain/history.ts`.
+ */
+export interface HistoryEntryOut {
+  /** Stable key: `as<line id>` (appointment service line), `at<appointment id>` (appointment without lines),
+   *  `si<sale item id>` (sale item). */
+  id: string;
+  kind: 'service' | 'product';
+  date: string;
+  name: string;
+  serviceId: number | null;
+  productId: number | null;
+  quantity: number;
+  price: number;
+  total: number;
+  client: ClientRef | null;
+  employee: EmployeeRef | null;
+  appointmentId: number | null;
+  saleId: number | null;
+  saleNumber: number | null;
+  refunded: boolean;
+}
 
 export const cashOpOut = (o: CashOpRow, employee: EmployeeRef) => ({
   id: o.id,

@@ -7,6 +7,7 @@ export type ErrorCode =
   | 'insufficient_stock'
   | 'schedule_conflict'
   | 'rate_limited'
+  | 'upstream_error'
   | 'internal';
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
@@ -18,6 +19,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   insufficient_stock: 409,
   schedule_conflict: 409,
   rate_limited: 429,
+  upstream_error: 502,
   internal: 500,
 };
 
@@ -45,6 +47,8 @@ export const unauthorized = (message = 'Требуется вход в сист�
   new AppError('unauthorized', message);
 export const insufficientStock = (message: string): AppError => new AppError('insufficient_stock', message);
 export const scheduleConflict = (message: string): AppError => new AppError('schedule_conflict', message);
+/** An external service (e.g. AI image generation) failed; the message says why. */
+export const upstreamError = (message: string): AppError => new AppError('upstream_error', message);
 
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;

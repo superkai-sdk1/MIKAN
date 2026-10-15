@@ -25,6 +25,8 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
+# Service cover pictures read by `node dist/scripts/import-services.js` (default dir /app/assets/service-images).
+COPY --chown=node:node assets ./assets
 COPY --chown=node:node package.json ./
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node

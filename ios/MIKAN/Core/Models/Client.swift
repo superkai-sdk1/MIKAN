@@ -37,8 +37,47 @@ nonisolated struct ClientRef: Codable, Hashable, Identifiable, Sendable {
 }
 
 nonisolated struct ClientHistory: Codable, Sendable {
+    /// Services done and products bought, newest first.
+    var items: [HistoryEntry] = []
     let appointments: [Appointment]
     let sales: [Sale]
+}
+
+nonisolated extension ClientHistory {
+    private enum CodingKeys: String, CodingKey { case items, appointments, sales }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        items = try c.decodeIfPresent([HistoryEntry].self, forKey: .items) ?? []
+        appointments = try c.decode([Appointment].self, forKey: .appointments)
+        sales = try c.decode([Sale].self, forKey: .sales)
+    }
+}
+
+nonisolated enum HistoryEntryKind: String, Codable, Sendable {
+    case service
+    case product
+}
+
+/// One thing done for or sold to a client: a service line of a completed appointment, or a sale item.
+nonisolated struct HistoryEntry: Codable, Hashable, Identifiable, Sendable {
+    /// `as<line>`, `at<appointment>` or `si<sale item>`.
+    let id: String
+    let kind: HistoryEntryKind
+    let date: Date
+    let name: String
+    let serviceId: Int?
+    let productId: Int?
+    let quantity: Int
+    let price: Int
+    let total: Int
+    let client: ClientRef?
+    /// Master (services) or seller (products).
+    let employee: EmployeeRef?
+    let appointmentId: Int?
+    let saleId: Int?
+    let saleNumber: Int?
+    let refunded: Bool
 }
 
 /// Suggested `source` values. The field itself is free text.

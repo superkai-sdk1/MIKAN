@@ -35,7 +35,7 @@ targets:
         LSRequiresIPhoneOS: true
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
-        NSPhotoLibraryUsageDescription: "MIKAN использует фото из медиатеки, чтобы добавлять снимки украшений и расходников в каталог склада."
+        NSPhotoLibraryUsageDescription: "MIKAN использует фото из медиатеки, чтобы добавлять снимки украшений, расходников и работ в каталог склада и услуг."
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UILaunchScreen: {}

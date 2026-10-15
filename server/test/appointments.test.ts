@@ -207,3 +207,266 @@ describe('appointments, reminders and aftercare', () => {
     expect((await t.api('POST', `/api/appointments/${appt3.id}/complete`, { sendAftercare: true, aftercareTemplateId: 999 })).statusCode).toBe(409);
   });
 });
+
+describe('appointment service lines', () => {
+  let t: TestApp;
+  let tattoo: { id: number };
+  let piercing: { id: number };
+  let client: { id: number };
+  const chatId = 555_002;
+  const START = '2026-10-17T11:00:00.000Z';
+
+  type Line = { id: number; serviceId: number | null; name: string; category: string | null; price: number; durationMin: number | null };
+
+  const serviceIdColumn = (appointmentId: number) =>
+    (t.ctx.sqlite.prepare('SELECT service_id AS serviceId FROM appointments WHERE id = ?').get(appointmentId) as { serviceId: number | null })
+      .serviceId;
+  const reminders = async () =>
+    ((await t.api('GET', '/api/bot/scheduled')).json().items as Array<{ kind: string; status: string; text: string }>).filter(
+      (m) => m.kind === 'reminder',
+    );
+
+  async function linkTelegram(clientId: number) {
+    const url = (await t.api('POST', `/api/clients/${clientId}/telegram-link`)).json().url as string;
+    handleStart(t.ctx, { chatId, telegramName: 'Иван', username: 'ivanp' }, new URL(url).searchParams.get('start')!);
+  }
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    t = await createTestApp();
+    tattoo = await make(t, '/api/services', { name: 'Тату среднее', category: 'tattoo', price: 8000, durationMin: 120, aftercareTemplateId: 1 });
+    piercing = await make(t, '/api/services', { name: 'Соски', category: 'piercing', price: 2500, durationMin: 45, aftercareTemplateId: 2 });
+    client = await make(t, '/api/clients', { name: 'Иван', phone: '+79991234567' });
+  });
+  afterEach(async () => {
+    await t.close();
+    vi.useRealTimers();
+  });
+
+  it('creates with several services: catalog defaults, custom lines, summed price and duration', async () => {
+    const res = await t.api('POST', '/api/appointments', {
+      clientId: client.id,
+      masterId: 1,
+      startsAt: START,
+      services: [
+        { serviceId: piercing.id },
+        { serviceId: tattoo.id, name: 'Тату среднее — рукав', price: 10000, durationMin: 90 },
+        { name: '  Подбор украшения ' },
+      ],
+    });
+    expect(res.statusCode).toBe(200);
+    const appt = res.json();
+    expect(appt.services).toEqual([
+      { id: expect.any(Number), serviceId: piercing.id, name: 'Соски', category: 'piercing', price: 2500, durationMin: 45 },
+      { id: expect.any(Number), serviceId: tattoo.id, name: 'Тату среднее — рукав', category: 'tattoo', price: 10000, durationMin: 90 },
+      { id: expect.any(Number), serviceId: null, name: 'Подбор украшения', category: null, price: 0, durationMin: null },
+    ]);
+    expect(appt).toMatchObject({
+      service: { id: piercing.id, name: 'Соски', category: 'piercing' },
+      price: 12500,
+      endsAt: '2026-10-17T13:15:00.000Z',
+    });
+    expect(serviceIdColumn(appt.id)).toBe(piercing.id);
+    expect((await t.api('GET', `/api/appointments/${appt.id}`)).json().services).toEqual(appt.services);
+
+    // Explicit price and end win; the legacy `service` is the first line that has a catalog service.
+    const custom = await make(t, '/api/appointments', {
+      clientId: client.id,
+      masterId: 1,
+      startsAt: '2026-10-18T11:00:00Z',
+      endsAt: '2026-10-18T12:00:00Z',
+      price: 9000,
+      services: [{ name: 'Консультация', durationMin: 15 }, { serviceId: tattoo.id }],
+    });
+    expect(custom).toMatchObject({ price: 9000, endsAt: '2026-10-18T12:00:00.000Z', service: { id: tattoo.id } });
+    expect(serviceIdColumn(custom.id)).toBe(tattoo.id);
+
+    const none = await make(t, '/api/appointments', {
+      clientId: client.id, masterId: 1, startsAt: '2026-10-19T11:00:00Z', services: [{ name: 'Консультация', durationMin: 30 }],
+    });
+    expect(none).toMatchObject({ service: null, price: 0, endsAt: '2026-10-19T11:30:00.000Z' });
+    expect(serviceIdColumn(none.id)).toBeNull();
+  });
+
+  it('validates service lines and stores nothing on failure', async () => {
+    const post = (services: unknown, extra: object = {}) =>
+      t.api('POST', '/api/appointments', { clientId: client.id, masterId: 1, startsAt: START, services, ...extra });
+    expect((await post([{ price: 100, durationMin: 30 }])).json().error.message).toBe('Позиция №1: укажите название услуги');
+    expect((await post([{ name: 'Консультация', durationMin: 30 }, { name: '   ' }])).json().error.message).toBe(
+      'Позиция №2: укажите название услуги',
+    );
+    const missing = await post([{ serviceId: 999 }]);
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().error.message).toBe('Услуга не найдена');
+    expect((await post([{ name: 'X', price: -1 }])).json().error.message).toBe('«Цена (№1)»: должно быть не меньше 0');
+    expect((await post([{ name: 'X', durationMin: 0 }])).json().error.message).toBe('«Длительность (№1)»: должно быть не меньше 1');
+    const tooMany = await post(Array.from({ length: 21 }, (_, i) => ({ name: `Позиция ${i}`, durationMin: 10 })));
+    expect(tooMany.json().error.message).toBe('«Услуги»: не больше 20 элементов');
+    expect((await post([{ name: 'Без длительности' }])).json().error.message).toBe('«Окончание»: обязательное поле');
+    expect((await t.api('GET', '/api/appointments')).json().items).toEqual([]);
+    expect(t.ctx.sqlite.prepare('SELECT count(*) AS n FROM appointment_services').get()).toEqual({ n: 0 });
+  });
+
+  it('PATCH replaces, keeps or clears the lines; price follows the lines unless set', async () => {
+    const appt = await make(t, '/api/appointments', {
+      clientId: client.id, masterId: 1, startsAt: START, services: [{ serviceId: tattoo.id }, { name: 'Подбор украшения', price: 500 }],
+    });
+    expect(appt.price).toBe(8500);
+    const ids = appt.services.map((l: Line) => l.id);
+    const patch = async (payload: object) => {
+      const res = await t.api('PATCH', `/api/appointments/${appt.id}`, payload);
+      expect(res.statusCode).toBe(200);
+      return res.json();
+    };
+
+    const notes = await patch({ notes: 'Эскиз согласован' });
+    expect(notes.services.map((l: Line) => l.id)).toEqual(ids);
+    expect(notes.price).toBe(8500);
+
+    // Re-sending the same lines keeps the stored rows (stable ids for the history).
+    const same = await patch({
+      services: [{ serviceId: tattoo.id, name: 'Тату среднее', price: 8000, durationMin: 120 }, { name: 'Подбор украшения', price: 500 }],
+    });
+    expect(same.services.map((l: Line) => l.id)).toEqual(ids);
+
+    const replaced = await patch({ services: [{ serviceId: piercing.id }] });
+    expect(replaced.services).toEqual([
+      { id: expect.any(Number), serviceId: piercing.id, name: 'Соски', category: 'piercing', price: 2500, durationMin: 45 },
+    ]);
+    expect(replaced).toMatchObject({ price: 2500, service: { id: piercing.id }, endsAt: '2026-10-17T13:00:00.000Z' });
+    expect(serviceIdColumn(appt.id)).toBe(piercing.id);
+
+    const custom = await patch({ services: [{ name: 'Коррекция' }], price: 3000 });
+    expect(custom).toMatchObject({ price: 3000, service: null, services: [{ serviceId: null, name: 'Коррекция', price: 0 }] });
+    expect(serviceIdColumn(appt.id)).toBeNull();
+
+    const cleared = await patch({ services: [] });
+    expect(cleared).toMatchObject({ services: [], service: null, price: 0 });
+    expect(t.ctx.sqlite.prepare('SELECT count(*) AS n FROM appointment_services').get()).toEqual({ n: 0 });
+
+    // `services: null` means "absent": nothing changes.
+    expect((await patch({ services: null, price: 1000 })).services).toEqual([]);
+  });
+
+  it('legacy serviceId: creates one line; the same service keeps the lines, another replaces them, null clears them', async () => {
+    const legacy = await make(t, '/api/appointments', { clientId: client.id, masterId: 1, serviceId: tattoo.id, startsAt: START, price: 7000 });
+    expect(legacy.services).toEqual([
+      { id: expect.any(Number), serviceId: tattoo.id, name: 'Тату среднее', category: 'tattoo', price: 7000, durationMin: 120 },
+    ]);
+    expect(legacy).toMatchObject({ price: 7000, endsAt: '2026-10-17T13:00:00.000Z', service: { id: tattoo.id } });
+    expect((await t.api('POST', '/api/appointments', { clientId: client.id, masterId: 1, serviceId: 999, startsAt: START })).json().error.message).toBe(
+      'Услуга не найдена',
+    );
+
+    const appt = await make(t, '/api/appointments', {
+      clientId: client.id,
+      masterId: 1,
+      startsAt: '2026-10-18T11:00:00Z',
+      services: [{ name: 'Подбор украшения', price: 500 }, { serviceId: tattoo.id, price: 9000 }],
+    });
+    const ids = appt.services.map((l: Line) => l.id);
+    const patch = async (payload: object) => (await t.api('PATCH', `/api/appointments/${appt.id}`, payload)).json();
+
+    // An older build re-sends the service it shows (the first catalog line): the lines stay as they are.
+    const kept = await patch({ serviceId: tattoo.id, price: 9500, notes: 'Старое приложение' });
+    expect(kept.services.map((l: Line) => l.id)).toEqual(ids);
+    expect(kept).toMatchObject({ price: 9500, service: { id: tattoo.id } });
+
+    const replaced = await patch({ serviceId: piercing.id, price: 3000 });
+    expect(replaced.services).toEqual([
+      { id: expect.any(Number), serviceId: piercing.id, name: 'Соски', category: 'piercing', price: 3000, durationMin: 45 },
+    ]);
+    expect(replaced).toMatchObject({ price: 3000, service: { id: piercing.id } });
+
+    const defaults = await patch({ serviceId: tattoo.id });
+    expect(defaults.services).toMatchObject([{ serviceId: tattoo.id, price: 8000 }]);
+    expect(defaults.price).toBe(3000);
+
+    const cleared = await patch({ serviceId: null });
+    expect(cleared).toMatchObject({ services: [], service: null, price: 3000 });
+    expect(serviceIdColumn(appt.id)).toBeNull();
+
+    // `services` wins over the legacy field.
+    const both = await patch({ serviceId: tattoo.id, services: [{ serviceId: piercing.id }] });
+    expect(both).toMatchObject({ service: { id: piercing.id }, services: [{ serviceId: piercing.id }] });
+  });
+
+  it('legacy serviceId: null keeps custom-only lines (older builds always send it)', async () => {
+    const appt = await make(t, '/api/appointments', {
+      clientId: client.id, masterId: 1, startsAt: START, endsAt: '2026-10-17T12:00:00Z',
+      services: [{ name: 'Коррекция бровей', price: 1000 }],
+    });
+    const res = await t.api('PATCH', `/api/appointments/${appt.id}`, { serviceId: null, notes: 'Старое приложение' });
+    expect(res.json()).toMatchObject({ services: [{ serviceId: null, name: 'Коррекция бровей', price: 1000 }], notes: 'Старое приложение' });
+  });
+
+  it('a price-only edit (older builds) moves a single line that carried the old total along with it', async () => {
+    const appt = await make(t, '/api/appointments', {
+      clientId: client.id, masterId: 1, startsAt: START, services: [{ serviceId: tattoo.id, price: 5000 }],
+    });
+    const lineId = appt.services[0].id;
+    const repriced = (await t.api('PATCH', `/api/appointments/${appt.id}`, { serviceId: tattoo.id, price: 4000 })).json();
+    expect(repriced).toMatchObject({ price: 4000, services: [{ id: lineId, serviceId: tattoo.id, price: 4000 }] });
+    expect((await t.api('PATCH', `/api/appointments/${appt.id}`, { price: 4500 })).json().services).toMatchObject([{ id: lineId, price: 4500 }]);
+
+    // A line priced apart from the total, or several lines, are left alone.
+    const apart = await make(t, '/api/appointments', {
+      clientId: client.id, masterId: 1, startsAt: '2026-10-18T11:00:00Z', price: 6000, services: [{ serviceId: tattoo.id, price: 5000 }],
+    });
+    const apartPatched = (await t.api('PATCH', `/api/appointments/${apart.id}`, { serviceId: tattoo.id, price: 4000 })).json();
+    expect(apartPatched).toMatchObject({ price: 4000, services: [{ price: 5000 }] });
+    const multi = await make(t, '/api/appointments', {
+      clientId: client.id, masterId: 1, startsAt: '2026-10-19T11:00:00Z', services: [{ serviceId: tattoo.id }, { name: 'Подбор украшения', price: 500 }],
+    });
+    const multiPatched = (await t.api('PATCH', `/api/appointments/${multi.id}`, { price: 7000 })).json();
+    expect(multiPatched.price).toBe(7000);
+    expect(multiPatched.services.map((l: Line) => l.price)).toEqual([8000, 500]);
+  });
+
+  it('reminders name every booked service and are refreshed when the lines change', async () => {
+    await linkTelegram(client.id);
+    const appt = await make(t, '/api/appointments', {
+      clientId: client.id, masterId: 1, startsAt: START, services: [{ serviceId: tattoo.id }, { name: 'Подбор украшения' }],
+    });
+    let list = await reminders();
+    expect(list).toHaveLength(1);
+    expect(list[0]!.text).toContain('Услуги: Тату среднее, Подбор украшения');
+
+    await t.api('PATCH', `/api/appointments/${appt.id}`, { notes: 'Без изменений в услугах' });
+    expect(await reminders()).toHaveLength(1);
+
+    await t.api('PATCH', `/api/appointments/${appt.id}`, { services: [{ serviceId: piercing.id }] });
+    list = await reminders();
+    expect(list.map((m) => m.status)).toEqual(['cancelled', 'pending']);
+    expect(list[1]!.text).toContain('Услуга: Соски');
+    expect(list[1]!.text).not.toContain('Тату');
+
+    const titled = await make(t, '/api/appointments', {
+      clientId: client.id, masterId: 1, title: 'Консультация по эскизу', startsAt: '2026-10-18T11:00:00Z', endsAt: '2026-10-18T12:00:00Z',
+    });
+    const forTitled = (await reminders()).filter((m) => m.status === 'pending' && m.text.includes('Консультация по эскизу'));
+    expect(forTitled).toHaveLength(1);
+    expect(forTitled[0]!.text).toContain('Услуга: Консультация по эскизу');
+    expect(titled.services).toEqual([]);
+  });
+
+  it('complete picks the aftercare template of the first line whose service has one', async () => {
+    await linkTelegram(client.id);
+    const consult = await make(t, '/api/services', { name: 'Консультация', category: 'other', price: 0, durationMin: 15 });
+    const appt = await make(t, '/api/appointments', {
+      clientId: client.id,
+      masterId: 1,
+      startsAt: '2026-10-15T06:00:00Z',
+      services: [{ name: 'Подбор украшения' }, { serviceId: consult.id }, { serviceId: piercing.id }, { serviceId: tattoo.id }],
+    });
+    expect(appt.service.id).toBe(consult.id);
+    const res = await t.api('POST', `/api/appointments/${appt.id}/complete`, { sendAftercare: true });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().scheduledMessages).toBe(6);
+    const aftercare = ((await t.api('GET', '/api/bot/scheduled')).json().items as Array<{ kind: string; text: string }>).filter(
+      (m) => m.kind === 'aftercare',
+    );
+    expect(aftercare[0]!.text).toMatch(/^MIKAN STUDIO · уход после процедуры\n\nПрокол сделан!/);
+  });
+});

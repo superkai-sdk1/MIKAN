@@ -4,6 +4,7 @@ struct AppointmentDetailView: View {
     @Environment(APIClient.self) private var api
     @Environment(AppState.self) private var appState
     @Environment(ScheduleStore.self) private var schedule
+    @Environment(ReferenceStore.self) private var reference
     @Environment(\.openURL) private var openURL
 
     @State private var appointment: Appointment
@@ -25,6 +26,7 @@ struct AppointmentDetailView: View {
         List {
             AppointmentHeaderSection(appointment: appointment)
             clientSection
+            servicesSection
             detailsSection
             if let notes = appointment.notes.nonEmpty {
                 Section("Заметки") { Text(notes) }
@@ -39,13 +41,15 @@ struct AppointmentDetailView: View {
         .toolbar {
             if appointment.isOpen {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Перенести") { editorDraft = .edit(appointment) }
+                    Button("Изменить") { editorDraft = .edit(appointment) }
                 }
             }
         }
         .disabled(isWorking)
         .refreshable { await reload() }
         .task { await reload() }
+        // Catalog only adds thumbnails; the screen works without it (APIClient logs failures).
+        .task { try? await reference.ensureServices() }
         .navigationDestination(isPresented: $showsChat) {
             ClientChatView(client: appointment.client)
         }
@@ -101,9 +105,25 @@ struct AppointmentDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var servicesSection: some View {
+        let lines = AppointmentDraft.lines(of: appointment)
+        if !lines.isEmpty {
+            Section("Услуги") {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    AppointmentServiceRow(line: line, service: reference.service(id: line.serviceId))
+                }
+                LabeledContent("Итого") {
+                    MoneyText(appointment.price)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+                }
+            }
+        }
+    }
+
     private var detailsSection: some View {
         Section("Детали") {
-            LabeledContent("Услуга", value: appointment.service?.name ?? "Без услуги")
             if let title = appointment.title.nonEmpty {
                 LabeledContent("Описание", value: title)
             }
@@ -113,7 +133,9 @@ struct AppointmentDetailView: View {
                     Text(appointment.master.name)
                 }
             }
-            LabeledContent("Стоимость") { MoneyText(appointment.price) }
+            if appointment.services.isEmpty, appointment.service == nil {
+                LabeledContent("Стоимость") { MoneyText(appointment.price) }
+            }
             if appointment.deposit > 0 {
                 LabeledContent("Предоплата") { MoneyText(appointment.deposit) }
             }
@@ -243,6 +265,7 @@ private struct AppointmentHeaderSection: View {
                     .foregroundStyle(.secondary)
                 Text(appointment.displayTitle)
                     .font(.title3.weight(.semibold))
+                    .lineLimit(3)
                     .padding(.top, 4)
             }
             .padding(.vertical, 6)
@@ -251,10 +274,45 @@ private struct AppointmentHeaderSection: View {
     }
 }
 
+/// Booked service line: catalog cover (or category icon), name, duration and price.
+private struct AppointmentServiceRow: View {
+    let line: DraftServiceLine
+    let service: Service?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let service {
+                ServiceThumbnail(service: service, size: 40)
+            } else {
+                ProductThumbnail(path: nil, size: 40, placeholderSymbol: line.category?.symbol ?? "sparkles")
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(line.name)
+                if let minutes = line.durationMin, minutes > 0 {
+                    Text(DateText.duration(minutes: minutes))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            MoneyText(line.price)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 #if DEBUG
 #Preview {
     NavigationStack {
         AppointmentDetailView(appointment: PreviewData.appointments[0])
+    }
+    .previewEnvironment()
+}
+
+#Preview("Несколько услуг") {
+    NavigationStack {
+        AppointmentDetailView(appointment: PreviewData.appointments[2])
     }
     .previewEnvironment()
 }

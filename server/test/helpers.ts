@@ -6,7 +6,7 @@ import type { FastifyInstance, InjectOptions } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { BotSendError, type BotGateway, type PhotoSource } from '../src/bot/gateway.js';
 import { loadConfig, type Config } from '../src/config.js';
-import { silentLogger, type AiClient, type AppContext } from '../src/context.js';
+import { silentLogger, type AiClient, type AppContext, type ImageGenerator } from '../src/context.js';
 import { openDatabase } from '../src/db/client.js';
 import { seedDatabase } from '../src/db/seed.js';
 
@@ -105,8 +105,13 @@ export function testConfig(overrides: Record<string, string> = {}): Config {
   });
 }
 
+/** Default image generator in tests: never touches the network. */
+export const noImageGenerator: ImageGenerator = async () => {
+  throw new Error('image generation is not stubbed in this test');
+};
+
 export async function createTestApp(
-  opts: { ai?: AiClient | null; env?: Record<string, string>; gateway?: FakeGateway } = {},
+  opts: { ai?: AiClient | null; env?: Record<string, string>; gateway?: FakeGateway; generateImage?: ImageGenerator } = {},
 ): Promise<TestApp> {
   const config = testConfig(opts.env);
   const { db, sqlite } = openDatabase(':memory:');
@@ -119,6 +124,7 @@ export async function createTestApp(
     log: silentLogger,
     gateway,
     ai: opts.ai ?? null,
+    generateImage: opts.generateImage ?? noImageGenerator,
     onBotSettingsChanged: () => undefined,
   };
   const app = await buildApp(ctx);

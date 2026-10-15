@@ -23,9 +23,17 @@ import {
 
 const status = z.enum(APPOINTMENT_STATUSES);
 const id = z.number().int().positive();
+const MAX_SERVICE_LINES = 20;
+const serviceLine = z.object({
+  serviceId: id.nullish(),
+  name: nullableText(200),
+  price: money.nullish(),
+  durationMin: z.number().int().min(1).max(24 * 60).nullish(),
+});
 const body = z.object({
   clientId: nonNull(id),
   masterId: nonNull(id),
+  services: nonNull(z.array(serviceLine).max(MAX_SERVICE_LINES)),
   serviceId: id.nullish(),
   title: nullableText(300),
   startsAt: nonNull(instant),

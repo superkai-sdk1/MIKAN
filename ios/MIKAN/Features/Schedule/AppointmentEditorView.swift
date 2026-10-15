@@ -23,7 +23,8 @@ struct AppointmentEditorView: View {
         NavigationStack {
             Form {
                 clientSection
-                masterAndServiceSection
+                masterSection
+                AppointmentServicesSection(draft: $draft)
                 timeSection
                 paymentSection
                 Section("Заметки") {
@@ -31,7 +32,7 @@ struct AppointmentEditorView: View {
                         .lineLimit(3...8)
                 }
             }
-            .navigationTitle(draft.isEditing ? "Перенос записи" : "Новая запись")
+            .navigationTitle(draft.isEditing ? "Изменить запись" : "Новая запись")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -80,7 +81,7 @@ struct AppointmentEditorView: View {
         }
     }
 
-    private var masterAndServiceSection: some View {
+    private var masterSection: some View {
         Section {
             if reference.masters.isEmpty, referenceError == nil {
                 LabeledContent("Мастер") { ProgressView() }
@@ -92,17 +93,6 @@ struct AppointmentEditorView: View {
                     }
                 }
             }
-            NavigationLink {
-                ServicePickerView(selectedId: draft.serviceId) { service in
-                    draft.apply(service: service)
-                }
-            } label: {
-                LabeledContent("Услуга", value: draft.serviceName ?? "Без услуги")
-            }
-            TextField("Описание: эскиз, зона, украшение", text: $draft.title, axis: .vertical)
-                .lineLimit(1...3)
-        } header: {
-            Text("Мастер и услуга")
         } footer: {
             if let referenceError {
                 Text(referenceError).foregroundStyle(.red)
@@ -123,15 +113,31 @@ struct AppointmentEditorView: View {
 
     private var paymentSection: some View {
         Section {
-            NumberField.money("Стоимость", value: $draft.price)
+            if draft.lines.isEmpty {
+                NumberField.money("Стоимость", value: $draft.price)
+            } else {
+                LabeledContent("Стоимость") {
+                    MoneyText(draft.total).foregroundStyle(.primary)
+                }
+                if draft.priceOverride != nil {
+                    Button("Пересчитать по услугам", systemImage: "arrow.triangle.2.circlepath") {
+                        draft.recalculateTotal()
+                    }
+                }
+            }
             NumberField.money("Предоплата", value: $draft.deposit)
         } header: {
             Text("Оплата")
         } footer: {
-            if draft.servicePriceFrom {
-                Text("У услуги цена «от» — укажите итоговую стоимость для этой записи.")
-            } else if draft.deposit > draft.price {
-                Text("Предоплата больше стоимости.").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                if draft.priceOverride != nil {
+                    Text("Отличается от суммы услуг (\(Money.format(draft.linesTotal))). Изменение услуг или их цен пересчитает стоимость.")
+                } else if !draft.lines.isEmpty {
+                    Text("Сумма услуг — цену каждой можно изменить выше.")
+                }
+                if draft.deposit > draft.total {
+                    Text("Предоплата больше стоимости.").foregroundStyle(.orange)
+                }
             }
         }
     }
@@ -191,6 +197,11 @@ struct AppointmentEditorView: View {
 #if DEBUG
 #Preview {
     AppointmentEditorView(draft: .new(day: .now, client: PreviewData.ivanRef)) { _ in }
+        .previewEnvironment()
+}
+
+#Preview("Несколько услуг") {
+    AppointmentEditorView(draft: .edit(PreviewData.appointments[2])) { _ in }
         .previewEnvironment()
 }
 #endif

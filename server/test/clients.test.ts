@@ -86,7 +86,7 @@ describe('clients', () => {
     const patched = await t.api('PATCH', `/api/clients/${c.id}`, { instagram: null, notes: 'VIP', botEnabled: true });
     expect(patched.json()).toMatchObject({ instagram: null, notes: 'VIP', botEnabled: true, name: 'Иван' });
     const history = await t.api('GET', `/api/clients/${c.id}/history`);
-    expect(history.json()).toEqual({ appointments: [], sales: [] });
+    expect(history.json()).toEqual({ items: [], appointments: [], sales: [] });
     expect((await t.api('GET', '/api/clients/999/history')).statusCode).toBe(404);
   });
 

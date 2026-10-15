@@ -20,7 +20,8 @@ If the implementation must deviate, update this file in the same change.
   { "error": { "code": "validation_error", "message": "Текст для пользователя на русском" } }
   ```
   Codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `validation_error` (400),
-  `conflict` (409), `insufficient_stock` (409), `schedule_conflict` (409), `rate_limited` (429), `internal` (500).
+  `conflict` (409), `insufficient_stock` (409), `schedule_conflict` (409), `rate_limited` (429), `internal` (500),
+  `upstream_error` (502 — an external service such as AI image generation failed).
   `message` is always human-readable Russian; the app shows it as is.
 - All employees have identical permissions.
 - Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /cash/operations` and `POST /products/:id/movements`
@@ -67,11 +68,32 @@ If the implementation must deviate, update this file in the same change.
 
 ### Service
 ```json
-{ "id": 1, "name": "Прокол мочки", "category": "piercing", "price": 2500, "priceFrom": false,
-  "durationMin": 30, "description": "Текст для бота и сотрудников", "aftercareTemplateId": 2,
-  "active": true, "sort": 0 }
+{ "id": 1, "name": "Соски", "category": "piercing", "group": "Тело",
+  "price": 2500, "priceMax": null, "priceFrom": false, "durationMin": 45,
+  "description": "Nipple. Прокол проходит через сосок, избегая ареолы",
+  "imageUrl": "/uploads/5d2e….jpg", "imagePrompt": "a tasteful front view of a male chest with …",
+  "photos": ["/uploads/3f1c….jpg", "/uploads/9a0b….jpg"],
+  "variants": [ { "name": "Один", "price": 2500, "durationMin": null },
+                { "name": "Два", "price": 4000, "durationMin": 60 } ],
+  "aftercareTemplateId": 2, "active": true, "sort": 0 }
 ```
-`category`: `tattoo` | `piercing` | `other`. `priceFrom: true` means "от N ₽" (final price set per appointment).
+- `category`: `tattoo` | `piercing` | `other` (drives the default aftercare template and icons).
+- `group`: free-text subgroup inside the category («Лицо», «Ухо», «Тело», «Доп. услуги», …) or `null`;
+  lists are grouped by category, then group.
+- Price: `price` — base / minimal price (the default amount of a booked line); `priceMax` — optional upper bound;
+  `priceFrom` — the final price is set per appointment. The server stores `priceFrom = true` whenever `priceMax`
+  is set; `priceMax` must be greater than `price`. Display:
+  - `priceMax` set: `price > 0` → «от 2 000 до 5 000 ₽», `price = 0` → «до 10 000 ₽»;
+  - otherwise `priceFrom` → «от 15 000 ₽», `price = 0` → «Бесплатно», else «2 500 ₽».
+- `imageUrl`: the schematic cover picture (upload path) shown in the catalog, POS and the service card, and sent by
+  the bot when it consults a client about this service; `null` when none. Cover shown by apps = `imageUrl` ??
+  `photos[0]` ?? category icon.
+- `imagePrompt`: what the cover picture shows (subject text used to generate it; any language), or `null` —
+  then generation uses the service name, category and description.
+- `photos`: up to 12 upload paths (`/uploads/…`, from `POST /uploads`) — photos of real works; `[]` when none.
+- `variants`: up to 20 priced options (`name` 1–100 chars, `price`, optional `durationMin` overriding the service
+  duration); `[]` when none. Booking a service with variants books one variant: the line name is
+  `"<service name> — <variant name>"` and its price/duration come from the variant.
 
 ### AftercareTemplate
 ```json
@@ -106,12 +128,23 @@ If the implementation must deviate, update this file in the same change.
 ### Appointment
 ```json
 { "id": 1, "client": { ClientRef }, "master": { EmployeeRef }, "service": { ServiceRef } | null,
+  "services": [ { "id": 10, "serviceId": 3, "name": "Соски — Два", "category": "piercing",
+                  "price": 4000, "durationMin": 60 },
+                { "id": 11, "serviceId": null, "name": "Подбор украшения", "category": null,
+                  "price": 0, "durationMin": null } ],
   "title": "Тату на предплечье, эскиз согласован", "startsAt": "...", "endsAt": "...",
   "status": "scheduled", "price": 8000, "deposit": 2000, "notes": "...",
   "saleId": null, "completedAt": null, "createdAt": "...", "updatedAt": "..." }
 ```
 `status`: `scheduled` | `confirmed` | `completed` | `cancelled` | `no_show`.
 `deposit` — prepayment already received (informational; see Sales). `saleId` — the sale that paid for it.
+- `services` — the booked service lines in order (`[]` when none). `name`/`price`/`durationMin` are snapshots taken
+  at booking; `serviceId` is `null` for a custom line or a deleted catalog service; `category` comes from the
+  linked catalog service (`null` otherwise).
+- `service` — legacy single-service field kept for older app builds: the catalog service of the first line that
+  has one (`null` otherwise).
+- `title` — free-form description (sketch, zone, jewelry). Apps show service names first and fall back to `title`.
+- `price` — the appointment total; equals the sum of line prices unless set explicitly.
 
 ### Sale
 ```json
@@ -229,7 +262,7 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | GET | `/clients/:id` | — | `Client` with `stats` |
 | POST | `/clients` | `{ name, phone?, instagram?, birthday?, notes?, source?, botEnabled? }` | `Client` · `409 conflict` if phone already belongs to another client (message names that client) |
 | PATCH | `/clients/:id` | same fields + `archived` | `Client` |
-| GET | `/clients/:id/history` | — | `{ appointments: [Appointment], sales: [Sale] }` newest first |
+| GET | `/clients/:id/history` | — | `{ items: [HistoryEntry], appointments: [Appointment], sales: [Sale] }` newest first (see History) |
 | GET | `/clients/:id/chat` | — | `{ "chat": BotChat \| null }` — the client's Telegram bot chat (the linked chat, else the latest chat attributed to the client); `null` if the client has never written to the bot |
 | POST | `/clients/:id/telegram-link` | — | `{ "url": "https://t.me/<bot>?start=c<token>" }` — opening it links the Telegram chat to this client |
 
@@ -237,8 +270,10 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/services?includeInactive=true` | — | `{ items: [Service] }` sorted by `sort`, then name |
-| POST | `/services` | `{ name, category, price, priceFrom?, durationMin, description?, aftercareTemplateId?, active?, sort? }` | `Service` |
+| POST | `/services` | `{ name, category, group?, price, priceMax?, priceFrom?, durationMin, description?, imageUrl?, imagePrompt?, photos?, variants?, aftercareTemplateId?, active?, sort? }` | `Service` |
 | PATCH | `/services/:id` | any of the above | `Service` |
+| GET | `/services/:id/history?limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who got this service and when, newest first |
+| POST | `/services/:id/image/generate` | `{ prompt? }` (≤ 1000 chars) | `Service` with a new `imageUrl` — generates the schematic cover with AI (Polza Media API, ~1–2 min; apps use a 4-minute timeout). A non-empty `prompt` is used and saved as `imagePrompt`; `prompt: ""` / `null` resets it (generates from the name/description and saves `imagePrompt = null`); without `prompt` the saved `imagePrompt` (or name/description) is used. Only `imageUrl` (and `imagePrompt` when `prompt` is sent) change, so edits made during generation are kept. `409 conflict` when the AI key (`AI_API_KEY` + `AI_BASE_URL`) is not configured or a generation for this service is already running, `502 upstream_error` when generation fails (message says why). The previous picture file is kept. |
 
 ### Aftercare templates
 | Method | Path | Body | Response |
@@ -257,6 +292,7 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | PATCH | `/products/:id` | any of the above except `quantity`/`initialQuantity` | `Product` |
 | POST | `/products/:id/movements` | `{ type: "receipt"\|"writeoff"\|"usage"\|"adjustment", quantity, note? }` | `{ product: Product, movement: StockMovement }` · accepts `Idempotency-Key` |
 | GET | `/products/:id/movements?limit=&offset=` | — | `{ items: [StockMovement], total }` |
+| GET | `/products/:id/history?limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who bought this product and when, newest first |
 | GET | `/stock/movements?type=&limit=&offset=` | — | `{ items: [StockMovement], total }` newest first |
 
 Movement `quantity` semantics: `receipt` — positive amount added; `writeoff`/`usage` — positive amount removed;
@@ -275,19 +311,46 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 |---|---|---|---|
 | GET | `/appointments?from=&to=&masterId=&clientId=&status=` | — | `{ items: [Appointment] }` overlapping `[from, to)`, sorted by `startsAt` |
 | GET | `/appointments/:id` | — | `Appointment` |
-| POST | `/appointments` | `{ clientId, masterId, serviceId?, title?, startsAt, endsAt, price?, deposit?, notes?, status?, force? }` | `Appointment` |
+| POST | `/appointments` | `{ clientId, masterId, services?, serviceId?, title?, startsAt, endsAt?, price?, deposit?, notes?, status?, force? }` | `Appointment` |
 | PATCH | `/appointments/:id` | any of the above (incl. `status`) + `force?` | `Appointment` |
 | POST | `/appointments/:id/complete` | `{ sendAftercare: true, aftercareTemplateId?, consumables?: [{ productId, quantity }] }` | `{ appointment: Appointment, scheduledMessages: 3 }` |
 
-- `price` defaults to the service price; `endsAt` must be after `startsAt`.
+- `services`: `[{ serviceId?, name?, price?, durationMin? }]` (≤ 20) — replaces all service lines (`[]` clears them).
+  A line with `serviceId` defaults `name`, `price` and `durationMin` from the catalog service; a line without one
+  needs `name` (`price` defaults to 0). Apps resolve variants themselves and send the variant's name/price/duration.
+- Legacy `serviceId` (older builds) is used only when `services` is absent: the same service as the current first
+  catalog line keeps the lines untouched (`null` included — older builds always send `null` for appointments whose
+  lines are all custom); another service replaces them with that single service; `null` while the appointment has a
+  catalog service clears them.
+- `price` defaults to the sum of line prices (on create, and on PATCH when `services` is sent without `price`).
+- `endsAt` defaults (create only) to `startsAt` + the sum of line durations; it must be after `startsAt`.
 - Overlap check: if the master already has a non-cancelled, non-no-show appointment overlapping the time, respond
   `409 schedule_conflict` (message names the conflicting client and time) unless `force: true`.
 - `complete`: sets `status = completed`, `completedAt = now`; writes `usage` movements for `consumables`; when
   `sendAftercare` and the client has Telegram linked and `botEnabled`, schedules the aftercare template steps
-  (template = `aftercareTemplateId` ?? service's template). Cancels pending reminders of this appointment.
+  (template = `aftercareTemplateId` ?? the template of the first line whose service has one). Cancels pending
+  reminders of this appointment.
 - Creating/rescheduling an appointment for a Telegram-linked client schedules a reminder
   `reminderHoursBefore` hours before `startsAt` (if `remindersEnabled` and that moment is in the future).
   Cancelling / no-show / rescheduling cancels or replaces pending reminders.
+
+### History
+`HistoryEntry` — one thing done for or sold to a client:
+```json
+{ "id": "as10", "kind": "service", "date": "...", "name": "Соски — Два",
+  "serviceId": 3, "productId": null, "quantity": 1, "price": 4000, "total": 4000,
+  "client": { ClientRef } | null, "employee": { EmployeeRef } | null,
+  "appointmentId": 12, "saleId": 40, "saleNumber": 17, "refunded": false }
+```
+- Services come from **completed** appointments: one entry per service line (`id` `as<line id>`), or one entry named
+  after the appointment `title` («Процедура» when empty, `id` `at<appointment id>`, price = appointment price) when
+  the appointment has no lines. `date` = `startsAt`, `employee` = master, `saleId`/`saleNumber` = the paying sale.
+- Products come from sale items of type `product` (`id` `si<item id>`, `date` = sale time, `employee` = seller).
+  Service items of a sale count only when the sale is not linked to an appointment (otherwise the appointment
+  already lists them).
+- `refunded`: the sale (of the item, or the one that paid for the appointment) was refunded.
+- Used by `GET /clients/:id/history` (`items`, all entries), `GET /services/:id/history` and
+  `GET /products/:id/history` (paginated, default limit 50, max 200).
 
 ### Sales (POS)
 | Method | Path | Body | Response |

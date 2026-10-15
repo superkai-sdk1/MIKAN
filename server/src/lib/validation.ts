@@ -68,6 +68,14 @@ const FIELD_LABELS: Record<string, string> = {
   sendAftercare: 'Отправить памятку',
   restock: 'Вернуть на склад',
   sendAt: 'Время отправки',
+  group: 'Группа',
+  priceMax: 'Максимальная цена',
+  photos: 'Фото',
+  variants: 'Варианты',
+  imageUrl: 'Картинка',
+  imagePrompt: 'Описание картинки',
+  prompt: 'Описание картинки',
+  services: 'Услуги',
 };
 
 function fieldLabel(path: PropertyKey[]): string | null {

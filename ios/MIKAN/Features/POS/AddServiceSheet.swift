@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// Adds a catalog service or a custom one (name + price) to the cart.
+/// Adds a custom service (name + price) or a catalog one to the cart.
 struct AddServiceSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(CartStore.self) private var cart
     @Environment(ReferenceStore.self) private var reference
+
+    /// Called after a catalog service was added, with a price hint for variable-price services.
+    var onAdd: (_ hint: String?) -> Void = { _ in }
 
     @State private var customName = ""
     @State private var customPrice = 0
@@ -32,19 +35,8 @@ struct AddServiceSheet: View {
                     if !services.isEmpty {
                         Section(category.title) {
                             ForEach(services) { service in
-                                Button {
-                                    cart.add(service: service)
-                                    addedCount += 1
-                                    dismiss()
-                                } label: {
-                                    HStack {
-                                        Text(service.name).foregroundStyle(.primary)
-                                        Spacer()
-                                        Text(Money.format(service.price, from: service.priceFrom))
-                                            .monospacedDigit()
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .contentShape(.rect)
+                                ServiceRowButton(service: service) { variant in
+                                    add(service, variant: variant)
                                 }
                             }
                         }
@@ -72,6 +64,13 @@ struct AddServiceSheet: View {
         .presentationDetents([.medium, .large])
     }
 
+    private func add(_ service: Service, variant: ServiceVariant?) {
+        cart.add(service: service, variant: variant)
+        addedCount += 1
+        onAdd(POSServiceCatalog.priceHint(for: service, variant: variant))
+        dismiss()
+    }
+
     private func load() async {
         isLoading = true
         defer { isLoading = false }
@@ -81,6 +80,41 @@ struct AddServiceSheet: View {
         } catch {
             loadError = error.userMessage
         }
+    }
+}
+
+/// Catalog service row with its cover; asks which variant first when the service has them.
+private struct ServiceRowButton: View {
+    let service: Service
+    let onAdd: (ServiceVariant?) -> Void
+
+    @State private var choosesVariant = false
+
+    var body: some View {
+        Button {
+            if service.variants.isEmpty { onAdd(nil) } else { choosesVariant = true }
+        } label: {
+            HStack(spacing: 12) {
+                ServiceThumbnail(service: service, size: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(service.name).foregroundStyle(.primary)
+                    if !service.variants.isEmpty {
+                        Text(Plural.count(service.variants.count, one: "вариант", few: "варианта", many: "вариантов"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(service.priceText)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+            .contentShape(.rect)
+        }
+        .tint(.primary)
+        .serviceVariantDialog(for: service, isPresented: $choosesVariant) { onAdd($0) }
+        .accessibilityHint(service.variants.isEmpty ? "Добавить в чек" : "Выбрать вариант и добавить в чек")
     }
 }
 

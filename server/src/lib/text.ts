@@ -48,6 +48,21 @@ export function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
+/** 12500 → "12 500" (ru-RU digit grouping with plain spaces). */
+export function formatAmount(amount: number): string {
+  return amount.toLocaleString('ru-RU').replace(/\u00a0/g, ' ');
+}
+
 export function formatRub(amount: number): string {
-  return `${amount.toLocaleString('ru-RU').replace(/ /g, ' ')} ₽`;
+  return `${formatAmount(amount)} ₽`;
+}
+
+/**
+ * Catalog price of a service (docs/API.md → Service):
+ * «от 2 000 до 5 000 ₽», «до 10 000 ₽», «от 15 000 ₽», «Бесплатно», «2 500 ₽».
+ */
+export function formatServicePrice(price: number, priceMax: number | null, priceFrom: boolean): string {
+  if (priceMax != null) return price > 0 ? `от ${formatAmount(price)} до ${formatRub(priceMax)}` : `до ${formatRub(priceMax)}`;
+  if (priceFrom) return `от ${formatRub(price)}`;
+  return price === 0 ? 'Бесплатно' : formatRub(price);
 }

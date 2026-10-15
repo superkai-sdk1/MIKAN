@@ -30,6 +30,14 @@ final class MoneyFormattingTests: XCTestCase {
         XCTAssertEqual(Money.format(2_500, from: false), Money.format(2_500))
     }
 
+    func testServicePriceMatchesThePriceList() {
+        XCTAssertEqual(Money.servicePrice(2_500, max: nil, from: false), "2\(nbsp)500\(nbsp)₽")
+        XCTAssertEqual(Money.servicePrice(15_000, max: nil, from: true), "от 15\(nbsp)000\(nbsp)₽")
+        XCTAssertEqual(Money.servicePrice(2_000, max: 5_000, from: true), "от 2\(nbsp)000 до 5\(nbsp)000\(nbsp)₽")
+        XCTAssertEqual(Money.servicePrice(0, max: 10_000, from: true), "до 10\(nbsp)000\(nbsp)₽")
+        XCTAssertEqual(Money.servicePrice(0, max: nil, from: false), "Бесплатно")
+    }
+
     func testParsesUserInput() {
         XCTAssertEqual(Money.parse("12 400"), 12_400)
         XCTAssertEqual(Money.parse("12\(nbsp)400 ₽"), 12_400)

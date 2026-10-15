@@ -4,6 +4,12 @@ import SwiftUI
 struct MIKANApp: App {
     @State private var appState = AppState.live()
 
+    init() {
+        // Service covers and work photos (AsyncImage → URLSession.shared) repeat across the catalog, POS grid and
+        // cards; the server marks uploads immutable, so a larger shared cache avoids re-downloading them.
+        URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024, diskCapacity: 256 * 1024 * 1024)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
