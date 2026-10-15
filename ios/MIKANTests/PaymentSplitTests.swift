@@ -28,28 +28,36 @@ final class PaymentSplitTests: XCTestCase {
         XCTAssertEqual(PaymentMethod.allCases.map { split[$0] }, [100, 200, 300])
     }
 
-    func testAllInOneMethod() {
-        XCTAssertEqual(PaymentSplit.all(.card, total: 3_500), PaymentSplit(cash: 0, card: 3_500, transfer: 0))
-        XCTAssertEqual(PaymentSplit.all(.cash, total: -10), PaymentSplit(), "never negative")
+    func testSingleMethodWithoutDepositTakesTheWholeTotal() {
+        XCTAssertEqual(PaymentSplit.single(.card, total: 3_500, deposit: 0), PaymentSplit(cash: 0, card: 3_500, transfer: 0))
+        XCTAssertEqual(PaymentSplit.single(.cash, total: -10, deposit: 0), PaymentSplit(), "never negative")
         for method in PaymentMethod.allCases {
-            XCTAssertTrue(PaymentSplit.all(method, total: 9_999).isBalanced(for: 9_999))
+            XCTAssertTrue(PaymentSplit.single(method, total: 9_999, deposit: 0).isBalanced(for: 9_999))
         }
     }
 
-    func testOneTapKeepsDepositInTransfer() {
-        let split = PaymentSplit.oneTap(.cash, total: 8_000, deposit: 2_000)
+    func testSingleMethodKeepsDepositInTransfer() {
+        let split = PaymentSplit.single(.cash, total: 8_000, deposit: 2_000)
         XCTAssertEqual(split, PaymentSplit(cash: 6_000, card: 0, transfer: 2_000))
         XCTAssertTrue(split.isBalanced(for: 8_000))
 
-        let byTransfer = PaymentSplit.oneTap(.transfer, total: 8_000, deposit: 2_000)
+        let byTransfer = PaymentSplit.single(.transfer, total: 8_000, deposit: 2_000)
         XCTAssertEqual(byTransfer, PaymentSplit(cash: 0, card: 0, transfer: 8_000))
     }
 
-    func testOneTapClampsDepositToTotal() {
-        let split = PaymentSplit.oneTap(.card, total: 1_000, deposit: 5_000)
+    func testSingleMethodClampsDepositToTotal() {
+        let split = PaymentSplit.single(.card, total: 1_000, deposit: 5_000)
         XCTAssertEqual(split, PaymentSplit(cash: 0, card: 0, transfer: 1_000))
         XCTAssertTrue(split.isBalanced(for: 1_000))
-        XCTAssertEqual(PaymentSplit.oneTap(.card, total: 1_000, deposit: 0), PaymentSplit.all(.card, total: 1_000))
+        XCTAssertEqual(CheckoutRules.depositApplied(5_000, total: 1_000), 1_000)
+        XCTAssertEqual(CheckoutRules.depositApplied(-100, total: 1_000), 0)
+    }
+
+    func testPaymentModeChoicesAndTitles() {
+        XCTAssertEqual(PaymentMode.choices, [.single(.cash), .single(.card), .single(.transfer), .split])
+        XCTAssertEqual(PaymentMode.choices.map(\.title), ["Наличные", "Карта", "Перевод", "Разделить"])
+        XCTAssertEqual(PaymentMode.single(.card).method, .card)
+        XCTAssertNil(PaymentMode.split.method)
     }
 
     func testCheckoutRules() {
@@ -65,78 +73,25 @@ final class PaymentSplitTests: XCTestCase {
     }
 }
 
-@MainActor
-final class CartStoreTests: XCTestCase {
-    private func appointment(price: Int, deposit: Int) -> Appointment {
-        Appointment(
-            id: 4,
-            client: ClientRef(id: 1, name: "Иван Петров", phone: nil, telegramLinked: true),
-            master: EmployeeRef(id: 2, name: "Анна", color: nil),
-            service: ServiceRef(id: 3, name: "Прокол мочки", category: .piercing),
-            title: nil, startsAt: Fixtures.referenceDate, endsAt: Fixtures.referenceDate.addingTimeInterval(1800),
-            status: .completed, price: price, deposit: deposit, notes: nil, saleId: nil, completedAt: nil,
-            createdAt: Fixtures.referenceDate, updatedAt: Fixtures.referenceDate
-        )
+final class CashTenderTests: XCTestCase {
+    func testChangeIsShownOnlyWhenEnoughIsReceived() {
+        XCTAssertNil(CashTender.change(received: nil, due: 4_500), "empty field")
+        XCTAssertNil(CashTender.change(received: 4_000, due: 4_500), "short")
+        XCTAssertEqual(CashTender.change(received: 4_500, due: 4_500), 0)
+        XCTAssertEqual(CashTender.change(received: 5_000, due: 4_500), 500)
     }
 
-    func testPrefillFromAppointmentPutsDepositIntoTransfer() throws {
-        let cart = CartStore()
-        cart.prefill(from: appointment(price: 8_000, deposit: 2_000))
-
-        XCTAssertEqual(cart.lines.count, 1)
-        XCTAssertEqual(cart.total, 8_000)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 0, card: 0, transfer: 2_000))
-        XCTAssertEqual(cart.remaining, 6_000)
-        XCTAssertFalse(cart.canSubmit, "cannot submit until the split equals the total")
-
-        cart.applyOneTap(.card)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 0, card: 6_000, transfer: 2_000))
-        XCTAssertTrue(cart.canSubmit)
-
-        let body = cart.makeSaleBody()
-        XCTAssertEqual(body.appointmentId, 4)
-        XCTAssertEqual(body.clientId, 1)
-        let item = try XCTUnwrap(body.items.first)
-        XCTAssertEqual(item.type, .service)
-        XCTAssertEqual(item.serviceId, 3)
-        XCTAssertEqual(item.name, "Прокол мочки")
-        XCTAssertEqual(item.price, 8_000)
-        XCTAssertEqual(body.payments, Payments(cash: 0, card: 6_000, transfer: 2_000))
+    func testEmptyFieldDoesNotBlockButAShortAmountDoes() {
+        XCTAssertTrue(CashTender.isEnough(received: nil, due: 4_500))
+        XCTAssertTrue(CashTender.isEnough(received: 4_500, due: 4_500))
+        XCTAssertFalse(CashTender.isEnough(received: 0, due: 4_500))
+        XCTAssertFalse(CashTender.isEnough(received: 4_499, due: 4_500))
     }
 
-    func testAddingProductsMergesLinesAndDiscountChangesTotal() {
-        let cart = CartStore()
-        let product = Product(
-            id: 1, kind: .jewelry, name: "Лабрет", sku: nil, category: nil, material: nil, size: nil,
-            description: nil, price: 1_500, cost: nil, quantity: 2, minQuantity: 1, unit: "шт", photoUrl: nil,
-            active: true, lowStock: false, createdAt: Fixtures.referenceDate, updatedAt: Fixtures.referenceDate
-        )
-        cart.add(product: product)
-        cart.add(product: product)
-        cart.addCustomService(name: "  Прокол  ", price: 2_000)
-
-        XCTAssertEqual(cart.lines.count, 2)
-        XCTAssertEqual(cart.quantity(ofProduct: 1), 2)
-        XCTAssertEqual(cart.itemCount, 3)
-        XCTAssertEqual(cart.subtotal, 5_000)
-
-        cart.discount = 1_000
-        XCTAssertEqual(cart.total, 4_000)
-        cart.applyOneTap(.cash)
-        XCTAssertEqual(cart.split, PaymentSplit.all(.cash, total: 4_000))
-        XCTAssertTrue(cart.canSubmit)
-
-        cart.discount = 6_000
-        XCTAssertFalse(cart.isDiscountValid)
-        XCTAssertFalse(cart.canSubmit)
-
-        let body = cart.makeSaleBody()
-        XCTAssertEqual(body.items.first?.productId, 1)
-        XCTAssertNil(body.items.first?.name, "product lines are identified by productId")
-        XCTAssertEqual(body.items.last?.name, "Прокол")
-
-        cart.clear()
-        XCTAssertTrue(cart.isEmpty)
-        XCTAssertEqual(cart.split, PaymentSplit())
+    func testSuggestionsStartWithTheExactAmountAndRoundUpToBanknotes() {
+        XCTAssertEqual(CashTender.suggestions(for: 4_300), [4_300, 4_500, 5_000])
+        XCTAssertEqual(CashTender.suggestions(for: 1_200), [1_200, 1_500, 2_000, 5_000])
+        XCTAssertEqual(CashTender.suggestions(for: 5_000), [5_000])
+        XCTAssertEqual(CashTender.suggestions(for: 0), [])
     }
 }

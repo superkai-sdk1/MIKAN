@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Checkout sheet: lines, client, discount, payment split → «Провести продажу» → receipt.
+/// Checkout sheet: lines, client, appointment, discount, payment → «Провести продажу» → receipt.
 struct CheckoutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
@@ -9,16 +9,22 @@ struct CheckoutView: View {
     @Environment(ScheduleStore.self) private var schedule
 
     @State private var completedSale: Sale?
+    /// Result of completing the appointment in this checkout (kept across a failed sale and its retry).
+    @State private var completion: CompleteAppointmentResult?
+    @State private var receiptCashChange: Int?
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var errorTitle = CheckoutView.saleFailedTitle
     @State private var confirmsClear = false
     @State private var retryMessage: String?
+
+    private static let saleFailedTitle = "Продажа не проведена"
 
     var body: some View {
         NavigationStack {
             Group {
                 if let completedSale {
-                    SaleReceiptView(sale: completedSale) { finish() }
+                    SaleReceiptView(sale: completedSale, cashChange: receiptCashChange, completion: completion) { finish() }
                 } else {
                     form
                 }
@@ -26,7 +32,7 @@ struct CheckoutView: View {
             .navigationTitle(completedSale == nil ? "Оформление" : "Продажа проведена")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .errorAlert($errorMessage, title: "Продажа не проведена")
+            .errorAlert($errorMessage, title: errorTitle)
             .retryAlert($retryMessage, title: "Продажа могла пройти", retry: submit)
             .confirmationDialog("Очистить корзину?", isPresented: $confirmsClear, titleVisibility: .visible) {
                 Button("Очистить", role: .destructive) {
@@ -60,8 +66,9 @@ struct CheckoutView: View {
         Form {
             CheckoutLinesSection()
             CheckoutClientSection()
+            CheckoutAppointmentSection()
             CheckoutTotalsSection()
-            PaymentSplitSection()
+            CheckoutPaymentSection()
         }
         .safeAreaBar(edge: .bottom) {
             submitButton
@@ -94,32 +101,72 @@ struct CheckoutView: View {
         .buttonStyle(.glassProminent)
         .controlSize(.large)
         .disabled(!cart.canSubmit || isSubmitting)
-        .accessibilityHint(cart.canSubmit ? "" : "Распределите сумму между способами оплаты")
+        .accessibilityHint(submitHint)
     }
 
+    private var submitHint: String {
+        if !cart.isDiscountValid { return "Скидка больше суммы чека" }
+        if !cart.isCashReceivedEnough { return "Получено меньше суммы к оплате" }
+        if cart.remaining != 0 { return "Распределите сумму между способами оплаты" }
+        return ""
+    }
+
+    /// Completes the appointment first (a bare sale would mark it completed without aftercare), then sells.
     private func submit() {
-        let body = cart.makeSaleBody()
+        let saleBody = cart.makeSaleBody()
         // The same cart resends the same key, so a retry after a lost response cannot create a second sale.
-        let key = cart.saleIdempotencyKey(for: body)
+        let key = cart.saleIdempotencyKey(for: saleBody)
+        let completeBody = cart.makeCompleteBody()
+        let appointmentId = cart.appointmentId
+        let cashChange = cart.cashChange
         isSubmitting = true
         Task {
             defer { isSubmitting = false }
-            do {
-                await complete(try await api.createSale(body, idempotencyKey: key))
-            } catch let error as APIError where error.isOutcomeUnknown {
-                retryMessage = "Связь прервалась до ответа сервера. Нажмите «Повторить» — если продажа уже прошла, второй раз она не проведётся."
-            } catch {
-                errorMessage = error.userMessage
+            if let completeBody, let appointmentId {
+                guard await completeAppointment(id: appointmentId, completeBody) else { return }
             }
+            await createSale(saleBody, key: key, cashChange: cashChange)
         }
     }
 
-    private func complete(_ sale: Sale) async {
+    /// Idempotent on the server. On success the cart keeps the completed appointment, so a retry sends only the sale.
+    private func completeAppointment(id: Int, _ body: CompleteBody) async -> Bool {
+        do {
+            let result = try await api.completeAppointment(id: id, body)
+            cart.appointmentCompleted(result.appointment)
+            completion = result
+            return true
+        } catch {
+            showError(error.userMessage, title: "Запись не завершена")
+            return false
+        }
+    }
+
+    private func createSale(_ body: SaleBody, key: UUID, cashChange: Int?) async {
+        do {
+            await complete(try await api.createSale(body, idempotencyKey: key), cashChange: cashChange)
+        } catch let error as APIError where error.isOutcomeUnknown {
+            retryMessage = "Связь прервалась до ответа сервера. Нажмите «Повторить» — если продажа уже прошла, второй раз она не проведётся."
+        } catch {
+            showError(error.userMessage, title: Self.saleFailedTitle)
+            // The appointment was completed even though the sale failed: show its new status in the schedule.
+            if completion != nil { await schedule.refreshVisible() }
+        }
+    }
+
+    private func complete(_ sale: Sale, cashChange: Int?) async {
+        receiptCashChange = cashChange
         withAnimation(.smooth) { completedSale = sale }
+        cart.recordCompletedSale()
         await shift.refresh()
         if sale.appointmentId != nil {
             await schedule.refreshVisible()
         }
+    }
+
+    private func showError(_ message: String, title: String) {
+        errorTitle = title
+        errorMessage = message
     }
 
     private func finish() {

@@ -30,6 +30,8 @@ final class AppState {
     private(set) var employee: Employee?
     private(set) var badges = Badges.zero
     var selectedTab: AppTab = .schedule
+    /// Navigation inside «Касса»: other tabs land on the receipt screen by setting it.
+    var posPath: [POSRoute] = []
     /// Shown on the login screen after a forced sign-out.
     var signOutNotice: String?
 
@@ -80,6 +82,7 @@ final class AppState {
         badges = .zero
         cart.clear()
         cart.isCheckoutPresented = false
+        posPath = []
         shift.reset()
         schedule.reset()
         reference.reset()
@@ -143,16 +146,30 @@ final class AppState {
         }
     }
 
-    /// Opens the POS checkout prefilled from an appointment.
+    /// Opens the receipt for an appointment in «Касса» (jewelry can still be added before paying).
     func startCheckout(for appointment: Appointment) {
-        cart.prefill(from: appointment)
-        selectedTab = .pos
-        cart.isCheckoutPresented = true
+        cart.open(appointment)
+        openReceipt()
     }
 
-    /// Switches to the POS with the client attached to the cart.
+    /// Opens the receipt in «Касса» with the client attached. A receipt for another client's appointment
+    /// is replaced; other lines stay.
     func startSale(for client: ClientRef) {
+        if let appointment = cart.appointment, appointment.client.id != client.id {
+            cart.clear()
+        }
         cart.client = client
+        openReceipt()
+    }
+
+    /// Back to the POS hub (after a sale).
+    func closeReceipt() {
+        posPath = []
+    }
+
+    private func openReceipt() {
+        cart.isCheckoutPresented = false
         selectedTab = .pos
+        posPath = [.receipt]
     }
 }

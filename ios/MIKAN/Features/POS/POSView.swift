@@ -1,156 +1,147 @@
 import SwiftUI
 
-/// «Касса»: shift card, jewelry catalog, floating glass cart bar.
+/// «Касса» hub: shift card, the open receipt / «Открыть чек без записи», today's appointments awaiting payment.
+/// Receipts are pushed onto `AppState.posPath`, so the schedule and the client card can land on them too.
 struct POSView: View {
+    @Environment(AppState.self) private var appState
     @Environment(APIClient.self) private var api
     @Environment(CartStore.self) private var cart
     @Environment(ShiftStore.self) private var shift
 
+    @State private var queue = Remote<[Appointment]>()
     @State private var catalog = Remote<[Product]>()
-    @State private var search = ""
-    @State private var category: String?
-    @State private var showsServiceSheet = false
-    @State private var addCount = 0
-
-    private var categories: [String] {
-        Array(Set((catalog.value ?? []).compactMap(\.category.nonEmpty))).sorted()
-    }
-
-    private var filtered: [Product] {
-        let query = search.trimmed.lowercased()
-        return (catalog.value ?? []).filter { product in
-            let matchesCategory = category == nil || product.category.nonEmpty == category
-            guard matchesCategory else { return false }
-            guard !query.isEmpty else { return true }
-            let haystack = [product.name, product.sku, product.material, product.size, product.category]
-                .compactMap { $0?.lowercased() }
-                .joined(separator: " ")
-            return haystack.contains(query)
-        }
-    }
+    @State private var confirmsNewReceipt = false
+    @State private var replacingFor: Appointment?
 
     var body: some View {
+        @Bindable var appState = appState
         @Bindable var cart = cart
-        NavigationStack {
+        NavigationStack(path: $appState.posPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     ShiftCardView()
-                    if let client = cart.client {
-                        CartClientBanner(client: client) { cart.client = nil }
-                    }
-                    catalogSection
+                    ReceiptEntryCard(onContinue: continueReceipt, onNew: requestNewReceipt)
+                    PaymentQueueSection(
+                        queue: queue,
+                        openAppointmentId: cart.appointmentId,
+                        retry: loadQueue,
+                        onSelect: select
+                    )
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
             .background { AuraBackground() }
             .scrollEdgeEffectStyle(.soft, for: .top)
-            .safeAreaBar(edge: .bottom) {
-                CartBar { showsServiceSheet = true }
-            }
-            .searchable(text: $search, prompt: "Поиск украшений")
             .refreshable {
-                await load()
+                await loadQueue()
                 await shift.refresh()
             }
-            .task {
-                await load()
+            // Runs on every appearance (also when popping back from a receipt) and after each sale.
+            .task(id: cart.salesCompleted) {
+                await loadQueue()
                 if !shift.hasLoaded { await shift.refresh() }
             }
-            .remoteErrorAlert(catalog)
+            .remoteErrorAlert(queue)
             .navigationTitle("Касса")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        SalesHistoryView()
-                    } label: {
-                        Label("История продаж", systemImage: "clock.arrow.circlepath")
-                    }
-                }
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        ShiftsHistoryView()
-                    } label: {
-                        Label("Смены", systemImage: "tray.full")
-                    }
-                }
+            .toolbar { toolbarContent }
+            .navigationDestination(for: POSRoute.self) { route in
+                destination(for: route)
             }
-            .sheet(isPresented: $cart.isCheckoutPresented) {
-                CheckoutView()
+            .confirmationDialog("Начать новый чек?", isPresented: $confirmsNewReceipt, titleVisibility: .visible) {
+                Button("Удалить текущий и начать новый", role: .destructive, action: startBlankReceipt)
+                Button("Отмена", role: .cancel) {}
+            } message: {
+                Text("Позиции открытого чека на \(Money.format(cart.total)) будут удалены.")
             }
-            .sheet(isPresented: $showsServiceSheet) {
-                AddServiceSheet()
+            .confirmationDialog(
+                "Заменить открытый чек?",
+                isPresented: Binding(get: { replacingFor != nil }, set: { if !$0 { replacingFor = nil } }),
+                titleVisibility: .visible,
+                presenting: replacingFor
+            ) { appointment in
+                Button("Открыть чек по записи", role: .destructive) { open(appointment) }
+                Button("Отмена", role: .cancel) {}
+            } message: { _ in
+                Text("Позиции открытого чека на \(Money.format(cart.total)) будут удалены.")
             }
-            .sensoryFeedback(.impact(weight: .light), trigger: addCount)
+        }
+        // On the stack (not the root content), so «Оплатить» works from the pushed receipt.
+        .sheet(isPresented: $cart.isCheckoutPresented) {
+            CheckoutView()
+        }
+        .onChange(of: cart.salesCompleted) {
+            appState.closeReceipt()
         }
     }
 
-    @ViewBuilder
-    private var catalogSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Украшения")
-                .font(.title3.weight(.semibold))
-            if !categories.isEmpty {
-                CategoryChips(categories: categories, selection: $category)
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink(value: POSRoute.salesHistory) {
+                Label("История продаж", systemImage: "clock.arrow.circlepath")
             }
-            if catalog.value != nil {
-                if filtered.isEmpty {
-                    emptyState
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
-                        ForEach(filtered) { product in
-                            ProductTile(product: product, inCart: cart.quantity(ofProduct: product.id)) {
-                                cart.add(product: product)
-                                addCount += 1
-                            }
-                        }
-                    }
-                }
-            } else if let failure = catalog.failure {
-                ErrorStateView(message: failure, retry: load)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, minHeight: 160)
+        }
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink(value: POSRoute.shiftsHistory) {
+                Label("Смены", systemImage: "tray.full")
             }
         }
     }
 
     @ViewBuilder
-    private var emptyState: some View {
-        if !search.trimmed.isEmpty {
-            ContentUnavailableView.search(text: search)
+    private func destination(for route: POSRoute) -> some View {
+        switch route {
+        case .receipt:
+            ReceiptView(catalog: catalog)
+        case .clientPicker:
+            ClientPickerView(selection: Binding(get: { cart.client }, set: { cart.client = $0 }))
+        case .salesHistory:
+            SalesHistoryView()
+        case .shiftsHistory:
+            ShiftsHistoryView()
+        }
+    }
+
+    // MARK: - Actions
+
+    private var hasUnsavedWork: Bool {
+        ReceiptDraft.hasUnsavedWork(lines: cart.lines, appointment: cart.appointment)
+    }
+
+    private func continueReceipt() {
+        appState.posPath = [.receipt]
+    }
+
+    private func requestNewReceipt() {
+        if hasUnsavedWork {
+            confirmsNewReceipt = true
         } else {
-            ContentUnavailableView(
-                "Нет украшений",
-                systemImage: "sparkles",
-                description: Text("Добавьте украшения на вкладке «Склад» — они появятся здесь. Услугу можно добавить кнопкой «Услуга».")
-            )
+            startBlankReceipt()
         }
     }
 
-    private func load() async {
-        await catalog.load { try await api.products(kind: .jewelry) }
+    private func startBlankReceipt() {
+        cart.clear()
+        appState.posPath = [.receipt]
     }
-}
 
-private struct CartClientBanner: View {
-    let client: ClientRef
-    let onRemove: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            InitialsAvatar(name: client.name, size: 34)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Продажа клиенту").font(.caption).foregroundStyle(.secondary)
-                Text(client.name).font(.subheadline.weight(.semibold))
-            }
-            Spacer()
-            Button("Убрать клиента", systemImage: "xmark.circle.fill", action: onRemove)
-                .labelStyle(.iconOnly)
-                .foregroundStyle(.secondary)
-                .buttonStyle(.plain)
+    private func select(_ appointment: Appointment) {
+        if cart.appointmentId != appointment.id && hasUnsavedWork {
+            replacingFor = appointment
+        } else {
+            open(appointment)
         }
-        .cardStyle(padding: 12)
+    }
+
+    private func open(_ appointment: Appointment) {
+        cart.open(appointment)
+        appState.posPath = [.receipt]
+    }
+
+    private func loadQueue() async {
+        await queue.load { try await api.appointmentsAwaitingPayment() }
     }
 }
 

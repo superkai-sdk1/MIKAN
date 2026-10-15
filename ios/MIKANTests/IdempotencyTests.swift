@@ -29,14 +29,14 @@ final class IdempotencyTests: XCTestCase {
     func testClearingTheCartGivesTheNextIdenticalSaleANewKey() {
         let cart = CartStore()
         cart.addCustomService(name: "Прокол мочки", price: 2500)
-        cart.applyOneTap(.cash)
+        cart.selectPaymentMode(.single(.cash))
         let body = cart.makeSaleBody()
         let key = cart.saleIdempotencyKey(for: body)
         XCTAssertEqual(cart.saleIdempotencyKey(for: cart.makeSaleBody()), key, "a retry of the same checkout reuses the key")
 
         cart.clear()
         cart.addCustomService(name: "Прокол мочки", price: 2500)
-        cart.applyOneTap(.cash)
+        cart.selectPaymentMode(.single(.cash))
         XCTAssertNotEqual(cart.saleIdempotencyKey(for: cart.makeSaleBody()), key, "a new sale must not replay the previous one")
     }
 

@@ -50,25 +50,82 @@ struct CartLine: Identifiable, Hashable {
 /// POS cart shared app-wide, so other screens (appointment, client card) can start a checkout.
 @Observable
 final class CartStore {
+    /// UserDefaults key of the single payment method used for the last sale.
+    static let lastPaymentMethodKey = "pos.lastPaymentMethod"
+    static let defaultPaymentMethod = PaymentMethod.card
+
     var lines: [CartLine] = []
     var client: ClientRef?
-    private(set) var appointmentId: Int?
+    /// Appointment this receipt pays for (kept whole: checkout may need to complete it first).
+    private(set) var appointment: Appointment?
+    var appointmentId: Int? { appointment?.id }
     var discount = 0
-    var split = PaymentSplit()
-    /// Deposit already received for the appointment; pre-filled into `transfer`.
+    /// Deposit already received for the appointment; it stays in `transfer` whatever the payment mode.
     private(set) var deposit = 0
     var note = ""
     var isCheckoutPresented = false
+    /// Bumped after every successful sale, so the POS hub can reload its lists and pop the receipt screen.
+    private(set) var salesCompleted = 0
+
+    /// One method (amount computed from the total) or a manual split. New receipts start with the last used method.
+    private(set) var paymentMode: PaymentMode
+    /// Amounts typed in the «Разделить» mode.
+    var manualSplit = PaymentSplit()
+    /// Cash handed over by the client (single cash mode only); used for the change, never sent to the server.
+    var cashReceived: Int?
+
+    /// `POST /appointments/:id/complete` before the sale (only while the appointment is not completed yet).
+    var completesAppointment = true
+    /// Aftercare via the Telegram bot; effective only when the appointment's client has linked the bot.
+    var sendsAftercare = false
+
     /// Kept while the sale body is unchanged (retries after a lost response), renewed when the cart changes,
     /// reset when the cart is cleared.
     @ObservationIgnored private var saleKey = IdempotencyKey()
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        self.paymentMode = .single(Self.storedPaymentMethod(in: defaults))
+    }
 
     var isEmpty: Bool { lines.isEmpty }
     var itemCount: Int { lines.reduce(0) { $0 + $1.quantity } }
     var subtotal: Int { lines.reduce(0) { $0 + $1.total } }
     var total: Int { CheckoutRules.total(subtotal: subtotal, discount: discount) }
-    var remaining: Int { split.remaining(for: total) }
     var isDiscountValid: Bool { CheckoutRules.isDiscountValid(discount, subtotal: subtotal) }
+
+    // MARK: Payment
+
+    /// Part of the deposit counted in this receipt (paid by transfer before the visit).
+    var depositApplied: Int { CheckoutRules.depositApplied(deposit, total: total) }
+    /// What the client still has to pay now: total minus the deposit.
+    var amountDue: Int { total - depositApplied }
+
+    /// Payments sent with the sale.
+    var split: PaymentSplit {
+        switch paymentMode {
+        case .single(let method): PaymentSplit.single(method, total: total, deposit: deposit)
+        case .split: manualSplit
+        }
+    }
+
+    /// Positive: still to distribute; negative: overpaid. Always 0 in single mode.
+    var remaining: Int { split.remaining(for: total) }
+
+    var isCashMode: Bool { paymentMode == .single(.cash) }
+
+    /// Change for `cashReceived`; `nil` outside cash mode, while the field is empty or the amount is short.
+    var cashChange: Int? {
+        guard isCashMode else { return nil }
+        return CashTender.change(received: cashReceived, due: amountDue)
+    }
+
+    /// False when the cashier entered a received amount smaller than what is due.
+    var isCashReceivedEnough: Bool {
+        guard isCashMode else { return true }
+        return CashTender.isEnough(received: cashReceived, due: amountDue)
+    }
 
     var canSubmit: Bool {
         CheckoutRules.canSubmit(
@@ -77,8 +134,46 @@ final class CartStore {
             subtotal: subtotal,
             discount: discount,
             split: split
-        )
+        ) && isCashReceivedEnough
     }
+
+    /// Switching to «Разделить» starts from the amounts of the current mode, so only the difference needs typing.
+    func selectPaymentMode(_ mode: PaymentMode) {
+        guard mode != paymentMode else { return }
+        if mode == .split {
+            manualSplit = split
+        }
+        paymentMode = mode
+    }
+
+    /// Puts what is left to distribute into `method` (or takes an overpayment back from it, never below 0).
+    func fillRemaining(with method: PaymentMethod) {
+        manualSplit[method] = max(0, manualSplit[method] + remaining)
+    }
+
+    // MARK: Appointment
+
+    /// The appointment still has to be completed: checkout shows the «Запись» section.
+    var hasPendingAppointment: Bool {
+        guard let appointment else { return false }
+        return appointment.status != .completed
+    }
+
+    var canSendAftercare: Bool { appointment?.client.telegramLinked ?? false }
+
+    /// Body for `POST /appointments/:id/complete`, or `nil` when checkout should go straight to the sale.
+    func makeCompleteBody() -> CompleteBody? {
+        guard hasPendingAppointment, completesAppointment else { return nil }
+        return CompleteBody(sendAftercare: sendsAftercare && canSendAftercare, aftercareTemplateId: nil, consumables: [])
+    }
+
+    /// Stores the completed appointment, so a retried checkout skips the completion and sends only the sale.
+    func appointmentCompleted(_ completed: Appointment) {
+        guard completed.id == appointment?.id else { return }
+        appointment = completed
+    }
+
+    // MARK: Lines
 
     func quantity(ofProduct productId: Int) -> Int {
         lines.filter { $0.productId == productId }.reduce(0) { $0 + $1.quantity }
@@ -104,14 +199,8 @@ final class CartStore {
         lines.remove(atOffsets: offsets)
     }
 
-    func applyOneTap(_ method: PaymentMethod) {
-        split = deposit > 0
-            ? PaymentSplit.oneTap(method, total: total, deposit: deposit)
-            : PaymentSplit.all(method, total: total)
-    }
-
-    /// Fills the cart from a completed appointment: service line at the appointment price,
-    /// the client, the appointment link and the deposit pre-filled into the transfer payment.
+    /// Fills the cart from an appointment: service line at the appointment price, the client,
+    /// the appointment link and its deposit (kept in `transfer`).
     func prefill(from appointment: Appointment) {
         clear()
         lines = [CartLine(
@@ -120,10 +209,12 @@ final class CartStore {
             unitPrice: appointment.price
         )]
         client = appointment.client
-        appointmentId = appointment.id
+        self.appointment = appointment
         deposit = min(max(0, appointment.deposit), appointment.price)
-        split = PaymentSplit(cash: 0, card: 0, transfer: deposit)
+        sendsAftercare = appointment.client.telegramLinked
     }
+
+    // MARK: Sale
 
     func makeSaleBody() -> SaleBody {
         SaleBody(
@@ -140,14 +231,41 @@ final class CartStore {
         saleKey.key(for: body)
     }
 
+    /// Call once the sale succeeded: remembers the single payment method for the next receipts and notifies the hub.
+    func recordCompletedSale() {
+        if let method = paymentMode.method {
+            defaults.set(method.rawValue, forKey: Self.lastPaymentMethodKey)
+        }
+        salesCompleted += 1
+    }
+
+    /// Keeps the lines and the client but stops paying for the appointment (and drops its deposit).
+    func detachAppointment() {
+        if paymentMode == .split {
+            manualSplit.transfer = max(0, manualSplit.transfer - depositApplied)
+        }
+        appointment = nil
+        deposit = 0
+        completesAppointment = true
+        sendsAftercare = false
+    }
+
     func clear() {
         saleKey.reset()
         lines = []
         client = nil
-        appointmentId = nil
+        appointment = nil
         discount = 0
-        split = PaymentSplit()
         deposit = 0
         note = ""
+        paymentMode = .single(Self.storedPaymentMethod(in: defaults))
+        manualSplit = PaymentSplit()
+        cashReceived = nil
+        completesAppointment = true
+        sendsAftercare = false
+    }
+
+    private static func storedPaymentMethod(in defaults: UserDefaults) -> PaymentMethod {
+        defaults.string(forKey: lastPaymentMethodKey).flatMap(PaymentMethod.init(rawValue:)) ?? defaultPaymentMethod
     }
 }

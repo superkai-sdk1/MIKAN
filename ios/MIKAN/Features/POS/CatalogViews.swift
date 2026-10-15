@@ -103,7 +103,8 @@ private struct ChipStyle: ViewModifier {
     }
 }
 
-/// Floating glass cluster: «Услуга» and the cart. The compact cart button morphs into the checkout bar.
+/// Floating glass cluster on the receipt: «Услуга» and «Оплатить · N ₽».
+/// The compact cart button morphs into the pay button once the receipt has lines.
 struct CartBar: View {
     @Environment(CartStore.self) private var cart
     let onAddService: () -> Void
@@ -115,7 +116,7 @@ struct CartBar: View {
                 Button(action: onAddService) {
                     Label("Услуга", systemImage: "plus")
                         .font(.headline)
-                        .padding(.horizontal, 18)
+                        .padding(.horizontal, 14)
                         .frame(height: 52)
                         .contentShape(.capsule)
                 }
@@ -133,14 +134,15 @@ struct CartBar: View {
                         .frame(width: 52, height: 52)
                         .glassEffect(.regular, in: .circle)
                         .glassEffectID("cart", in: glassNamespace)
-                        .accessibilityLabel("Корзина пуста")
+                        .accessibilityLabel("Чек пуст")
                 } else {
                     Button { cart.isCheckoutPresented = true } label: { expandedCart }
                         .buttonStyle(.plain)
                         .glassEffect(.regular.tint(.accentColor).interactive(), in: .capsule)
                         .glassEffectID("cart", in: glassNamespace)
-                        .accessibilityLabel("Корзина: \(Plural.count(cart.itemCount, one: "позиция", few: "позиции", many: "позиций")), \(Money.format(cart.total))")
-                        .accessibilityHint("Оформить продажу")
+                        .accessibilityLabel("Оплатить \(Money.format(cart.total))")
+                        .accessibilityValue(Plural.count(cart.itemCount, one: "позиция", few: "позиции", many: "позиций"))
+                        .accessibilityHint("Перейти к оплате")
                 }
             }
         }
@@ -161,16 +163,19 @@ struct CartBar: View {
                     .background(.white, in: .capsule)
                     .offset(x: 10, y: -8)
             }
-            Text(Money.format(cart.total))
+            Spacer(minLength: 4)
+            // The amount must never be cut off: it gets the width first and may shrink a little.
+            Text("Оплатить · \(Money.format(cart.total))")
                 .font(.headline)
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .layoutPriority(1)
                 .contentTransition(.numericText(value: Double(cart.total)))
-            Spacer(minLength: 8)
-            Text("Оформить").font(.headline)
-            Image(systemName: "chevron.right").font(.subheadline.weight(.bold))
+            Spacer(minLength: 4)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 16)
         .frame(height: 52)
         .frame(maxWidth: .infinity)
         .contentShape(.capsule)
