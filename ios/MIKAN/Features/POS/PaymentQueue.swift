@@ -1,0 +1,37 @@
+import Foundation
+
+/// Today's appointments that still wait for payment (the «К оплате по записям» list on the POS hub).
+nonisolated enum PaymentQueue {
+    /// Appointments that can still end in a sale (cancelled and no-show ones never do).
+    static let statuses: [AppointmentStatus] = [.scheduled, .confirmed, .completed]
+
+    /// `status` query value; the server accepts a comma-separated list.
+    static var statusQuery: String { statuses.map(\.rawValue).joined(separator: ",") }
+
+    /// The calendar day containing `date` (device time zone by default), as `[start, next day start)`.
+    static func day(containing date: Date, calendar: Calendar = .app) -> DateInterval {
+        let start = calendar.startOfDay(for: date)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(24 * 60 * 60)
+        return DateInterval(start: start, end: end)
+    }
+
+    /// Not paid yet, in a payable status, earliest first.
+    static func unpaid(_ appointments: [Appointment]) -> [Appointment] {
+        appointments
+            .filter { $0.saleId == nil && statuses.contains($0.status) }
+            .sorted { ($0.startsAt, $0.id) < ($1.startsAt, $1.id) }
+    }
+}
+
+extension APIClient {
+    /// Today's unpaid appointments for the POS hub.
+    func appointmentsAwaitingPayment(on date: Date = .now) async throws -> [Appointment] {
+        let day = PaymentQueue.day(containing: date)
+        let response: ItemsResponse<Appointment> = try await request(.get, "appointments", query: queryItems([
+            "from": ISO8601.string(from: day.start),
+            "to": ISO8601.string(from: day.end),
+            "status": PaymentQueue.statusQuery,
+        ]))
+        return PaymentQueue.unpaid(response.items)
+    }
+}

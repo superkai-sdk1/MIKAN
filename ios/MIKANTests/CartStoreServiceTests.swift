@@ -3,6 +3,17 @@ import XCTest
 
 @MainActor
 final class CartStoreServiceTests: XCTestCase {
+    /// Isolated UserDefaults domain per test, so the remembered payment method never leaks between tests.
+    private lazy var suiteName: String = {
+        let name = "CartStoreServiceTests.\(UUID().uuidString)"
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: name) }
+        return name
+    }()
+
+    private func makeCart() throws -> CartStore {
+        CartStore(defaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)))
+    }
+
     private let nipple = Service(
         id: 5, name: "Соски", category: .piercing, group: "Тело", price: 2_500, priceFrom: false, durationMin: 45,
         variants: [
@@ -38,7 +49,7 @@ final class CartStoreServiceTests: XCTestCase {
     // MARK: - add(service:variant:)
 
     func testAddServiceVariantUsesVariantNameAndPrice() throws {
-        let cart = CartStore()
+        let cart = try makeCart()
 
         cart.add(service: nipple, variant: nipple.variants[1])
 
@@ -54,7 +65,7 @@ final class CartStoreServiceTests: XCTestCase {
     }
 
     func testAddServiceWithoutVariantUsesBasePrice() throws {
-        let cart = CartStore()
+        let cart = try makeCart()
 
         cart.add(service: tattoo)
 
@@ -64,8 +75,8 @@ final class CartStoreServiceTests: XCTestCase {
         XCTAssertEqual(added.kind, .service(id: 4))
     }
 
-    func testRepeatedServiceBumpsQuantityButVariantsAndEditedPricesStaySeparate() {
-        let cart = CartStore()
+    func testRepeatedServiceBumpsQuantityButVariantsAndEditedPricesStaySeparate() throws {
+        let cart = try makeCart()
 
         cart.add(service: nipple, variant: nipple.variants[0])
         cart.add(service: nipple, variant: nipple.variants[0])
@@ -82,8 +93,8 @@ final class CartStoreServiceTests: XCTestCase {
 
     // MARK: - prefill(from:)
 
-    func testPrefillSplitsServiceLinesWhenTheyAddUpToThePrice() {
-        let cart = CartStore()
+    func testPrefillSplitsServiceLinesWhenTheyAddUpToThePrice() throws {
+        let cart = try makeCart()
         let booked = [
             line(id: 1, serviceId: 3, name: "Прокол мочки", price: 1_600),
             line(id: 2, serviceId: nil, name: "Своя услуга", price: 900),
@@ -100,7 +111,7 @@ final class CartStoreServiceTests: XCTestCase {
     }
 
     func testPrefillFallsBackToOneLineWhenThePriceWasChanged() throws {
-        let cart = CartStore()
+        let cart = try makeCart()
         let booked = [
             line(id: 1, serviceId: 3, name: "Прокол мочки", price: 1_600),
             line(id: 2, serviceId: 5, name: "Соски — Один", price: 2_500),
@@ -117,7 +128,7 @@ final class CartStoreServiceTests: XCTestCase {
     }
 
     func testPrefillWithoutServiceLinesKeepsOneLineAtTheAppointmentPrice() throws {
-        let cart = CartStore()
+        let cart = try makeCart()
 
         cart.prefill(from: appointment(price: 8_000, deposit: 0, services: []))
 
@@ -128,8 +139,8 @@ final class CartStoreServiceTests: XCTestCase {
         XCTAssertEqual(only.kind, .service(id: 3))
     }
 
-    func testPrefillKeepsClientAppointmentAndDeposit() {
-        let cart = CartStore()
+    func testPrefillKeepsClientAppointmentAndDeposit() throws {
+        let cart = try makeCart()
         cart.add(service: tattoo)
         cart.discount = 300
         let booked = [
@@ -142,10 +153,12 @@ final class CartStoreServiceTests: XCTestCase {
         XCTAssertEqual(cart.lines.count, 2, "previous cart content is replaced")
         XCTAssertEqual(cart.discount, 0)
         XCTAssertEqual(cart.deposit, 1_000)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 0, card: 0, transfer: 1_000))
-        XCTAssertEqual(cart.remaining, 4_600)
-        cart.applyOneTap(.cash)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 4_600, card: 0, transfer: 1_000))
+        XCTAssertEqual(cart.depositApplied, 1_000)
+        XCTAssertEqual(cart.amountDue, 4_600)
+        XCTAssertEqual(cart.split, PaymentSplit(cash: 4_600, transfer: 1_000), "the deposit stays in transfer")
+        cart.selectPaymentMode(.single(.card))
+        XCTAssertEqual(cart.split, PaymentSplit(card: 4_600, transfer: 1_000))
+        XCTAssertTrue(cart.canSubmit)
 
         let body = cart.makeSaleBody()
         XCTAssertEqual(body.clientId, 1)
@@ -153,14 +166,15 @@ final class CartStoreServiceTests: XCTestCase {
         XCTAssertEqual(body.items.map(\.price), [1_600, 4_000])
     }
 
-    func testPrefillClampsDepositToThePrice() {
-        let cart = CartStore()
+    func testPrefillClampsDepositToThePrice() throws {
+        let cart = try makeCart()
         let booked = [line(id: 1, serviceId: 3, name: "Прокол мочки", price: 1_600)]
 
         cart.prefill(from: appointment(price: 1_600, deposit: 5_000, services: booked))
 
         XCTAssertEqual(cart.deposit, 1_600)
-        XCTAssertEqual(cart.split, PaymentSplit(cash: 0, card: 0, transfer: 1_600))
+        XCTAssertEqual(cart.amountDue, 0)
+        XCTAssertEqual(cart.split, PaymentSplit(transfer: 1_600))
         XCTAssertTrue(cart.canSubmit)
     }
 }
@@ -217,7 +231,7 @@ final class POSServiceCatalogAndHistoryTests: XCTestCase {
         XCTAssertEqual(sections.map(\.isFirstInCategory), [true, false, true, false, false, true])
     }
 
-    func testSectionHeadersShowCategoriesOnlyWhenSeveralAndSkipARepeatedGroupTitle() throws {
+    func testSectionHeadersShowCategoriesOnlyWhenSeveralAndSkipARepeatedGroupTitle() {
         let services = [
             service(1, "Мини тату", .tattoo, group: "Тату"),
             service(2, "Удаление", .tattoo, group: "Коррекция и удаление"),
@@ -233,6 +247,14 @@ final class POSServiceCatalogAndHistoryTests: XCTestCase {
         let single = tattooOnly.map { $0.headers(showsCategories: false) }
         XCTAssertEqual(single.map(\.category), [nil, nil])
         XCTAssertEqual(single.map(\.group), ["Тату", "Коррекция и удаление"])
+    }
+
+    func testRowsSplitTilesIntoFixedWidthRows() {
+        let services = (1...5).map { service($0, "Услуга \($0)", .piercing, group: nil) }
+
+        XCTAssertEqual(POSServiceCatalog.rows(services, columns: 2).map { $0.map(\.id) }, [[1, 2], [3, 4], [5]])
+        XCTAssertTrue(POSServiceCatalog.rows([], columns: 2).isEmpty)
+        XCTAssertTrue(POSServiceCatalog.rows(services, columns: 0).isEmpty)
     }
 
     func testPriceHintOnlyForVariablePriceWithoutVariant() {

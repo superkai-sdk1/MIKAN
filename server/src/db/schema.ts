@@ -197,6 +197,8 @@ export const sales = sqliteTable(
     payCash: integer('pay_cash').notNull().default(0),
     payCard: integer('pay_card').notNull().default(0),
     payTransfer: integer('pay_transfer').notNull().default(0),
+    /** Paid by an SBP QR code; only set from a confirmed `qr_payments` row, never directly by the app. */
+    payQr: integer('pay_qr').notNull().default(0),
     status: text('status').notNull(),
     note: text('note'),
     refundedAt: ms('refunded_at'),
@@ -229,6 +231,40 @@ export const saleItems = sqliteTable(
     total: integer('total').notNull(),
   },
   (t) => [index('sale_items_sale_idx').on(t.saleId)],
+);
+
+/**
+ * A dynamic SBP QR code shown at checkout. The sale is created on the server only once the bank confirms the
+ * payment, from the cart stored in `saleInputJson`, so a paid QR maps to exactly one sale.
+ */
+export const qrPayments = sqliteTable(
+  'qr_payments',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    /** `tochka` */
+    provider: text('provider').notNull(),
+    /** The bank's QR id (Tochka `qrcId`). */
+    externalId: text('external_id').notNull().unique(),
+    /** The link encoded into the QR image (`https://qr.nspk.ru/...`). */
+    payload: text('payload').notNull(),
+    amount: integer('amount').notNull(),
+    /** `pending` | `paid` | `expired` | `cancelled` */
+    status: text('status').notNull(),
+    saleInputJson: text('sale_input_json').notNull(),
+    saleId: integer('sale_id').references(() => sales.id),
+    /** For staff: a declined attempt / unreachable bank while pending, or why paid money was not sold. */
+    error: text('error'),
+    employeeId: integer('employee_id')
+      .notNull()
+      .references(() => employees.id),
+    expiresAt: ms('expires_at').notNull(),
+    /** Last successful bank check. */
+    checkedAt: ms('checked_at'),
+    paidAt: ms('paid_at'),
+    createdAt: ms('created_at').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  (t) => [index('qr_payments_status_idx').on(t.status, t.expiresAt)],
 );
 
 export const stockMovements = sqliteTable(

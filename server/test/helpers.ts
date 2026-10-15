@@ -9,6 +9,7 @@ import { loadConfig, type Config } from '../src/config.js';
 import { silentLogger, type AiClient, type AppContext, type ImageGenerator } from '../src/context.js';
 import { openDatabase } from '../src/db/client.js';
 import { seedDatabase } from '../src/db/seed.js';
+import type { CreatedQr, QrBankStatus, QrProvider } from '../src/payments/qr-provider.js';
 
 export const ADMIN = { login: 'admin', password: 'secret123', name: 'Админ' };
 
@@ -44,6 +45,32 @@ export class FakeGateway implements BotGateway {
 }
 
 export const blocked = () => new BotSendError('Telegram: Forbidden: bot was blocked by the user', true);
+
+/** Scripted bank: hands out sequential QR ids and answers status checks from `statuses` (default `pending`). */
+export class FakeQrProvider implements QrProvider {
+  readonly name = 'fake';
+  created: Array<{ amount: number; purpose: string; ttlMinutes: number }> = [];
+  statuses = new Map<string, QrBankStatus>();
+  statusChecks = 0;
+  /** Thrown by the next createQr / paymentStatus call. */
+  createFailure: Error | null = null;
+  statusFailure: Error | null = null;
+  /** Delay of each status answer, to overlap requests. */
+  statusDelayMs = 0;
+
+  async createQr(input: { amount: number; purpose: string; ttlMinutes: number }): Promise<CreatedQr> {
+    if (this.createFailure) throw this.createFailure;
+    this.created.push(input);
+    const externalId = `QR${this.created.length}`;
+    return { externalId, payload: `https://qr.nspk.ru/${externalId}?type=02&sum=${input.amount * 100}` };
+  }
+  async paymentStatus(externalId: string): Promise<QrBankStatus> {
+    this.statusChecks += 1;
+    if (this.statusDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.statusDelayMs));
+    if (this.statusFailure) throw this.statusFailure;
+    return this.statuses.get(externalId) ?? 'pending';
+  }
+}
 
 type Script = Anthropic.Message | Error;
 
@@ -111,7 +138,13 @@ export const noImageGenerator: ImageGenerator = async () => {
 };
 
 export async function createTestApp(
-  opts: { ai?: AiClient | null; env?: Record<string, string>; gateway?: FakeGateway; generateImage?: ImageGenerator } = {},
+  opts: {
+    ai?: AiClient | null;
+    qr?: QrProvider | null;
+    env?: Record<string, string>;
+    gateway?: FakeGateway;
+    generateImage?: ImageGenerator;
+  } = {},
 ): Promise<TestApp> {
   const config = testConfig(opts.env);
   const { db, sqlite } = openDatabase(':memory:');
@@ -125,6 +158,7 @@ export async function createTestApp(
     gateway,
     ai: opts.ai ?? null,
     generateImage: opts.generateImage ?? noImageGenerator,
+    qr: opts.qr ?? null,
     onBotSettingsChanged: () => undefined,
   };
   const app = await buildApp(ctx);

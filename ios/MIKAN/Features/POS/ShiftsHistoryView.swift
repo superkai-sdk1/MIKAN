@@ -137,8 +137,13 @@ struct ShiftDetailView: View {
             LabeledContent("Выручка") { MoneyText(shift.summary.revenue) }
             LabeledContent("Количество", value: "\(shift.summary.salesCount)")
             LabeledContent("Наличные") { MoneyText(shift.summary.cash) }
-            LabeledContent("Карта") { MoneyText(shift.summary.card) }
             LabeledContent("Перевод") { MoneyText(shift.summary.transfer) }
+            if shift.summary.qr > 0 {
+                LabeledContent(PaymentMethod.qr.title) { MoneyText(shift.summary.qr) }
+            }
+            if shift.summary.card > 0 {
+                LabeledContent(PaymentMethod.card.title) { MoneyText(shift.summary.card) }
+            }
             if shift.summary.refunds > 0 {
                 LabeledContent("Возвраты") { MoneyText(shift.summary.refunds) }
             }

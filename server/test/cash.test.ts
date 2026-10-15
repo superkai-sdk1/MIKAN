@@ -52,6 +52,7 @@ describe('cash register', () => {
       cash: 3500,
       card: 5000,
       transfer: 1500,
+      qr: 0,
       refunds: 2500,
       cashRefunds: 2500,
       cashIn: 300,

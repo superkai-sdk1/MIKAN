@@ -96,6 +96,13 @@ private struct RefundSheet: View {
                     if sale.payments.cash > 0 {
                         LabeledContent("Из кассы наличными") { MoneyText(sale.payments.cash) }
                     }
+                    if sale.payments.qr > 0 {
+                        LabeledContent("Оплачено по QR СБП") { MoneyText(sale.payments.qr) }
+                    }
+                } footer: {
+                    if sale.payments.qr > 0 {
+                        Text("Деньги по QR-коду приложение не возвращает: оформите возврат по СБП в интернет-банке Точки.")
+                    }
                 }
                 Section {
                     TextField("Например, не подошёл размер", text: $reason, axis: .vertical)

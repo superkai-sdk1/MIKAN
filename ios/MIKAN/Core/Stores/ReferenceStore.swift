@@ -1,13 +1,15 @@
 import Foundation
 import Observation
 
-/// Cached reference data used by pickers: employees (masters), services, aftercare templates.
+/// Cached reference data used by pickers: employees (masters), services, aftercare templates;
+/// and whether the server takes SBP QR payments.
 @Observable
 final class ReferenceStore {
     private let api: APIClient
     private(set) var employees: [Employee] = []
     private(set) var services: [Service] = []
     private(set) var templates: [AftercareTemplate] = []
+    private(set) var qrPaymentsEnabled = false
     private var loadedEmployees = false
     private var loadedServices = false
     private var loadedTemplates = false
@@ -48,6 +50,12 @@ final class ReferenceStore {
         loadedTemplates = true
     }
 
+    /// Asked again on every checkout until enabled, so turning QR on at the server needs no app restart.
+    func ensureQrPaymentsConfig() async throws {
+        guard !qrPaymentsEnabled else { return }
+        qrPaymentsEnabled = try await api.qrPaymentsConfig().enabled
+    }
+
     func replaceEmployees(_ items: [Employee]) {
         employees = items
         loadedEmployees = true
@@ -70,5 +78,6 @@ final class ReferenceStore {
         loadedEmployees = false
         loadedServices = false
         loadedTemplates = false
+        qrPaymentsEnabled = false
     }
 }

@@ -51,6 +51,19 @@ const envSchema = z.object({
   AI_MAX_TOKENS: intWithDefault(4096, 256, 64_000),
   AI_DAILY_LIMIT: intWithDefault(500, 0, 1_000_000),
   AI_CHAT_HOURLY_LIMIT: intWithDefault(20, 0, 10_000),
+  TOCHKA_API_URL: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim().replace(/\/+$/, '') : undefined),
+    z.url().refine((url) => url.startsWith('https://'), 'нужен https://').default('https://enter.tochka.com/uapi'),
+  ),
+  TOCHKA_JWT: optionalString,
+  TOCHKA_MERCHANT_ID: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined),
+    z.string().regex(/^[A-Z0-9]{4,32}$/, 'ожидается идентификатор ТСП, например MA0000086825').optional(),
+  ),
+  TOCHKA_ACCOUNT_ID: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined),
+    z.string().regex(/^\d{20}\/\d{9}$/, 'ожидается «счёт/БИК», например 40702810123456789012/044525104').optional(),
+  ),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
@@ -74,18 +87,47 @@ export interface Config {
     dailyLimit: number;
     chatHourlyLimit: number;
   };
+  /** SBP QR payments through Tochka Bank; enabled when the JWT, merchant and account are all set. */
+  tochka: {
+    apiUrl: string;
+    jwt: string | null;
+    /** SBP merchant (ТСП) id, e.g. `MA0000086825` — not the 15-digit acquiring id. */
+    merchantId: string | null;
+    /** `<20-digit account>/<BIC>` the money is credited to. */
+    accountId: string | null;
+  };
   logLevel: string;
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = envSchema.safeParse(env);
+function parseEnv<T extends z.ZodType>(schema: T, env: NodeJS.ProcessEnv): z.infer<T> {
+  const parsed = schema.safeParse(env);
   if (!parsed.success) {
     const details = parsed.error.issues
       .map((i) => `${i.path.join('.') || '(env)'}: ${i.message}`)
       .join('; ');
     throw new Error(`Invalid configuration: ${details}`);
   }
-  const e = parsed.data;
+  return parsed.data;
+}
+
+const tochkaSchema = envSchema.pick({ TOCHKA_API_URL: true, TOCHKA_JWT: true, TOCHKA_MERCHANT_ID: true, TOCHKA_ACCOUNT_ID: true });
+
+function tochkaOf(e: z.infer<typeof tochkaSchema>): Config['tochka'] {
+  return {
+    apiUrl: e.TOCHKA_API_URL,
+    jwt: e.TOCHKA_JWT ?? null,
+    merchantId: e.TOCHKA_MERCHANT_ID ?? null,
+    accountId: e.TOCHKA_ACCOUNT_ID ?? null,
+  };
+}
+
+/** Only the Tochka settings: the setup script runs without the rest of the server configuration. */
+export function loadTochkaConfig(env: NodeJS.ProcessEnv = process.env): Config['tochka'] {
+  return tochkaOf(parseEnv(tochkaSchema, env));
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const e = parseEnv(envSchema, env);
   const baseUrl = e.AI_BASE_URL ?? null;
   return {
     port: e.PORT,
@@ -107,6 +149,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       dailyLimit: e.AI_DAILY_LIMIT,
       chatHourlyLimit: e.AI_CHAT_HOURLY_LIMIT,
     },
+    tochka: tochkaOf(e),
     logLevel: e.LOG_LEVEL,
   };
 }

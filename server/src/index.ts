@@ -10,8 +10,10 @@ import type { AppContext } from './context.js';
 import { openDatabase } from './db/client.js';
 import { seedDatabase } from './db/seed.js';
 import { runBackupIfDue } from './domain/backup.js';
+import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
 import { studioTimezone } from './domain/settings.js';
 import { errorMessage } from './lib/errors.js';
+import { createQrProvider } from './payments/tochka.js';
 
 const BACKUP_CHECK_MS = 10 * 60_000;
 
@@ -31,6 +33,7 @@ async function main(): Promise<void> {
     config,
     log,
     ai: createAiClient(config.ai),
+    qr: createQrProvider(config.tochka),
     onBotSettingsChanged: () => controller.refresh(),
   } as Omit<AppContext, 'gateway'> as AppContext;
   const controller = new BotController(ctx);
@@ -44,9 +47,13 @@ async function main(): Promise<void> {
       dataDir: config.dataDir,
       ai: ctx.ai ? { model: config.ai.model, gateway: config.ai.baseUrl ?? 'anthropic' } : 'disabled',
       telegram: config.telegram.enabled ? config.telegram.apiRoot : 'disabled',
+      qrPayments: ctx.qr ? ctx.qr.name : 'disabled',
     },
     'MIKAN server started',
   );
+  if (config.tochka.jwt && !ctx.qr) {
+    log.warn('TOCHKA_JWT is set but TOCHKA_MERCHANT_ID / TOCHKA_ACCOUNT_ID are not: run dist/scripts/tochka-setup.js');
+  }
 
   controller.refresh();
 
@@ -60,6 +67,17 @@ async function main(): Promise<void> {
         sending = false;
       });
   }, SENDER_INTERVAL_MS);
+
+  let sweeping = false;
+  const qrTimer = setInterval(() => {
+    if (sweeping || !ctx.qr) return;
+    sweeping = true;
+    sweepQrPayments(ctx)
+      .catch((err) => log.error({ err: errorMessage(err) }, 'QR payment sweep failed'))
+      .finally(() => {
+        sweeping = false;
+      });
+  }, QR_SWEEP_INTERVAL_MS);
 
   const backupDir = path.join(config.dataDir, 'backups');
   const backupTick = () =>
@@ -75,6 +93,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     log.info({ signal }, 'shutting down');
     clearInterval(senderTimer);
+    clearInterval(qrTimer);
     clearInterval(backupTimer);
     const force = setTimeout(() => process.exit(1), 15_000);
     force.unref();

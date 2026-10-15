@@ -26,8 +26,15 @@
     {
       "idx": 3,
       "version": "6",
-      "when": 1792077273494,
-      "tag": "0003_service_cards_and_lines",
+      "when": 1792075967661,
+      "tag": "0003_qr_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792079998972,
+      "tag": "0004_service_cards_and_lines",
       "breakpoints": true
     }
   ]

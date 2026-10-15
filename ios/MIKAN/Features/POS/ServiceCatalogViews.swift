@@ -20,6 +20,13 @@ enum POSCatalog: String, CaseIterable, Identifiable {
         case .services: "Поиск услуг"
         }
     }
+
+    func sectionTitle(isSearching: Bool) -> String {
+        switch self {
+        case .jewelry: isSearching ? "Найдено в каталоге" : "Добавить украшение"
+        case .services: isSearching ? "Найдено в услугах" : "Добавить услугу"
+        }
+    }
 }
 
 /// Filtering, grouping and hints of the POS service catalog (pure, no UI state).
@@ -89,6 +96,14 @@ nonisolated enum POSServiceCatalog {
         }
     }
 
+    /// Splits tiles into fixed-width rows, so a `List` lays out (and lazily loads) the grid row by row.
+    static func rows(_ services: [Service], columns: Int) -> [[Service]] {
+        guard columns > 0 else { return [] }
+        return stride(from: 0, to: services.count, by: columns).map { start in
+            Array(services[start..<min(start + columns, services.count)])
+        }
+    }
+
     /// Shown after adding a service whose final price is set per visit.
     static func priceHint(for service: Service, variant: ServiceVariant?) -> String? {
         guard variant == nil, service.hasVariablePrice else { return nil }
@@ -96,13 +111,16 @@ nonisolated enum POSServiceCatalog {
     }
 }
 
-/// «Услуги» in the POS: category chips and a grid of service tiles with schematic pictures.
+/// «Услуги» rows of the receipt catalog `List`: category chips, then section headers and rows of service tiles.
+/// The owner loads the services (`ReferenceStore.ensureServices`) and reports through `state`.
 struct POSServiceCatalogSection: View {
     @Environment(CartStore.self) private var cart
     @Environment(ReferenceStore.self) private var reference
 
     let state: Remote<Void>
     let search: String
+    let columns: Int
+    let spacing: CGFloat
     let load: () async -> Void
     /// Called after a service was added, with a price hint for variable-price services.
     let onAdd: (_ hint: String?) -> Void
@@ -118,43 +136,57 @@ struct POSServiceCatalogSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            let categories = POSServiceCatalog.categories(of: services)
-            if categories.count > 1 {
-                CategoryChips(categories: categories.map(\.title), selection: categoryTitle(among: categories))
-            }
-            content
+        let categories = POSServiceCatalog.categories(of: services)
+        if categories.count > 1 {
+            CategoryChips(categories: categories.map(\.title), selection: categoryTitle(among: categories))
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
-        .task { if state.value == nil { await load() } }
-        .remoteErrorAlert(state)
-    }
-
-    @ViewBuilder
-    private var content: some View {
         if state.value != nil || !services.isEmpty {
             let sections = POSServiceCatalog.sections(filtered)
-            let showsCategories = Set(sections.map(\.category)).count > 1
             if sections.isEmpty {
                 emptyState
+                    .listRowBackground(Color.clear)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], alignment: .leading, spacing: 12) {
-                    ForEach(sections) { section in
-                        Section {
-                            ForEach(section.services) { service in
-                                POSServiceTile(service: service, inCart: cart.quantity(ofService: service.id)) { variant in
-                                    add(service, variant: variant)
-                                }
-                            }
-                        } header: {
-                            ServiceSectionHeader(headers: section.headers(showsCategories: showsCategories))
-                        }
+                let showsCategories = Set(sections.map(\.category)).count > 1
+                ForEach(sections) { section in
+                    let headers = section.headers(showsCategories: showsCategories)
+                    if headers.category != nil || headers.group != nil {
+                        ServiceSectionHeader(category: headers.category, group: headers.group)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 4, bottom: 0, trailing: 4))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                    ForEach(POSServiceCatalog.rows(section.services, columns: columns), id: \.self) { row in
+                        tileRow(row)
+                            .listRowInsets(EdgeInsets(top: spacing / 2, leading: 0, bottom: spacing / 2, trailing: 0))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                     }
                 }
             }
         } else if let failure = state.failure {
             ErrorStateView(message: failure, retry: load)
+                .listRowBackground(Color.clear)
         } else {
-            ProgressView().frame(maxWidth: .infinity, minHeight: 160)
+            ProgressView()
+                .frame(maxWidth: .infinity, minHeight: 160)
+                .listRowBackground(Color.clear)
+        }
+    }
+
+    private func tileRow(_ row: [Service]) -> some View {
+        HStack(alignment: .top, spacing: spacing) {
+            ForEach(row) { service in
+                POSServiceTile(service: service, inCart: cart.quantity(ofService: service.id)) { variant in
+                    add(service, variant: variant)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            ForEach(row.count..<columns, id: \.self) { _ in
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+            }
         }
     }
 
@@ -186,26 +218,24 @@ struct POSServiceCatalogSection: View {
 
 /// Category and/or group title above a block of service tiles.
 private struct ServiceSectionHeader: View {
-    let headers: (category: String?, group: String?)
+    let category: String?
+    let group: String?
 
     var body: some View {
-        if headers.category != nil || headers.group != nil {
-            VStack(alignment: .leading, spacing: 4) {
-                if let category = headers.category {
-                    Text(category)
-                        .font(.title3.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                }
-                if let group = headers.group {
-                    Text(group)
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityAddTraits(.isHeader)
-                }
+        VStack(alignment: .leading, spacing: 4) {
+            if let category {
+                Text(category)
+                    .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 4)
+            if let group {
+                Text(group)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -391,14 +421,13 @@ extension View {
 
 #if DEBUG
 #Preview("Услуги") {
-    ScrollView {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
-            ForEach(PreviewData.services) { service in
-                POSServiceTile(service: service, inCart: service.id == 3 ? 1 : 0) { _ in }
-            }
+    let state = PreviewData.appState()
+    state.reference.replaceServices(PreviewData.services)
+    return List {
+        Section("Добавить услугу") {
+            POSServiceCatalogSection(state: Remote(()), search: "", columns: 2, spacing: 12, load: {}) { _ in }
         }
-        .padding()
     }
-    .previewEnvironment()
+    .appEnvironment(state)
 }
 #endif

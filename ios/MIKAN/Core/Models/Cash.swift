@@ -6,10 +6,33 @@ nonisolated struct ShiftSummary: Codable, Hashable, Sendable {
     let cash: Int
     let card: Int
     let transfer: Int
+    var qr: Int = 0
     let refunds: Int
     let cashRefunds: Int
     let cashIn: Int
     let cashOut: Int
+}
+
+extension ShiftSummary {
+    /// Everything not in the drawer: transfers, QR and card (older sales).
+    var nonCash: Int { card + transfer + qr }
+
+    /// Tolerates a server without QR payments (no `qr` key).
+    nonisolated init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            salesCount: try container.decode(Int.self, forKey: .salesCount),
+            revenue: try container.decode(Int.self, forKey: .revenue),
+            cash: try container.decode(Int.self, forKey: .cash),
+            card: try container.decode(Int.self, forKey: .card),
+            transfer: try container.decode(Int.self, forKey: .transfer),
+            qr: try container.decodeIfPresent(Int.self, forKey: .qr) ?? 0,
+            refunds: try container.decode(Int.self, forKey: .refunds),
+            cashRefunds: try container.decode(Int.self, forKey: .cashRefunds),
+            cashIn: try container.decode(Int.self, forKey: .cashIn),
+            cashOut: try container.decode(Int.self, forKey: .cashOut)
+        )
+    }
 }
 
 nonisolated enum CashOperationType: String, Codable, Sendable {

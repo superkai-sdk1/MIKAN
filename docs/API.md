@@ -20,8 +20,9 @@ If the implementation must deviate, update this file in the same change.
   { "error": { "code": "validation_error", "message": "Текст для пользователя на русском" } }
   ```
   Codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `validation_error` (400),
-  `conflict` (409), `insufficient_stock` (409), `schedule_conflict` (409), `rate_limited` (429), `internal` (500),
-  `upstream_error` (502 — an external service such as AI image generation failed).
+  `conflict` (409), `insufficient_stock` (409), `schedule_conflict` (409), `rate_limited` (429),
+  `payment_provider_error` (502, the bank did not answer), `upstream_error` (502, an external service such as AI
+  image generation failed), `internal` (500).
   `message` is always human-readable Russian; the app shows it as is.
 - All employees have identical permissions.
 - Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /cash/operations` and `POST /products/:id/movements`
@@ -153,19 +154,34 @@ If the implementation must deviate, update this file in the same change.
   "items": [ { "id": 1, "type": "product", "productId": 1, "serviceId": null,
                "name": "Лабрет", "quantity": 1, "price": 1500, "total": 1500 } ],
   "subtotal": 1500, "discount": 0, "total": 1500,
-  "payments": { "cash": 1500, "card": 0, "transfer": 0 },
+  "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0 },
   "status": "completed", "note": null, "refundedAt": null, "refundReason": null, "createdAt": "..." }
 ```
 - `type`: `product` (requires `productId`; decrements stock) | `service` (`serviceId` optional; `name` required when no `serviceId`).
 - `number`: sequential human-readable receipt number.
 - `status`: `completed` | `refunded`.
+- `payments.qr` — paid by an SBP QR code (Tochka); only set on sales created from a confirmed `QrPayment`.
+
+### QrPayment
+```json
+{ "id": 5, "status": "pending", "amount": 3000,
+  "payload": "https://qr.nspk.ru/AD10001B38T99KA99CD8S37FMTH8CFQ7?type=02&bank=100000000065&sum=300000&cur=RUB&crc=43B6",
+  "expiresAt": "...", "error": null, "sale": null, "createdAt": "..." }
+```
+- `payload` — the link to encode into the QR image (opens the client's bank app).
+- `status`: `pending` → `paid` | `expired`; `pending` → `cancelled` (→ `paid` without `sale` if the client pays it anyway).
+- `sale` — the `Sale` the server created once the bank confirmed the payment; `null` until then.
+- `error` — while `pending`: a declined attempt (the client may retry the same code) or «bank unreachable, still
+  checking»; when `paid` without `sale`: why the cart was not sold (paid after cancel, stock ran out, appointment already
+  paid…) — staff finish the sale by hand (the app moves the QR share to «Перевод») or refund in the bank. Such payments
+  are also sent to the staff Telegram chat.
 
 ### CashShift
 ```json
 { "id": 3, "openedAt": "...", "openedBy": { EmployeeRef }, "openingCash": 5000,
   "closedAt": null, "closedBy": null, "closingCash": null, "note": null,
   "expectedCash": 7500, "difference": null,
-  "summary": { "salesCount": 3, "revenue": 10000, "cash": 2500, "card": 5000, "transfer": 2500,
+  "summary": { "salesCount": 3, "revenue": 10000, "cash": 2500, "card": 5000, "transfer": 2500, "qr": 0,
                "refunds": 0, "cashRefunds": 0, "cashIn": 0, "cashOut": 0 },
   "operations": [ CashOperation ] }
 ```
@@ -365,11 +381,14 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 { "clientId": 1, "appointmentId": 4,
   "items": [ { "type": "product", "productId": 1, "quantity": 1, "price": 1500 },
              { "type": "service", "serviceId": 3, "name": "Прокол мочки", "quantity": 1, "price": 2500 } ],
-  "discount": 500, "payments": { "cash": 1500, "card": 2000, "transfer": 0 }, "note": null }
+  "discount": 500, "payments": { "cash": 1500, "card": 2000, "transfer": 0, "qr": 0 }, "note": null }
 ```
 - `price` per item is the unit price actually charged (defaults to catalog price if omitted).
 - `subtotal = Σ quantity × price`; `total = subtotal − discount` (`0 ≤ discount ≤ subtotal`);
-  `payments.cash + payments.card + payments.transfer` must equal `total` (`400` otherwise).
+  `payments.cash + payments.card + payments.transfer + payments.qr` must equal `total` (`400` otherwise).
+- `payments.qr > 0` is rejected here (`400`): a sale with a QR share is created by the server through `/qr-payments`.
+- The app no longer offers card payments (cash, transfer and QR only); `payments.card` stays in the API for older
+  sales and older app builds.
 - Product items decrement stock (`sale` movements); insufficient stock → `409 insufficient_stock`
   ("Недостаточно на складе: Лабрет (осталось 0)"). Whole sale is one transaction.
 - With `appointmentId`, the appointment gets `saleId` (and is marked `completed` if not already, without aftercare).
@@ -377,6 +396,25 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
   `appointment.deposit`, so revenue is recognised once, at checkout.
 - Refund: marks `refunded`, returns product stock (`return` movements) when `restock`; a cash refund is attributed
   to the currently open shift (`summary.cashRefunds`).
+
+### QR payments (SBP via Tochka Bank)
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/qr-payments/config` | — | `{ "enabled": true }` — `false` when the server has no Tochka credentials |
+| POST | `/qr-payments` | same as `POST /sales`, with `payments.qr > 0` | `QrPayment` (`pending`) · `409` when not configured · `502 payment_provider_error` when the bank fails · rate limit 30/min |
+| GET | `/qr-payments/:id` | — | `QrPayment` — asks the bank (at most every 2 s) and applies the answer |
+| POST | `/qr-payments/:id/cancel` | — | `QrPayment` — checks the bank first, so a payment that has just arrived returns `paid` |
+
+Flow: the app sends the cart; the server validates it like a sale (nothing is written, stock is checked), registers a
+one-off SBP QR for `payments.qr` (valid 10 min) and stores the cart with its prices fixed. The app shows `payload` as
+a QR and polls `GET /qr-payments/:id` every ~2 s. When the bank reports the money, the server creates the sale from the
+stored cart in one transaction (with the cash/card/transfer parts as sent) and returns it in `sale`; one paid code
+always yields at most one sale. A background job checks watched codes every 15 s, so a payment is recorded even if the
+app was closed. An unpaid code becomes `expired` once the bank confirms it unpaid 5 minutes after `expiresAt`; while the
+bank cannot be reached the code stays `pending` for up to 24 h (Tochka keeps paid codes readable that long). A cancelled
+code is still watched: if the client pays it anyway, it becomes `paid` with an `error` and no sale (staff may already
+have taken the money another way). Refunds of the QR part are made in the Tochka internet bank (the app only marks the
+sale refunded).
 
 ### Cash register
 | Method | Path | Body | Response |
@@ -393,7 +431,7 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 ```json
 { "from": "...", "to": "...",
   "revenue": 120000, "salesCount": 40, "averageCheck": 3000, "refunds": 2500,
-  "payments": { "cash": 30000, "card": 70000, "transfer": 20000 },
+  "payments": { "cash": 30000, "card": 70000, "transfer": 20000, "qr": 0 },
   "servicesRevenue": 90000, "productsRevenue": 30000,
   "byDay": [ { "date": "2026-10-01", "revenue": 8000, "salesCount": 3 } ],
   "topProducts": [ { "productId": 1, "name": "Лабрет", "quantity": 7, "revenue": 10500 } ],

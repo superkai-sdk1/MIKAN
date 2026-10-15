@@ -92,6 +92,21 @@ enum Fixtures {
       "status": "completed", "note": null, "refundedAt": null, "refundReason": null, "createdAt": "<T>" }
     """#
 
+    static let qrPaymentPending = #"""
+    { "id": 5, "status": "pending", "amount": 3000,
+      "payload": "https://qr.nspk.ru/AD10001B38T99KA99CD8S37FMTH8CFQ7?type=02&bank=100000000065&sum=300000&cur=RUB&crc=43B6",
+      "expiresAt": "<T>", "error": null, "sale": null, "createdAt": "<T>" }
+    """#
+
+    static let qrPaymentPaid = #"""
+    { "id": 5, "status": "paid", "amount": 1500, "payload": "https://qr.nspk.ru/AD10001B38T99KA99CD8S37FMTH8CFQ7",
+      "expiresAt": "<T>", "error": null, "createdAt": "<T>",
+      "sale": { "id": 2, "number": 18, "client": null, "employee": \#(employeeRef),
+                "appointmentId": null, "shiftId": null, "items": [], "subtotal": 1500, "discount": 0, "total": 1500,
+                "payments": { "cash": 0, "card": 0, "transfer": 0, "qr": 1500 },
+                "status": "completed", "note": null, "refundedAt": null, "refundReason": null, "createdAt": "<T>" } }
+    """#
+
     static let cashOperation = #"""
     { "id": 1, "shiftId": 3, "type": "out", "amount": 1000, "reason": "Инкассация",
       "employee": \#(employeeRef), "createdAt": "<T>" }
