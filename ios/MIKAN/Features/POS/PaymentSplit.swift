@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated enum PaymentMethod: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum PaymentMethod: String, Codable, CaseIterable, Identifiable, Sendable {
     case cash
     /// No longer taken at checkout; kept to show older sales, shifts and reports.
     case card

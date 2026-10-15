@@ -21,7 +21,15 @@ nonisolated struct Appointment: Codable, Hashable, Identifiable, Sendable {
     var endsAt: Date
     var status: AppointmentStatus
     var price: Int
+    /// Prepayment held for the appointment right now (received − applied + returned by sale refunds − refunded − retained).
     var deposit: Int
+    /// Prepayment the studio asks for (defaults to the services' `depositAmount`).
+    var depositRequired = 0
+    var depositStatus: DepositStatus = .none
+    /// Prepayment ledger, oldest first.
+    var depositOperations: [DepositOperation] = []
+    /// The latest SBP QR code issued for this appointment's prepayment (any status).
+    var depositLink: QrPayment?
     var notes: String?
     var saleId: Int?
     var completedAt: Date?
@@ -48,10 +56,11 @@ nonisolated struct Appointment: Codable, Hashable, Identifiable, Sendable {
 nonisolated extension Appointment {
     private enum CodingKeys: String, CodingKey {
         case id, client, master, service, services, title, startsAt, endsAt, status, price, deposit, notes
+        case depositRequired, depositStatus, depositOperations, depositLink
         case saleId, completedAt, createdAt, updatedAt
     }
 
-    /// Tolerates servers that predate multi-service appointments (no `services`).
+    /// Tolerates servers that predate multi-service appointments (no `services`) and prepayments (no `deposit…`).
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
@@ -65,6 +74,10 @@ nonisolated extension Appointment {
         status = try c.decode(AppointmentStatus.self, forKey: .status)
         price = try c.decode(Int.self, forKey: .price)
         deposit = try c.decode(Int.self, forKey: .deposit)
+        depositRequired = try c.decodeIfPresent(Int.self, forKey: .depositRequired) ?? 0
+        depositStatus = try c.decodeIfPresent(DepositStatus.self, forKey: .depositStatus) ?? .none
+        depositOperations = try c.decodeIfPresent([DepositOperation].self, forKey: .depositOperations) ?? []
+        depositLink = try c.decodeIfPresent(QrPayment.self, forKey: .depositLink)
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
         saleId = try c.decodeIfPresent(Int.self, forKey: .saleId)
         completedAt = try c.decodeIfPresent(Date.self, forKey: .completedAt)

@@ -7,17 +7,21 @@ nonisolated struct ShiftSummary: Codable, Hashable, Sendable {
     let card: Int
     let transfer: Int
     var qr: Int = 0
+    /// Part of `revenue` covered by prepayments received earlier.
+    var deposit: Int = 0
     let refunds: Int
     let cashRefunds: Int
     let cashIn: Int
     let cashOut: Int
+    /// Prepayment operations recorded while the shift was open.
+    var deposits: ShiftDepositSummary = .zero
 }
 
 extension ShiftSummary {
     /// Everything not in the drawer: transfers, QR and card (older sales).
     var nonCash: Int { card + transfer + qr }
 
-    /// Tolerates a server without QR payments (no `qr` key).
+    /// Tolerates a server without QR payments (no `qr` key) or prepayments (no `deposit` / `deposits`).
     nonisolated init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
@@ -27,10 +31,12 @@ extension ShiftSummary {
             card: try container.decode(Int.self, forKey: .card),
             transfer: try container.decode(Int.self, forKey: .transfer),
             qr: try container.decodeIfPresent(Int.self, forKey: .qr) ?? 0,
+            deposit: try container.decodeIfPresent(Int.self, forKey: .deposit) ?? 0,
             refunds: try container.decode(Int.self, forKey: .refunds),
             cashRefunds: try container.decode(Int.self, forKey: .cashRefunds),
             cashIn: try container.decode(Int.self, forKey: .cashIn),
-            cashOut: try container.decode(Int.self, forKey: .cashOut)
+            cashOut: try container.decode(Int.self, forKey: .cashOut),
+            deposits: try container.decodeIfPresent(ShiftDepositSummary.self, forKey: .deposits) ?? .zero
         )
     }
 }

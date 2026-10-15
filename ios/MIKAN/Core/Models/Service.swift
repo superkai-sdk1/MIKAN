@@ -53,9 +53,14 @@ nonisolated struct Service: Codable, Hashable, Identifiable, Sendable {
     /// Photos of real works (server-relative paths).
     var photos: [String] = []
     var variants: [ServiceVariant] = []
+    /// Prepayment required to book this service; 0 — none.
+    var depositAmount = 0
     var aftercareTemplateId: Int?
     var active: Bool
     var sort: Int
+
+    /// Booking this service needs a prepayment.
+    var requiresDeposit: Bool { depositAmount > 0 }
 
     var ref: ServiceRef { ServiceRef(id: id, name: name, category: category) }
 
@@ -81,10 +86,10 @@ nonisolated struct Service: Codable, Hashable, Identifiable, Sendable {
 nonisolated extension Service {
     private enum CodingKeys: String, CodingKey {
         case id, name, category, group, price, priceMax, priceFrom, durationMin, description
-        case imageUrl, imagePrompt, photos, variants, aftercareTemplateId, active, sort
+        case imageUrl, imagePrompt, photos, variants, depositAmount, aftercareTemplateId, active, sort
     }
 
-    /// Tolerates servers that predate service cards (no group, photos, variants, cover).
+    /// Tolerates servers that predate service cards (no group, photos, variants, cover) or prepayments.
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
@@ -100,6 +105,7 @@ nonisolated extension Service {
         imagePrompt = try c.decodeIfPresent(String.self, forKey: .imagePrompt)
         photos = try c.decodeIfPresent([String].self, forKey: .photos) ?? []
         variants = try c.decodeIfPresent([ServiceVariant].self, forKey: .variants) ?? []
+        depositAmount = try c.decodeIfPresent(Int.self, forKey: .depositAmount) ?? 0
         aftercareTemplateId = try c.decodeIfPresent(Int.self, forKey: .aftercareTemplateId)
         active = try c.decode(Bool.self, forKey: .active)
         sort = try c.decode(Int.self, forKey: .sort)

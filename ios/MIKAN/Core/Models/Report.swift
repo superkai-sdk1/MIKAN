@@ -8,6 +8,8 @@ nonisolated struct ReportSummary: Codable, Sendable {
     let averageCheck: Int
     let refunds: Int
     let payments: Payments
+    /// Prepayments in the period; `nil` from servers that predate them.
+    let deposits: ReportDeposits?
     let servicesRevenue: Int
     let productsRevenue: Int
     let byDay: [ReportDay]

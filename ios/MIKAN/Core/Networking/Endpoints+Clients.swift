@@ -78,4 +78,28 @@ extension APIClient {
     func completeAppointment(id: Int, _ body: CompleteBody) async throws -> CompleteAppointmentResult {
         try await request(.post, "appointments/\(id)/complete", body: body)
     }
+
+    // MARK: Prepayment
+
+    func receiveDeposit(appointmentId: Int, _ body: DepositReceiveBody, idempotencyKey: UUID) async throws -> Appointment {
+        try await request(.post, "appointments/\(appointmentId)/deposit", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    func refundDeposit(appointmentId: Int, _ body: DepositRefundBody, idempotencyKey: UUID) async throws -> Appointment {
+        try await request(.post, "appointments/\(appointmentId)/deposit/refund", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    func retainDeposit(appointmentId: Int, _ body: DepositRetainBody, idempotencyKey: UUID) async throws -> Appointment {
+        try await request(.post, "appointments/\(appointmentId)/deposit/retain", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// Registers a prepayment QR code (cancelling the appointment's other pending ones); `telegram` also sends it.
+    func createDepositQr(appointmentId: Int, _ body: DepositQrBody) async throws -> DepositLinkResult {
+        try await request(.post, "appointments/\(appointmentId)/deposit/qr", body: body)
+    }
+
+    /// Sends the pending prepayment link again (or a fresh one when it is about to expire).
+    func remindDeposit(appointmentId: Int, chatId: Int64? = nil) async throws -> DepositLinkResult {
+        try await request(.post, "appointments/\(appointmentId)/deposit/remind", body: DepositRemindBody(chatId: chatId))
+    }
 }

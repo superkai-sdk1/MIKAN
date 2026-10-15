@@ -158,7 +158,7 @@ struct AppointmentDraft: Identifiable, Hashable {
             autoDurationMin: linesDuration > 0 ? max(durationStep, linesDuration) : nil,
             price: appointment.price,
             priceOverride: lines.isEmpty || linesTotal == appointment.price ? nil : appointment.price,
-            deposit: appointment.deposit,
+            deposit: appointment.depositRequired,
             title: appointment.title ?? "",
             notes: appointment.notes ?? ""
         )
@@ -274,7 +274,7 @@ struct AppointmentDraft: Identifiable, Hashable {
             startsAt: start,
             endsAt: end,
             price: total,
-            deposit: deposit,
+            depositRequired: deposit,
             notes: Nullable(notes.nonEmpty),
             force: force ? true : nil
         )

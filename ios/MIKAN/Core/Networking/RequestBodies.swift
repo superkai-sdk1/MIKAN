@@ -66,6 +66,8 @@ nonisolated struct ServiceBody: Encodable, Sendable {
     var imagePrompt: Nullable<String> = nil
     var photos: [String] = []
     var variants: [ServiceVariant] = []
+    /// Prepayment required to book the service; 0 — none.
+    var depositAmount = 0
     var aftercareTemplateId: Nullable<Int>
     var active: Bool
     var sort: Int
@@ -134,10 +136,45 @@ nonisolated struct AppointmentBody: Encodable, Sendable {
     var startsAt: Date
     var endsAt: Date
     var price: Int
-    var deposit: Int
+    /// Prepayment the studio asks for. Received prepayments change only through the prepayment endpoints.
+    var depositRequired: Int
     var notes: Nullable<String>
     /// Omitted unless the user confirmed saving despite a schedule conflict.
     var force: Bool?
+}
+
+/// `POST /appointments/:id/deposit` — the client paid the prepayment at the studio.
+nonisolated struct DepositReceiveBody: Encodable, Hashable, Sendable {
+    let amount: Int
+    /// `cash`, `card` or `transfer` (QR goes through `DepositQrBody`).
+    let method: PaymentMethod
+    var note: String?
+}
+
+/// `POST /appointments/:id/deposit/refund` — omitted fields: the whole held amount, the method it was received by.
+nonisolated struct DepositRefundBody: Encodable, Hashable, Sendable {
+    var amount: Int?
+    var method: PaymentMethod?
+    var reason: String?
+}
+
+/// `POST /appointments/:id/deposit/retain` — only for cancelled / no-show appointments.
+nonisolated struct DepositRetainBody: Encodable, Hashable, Sendable {
+    var amount: Int?
+    var reason: String?
+}
+
+/// `POST /appointments/:id/deposit/qr` — `amount` defaults to what is still missing.
+nonisolated struct DepositQrBody: Encodable, Sendable {
+    let delivery: DepositDelivery
+    var amount: Int?
+    /// Telegram chat to send the link to when the client has none linked (e.g. the booking request's chat).
+    var chatId: Int64?
+}
+
+/// `POST /appointments/:id/deposit/remind`.
+nonisolated struct DepositRemindBody: Encodable, Sendable {
+    var chatId: Int64?
 }
 
 nonisolated struct StatusBody<Status: Encodable & Sendable>: Encodable, Sendable {

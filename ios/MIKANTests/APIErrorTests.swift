@@ -84,18 +84,20 @@ final class RequestEncodingTests: XCTestCase {
         let body = AppointmentBody(
             clientId: 1, masterId: 2, serviceId: nil, title: Nullable("Тату"),
             startsAt: Fixtures.referenceDate, endsAt: Fixtures.referenceDate.addingTimeInterval(3600),
-            price: 8000, deposit: 2000, notes: nil, force: nil
+            price: 8000, depositRequired: 2000, notes: nil, force: nil
         )
         let json = try object(body)
         XCTAssertEqual(json["startsAt"] as? String, "2026-10-15T11:00:00.000Z")
         XCTAssertEqual(json["endsAt"] as? String, "2026-10-15T12:00:00.000Z")
         XCTAssertNil(json["force"], "force is only sent after the user confirms")
         XCTAssertTrue(json["serviceId"] is NSNull)
+        XCTAssertEqual(json["depositRequired"] as? Int, 2000)
+        XCTAssertNil(json["deposit"], "received prepayments change only through the prepayment endpoints")
 
         let forced = AppointmentBody(
             clientId: 1, masterId: 2, serviceId: Nullable(3), title: nil,
             startsAt: Fixtures.referenceDate, endsAt: Fixtures.referenceDate.addingTimeInterval(1800),
-            price: 0, deposit: 0, notes: nil, force: true
+            price: 0, depositRequired: 0, notes: nil, force: true
         )
         let forcedJSON = try object(forced)
         XCTAssertEqual(forcedJSON["force"] as? Bool, true)
