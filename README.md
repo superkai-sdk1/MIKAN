@@ -12,12 +12,12 @@
 
 <br>
 
-[![iOS 26](https://img.shields.io/badge/iOS-26-000000?style=for-the-badge&logo=apple&logoColor=white)](#-ios-приложение)
-[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=for-the-badge&logo=swift&logoColor=white)](#-ios-приложение)
-[![Node.js 22](https://img.shields.io/badge/Node.js-22-5FA04E?style=for-the-badge&logo=nodedotjs&logoColor=white)](#-сервер)
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](#-сервер)
-[![Fastify](https://img.shields.io/badge/Fastify-5-000000?style=for-the-badge&logo=fastify&logoColor=white)](#-сервер)
-[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](#-сервер)
+[![iOS 26](https://img.shields.io/badge/iOS-26-000000?style=for-the-badge&logo=apple&logoColor=white)](#-стек)
+[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=for-the-badge&logo=swift&logoColor=white)](#-стек)
+[![Node.js 22](https://img.shields.io/badge/Node.js-22-5FA04E?style=for-the-badge&logo=nodedotjs&logoColor=white)](#-стек)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](#-стек)
+[![Fastify](https://img.shields.io/badge/Fastify-5-000000?style=for-the-badge&logo=fastify&logoColor=white)](#-стек)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](#-стек)
 <br>
 [![Telegram](https://img.shields.io/badge/Telegram_бот-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](#-ии-администратор-в-telegram)
 [![ИИ-ассистент](https://img.shields.io/badge/ИИ--ассистент-8E4EC6?style=for-the-badge)](#-ии-администратор-в-telegram)
@@ -30,7 +30,7 @@
 [Возможности](#-возможности) ·
 [ИИ-бот](#-ии-администратор-в-telegram) ·
 [Архитектура](#-архитектура) ·
-[Быстрый старт](#-быстрый-старт) ·
+[Стек](#-стек) ·
 [Деплой](#-деплой) ·
 [API](docs/API.md) ·
 [Контакты](#-стоимость-и-контакты)
@@ -279,39 +279,6 @@ MIKAN/
 ├── cloudflare/               ☁️ Worker-прокси для Telegram Bot API
 └── docs/                     📜 контракт API, бренд
 ```
-
----
-
-## 🚀 Быстрый старт
-
-### 🖥 Сервер
-
-Нужен **Node.js 22.9+**.
-
-```bash
-cd server
-npm ci
-cp .env.example .env      # заполните JWT_SECRET (openssl rand -hex 32) и ADMIN_PASSWORD
-npm run dev               # http://localhost:3000/api/health
-```
-
-При первом запуске сервер сам создаёт базу, применяет миграции и заводит администратора из `ADMIN_LOGIN` / `ADMIN_PASSWORD`. Бот, ИИ и оплата по QR включаются отдельными переменными в `.env`: все они описаны в [`server/.env.example`](server/.env.example).
-
-```bash
-npm test                  # тесты Vitest
-npm run typecheck         # проверка типов
-npm run build && npm start
-```
-
-### 📱 iOS-приложение
-
-Нужен **Xcode 26** (iOS 26 SDK).
-
-1. Откройте `ios/MIKAN.xcodeproj` и запустите схему **MIKAN** на симуляторе.
-2. На экране входа укажите адрес сервера: для локальной разработки `http://localhost:3000`.
-3. Войдите под `ADMIN_LOGIN` / `ADMIN_PASSWORD`.
-
-Если меняли `ios/project.yml`, пересоберите проект командой `xcodegen generate` в папке `ios`. Тесты запускаются по `⌘U`.
 
 ---
 
