@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="MIKAN — CRM для тату- и пирсинг-студии">
+  <defs>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FF7A1A" stop-opacity="0.34"/>
+      <stop offset="0.6" stop-color="#FF7A1A" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#FF7A1A" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="card"><rect width="1280" height="400" rx="28"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="1280" height="400" fill="#12100E"/>
+    <circle cx="1160" cy="40" r="300" fill="url(#glow)"/>
+    <circle cx="90" cy="400" r="240" fill="url(#glow)"/>
+    <g stroke="#FF7A1A" stroke-opacity="0.22" fill="none">
+      <circle cx="1160" cy="40" r="170"/>
+      <circle cx="1160" cy="40" r="230"/>
+      <circle cx="90" cy="400" r="130"/>
+    </g>
+  </g>
+
+  <!-- Wordmark from docs/brand/mikan-logo.pdf -->
+  <g transform="translate(314.6 116.7) scale(0.5)" fill="#F6F1EB">
+    <path d="M 313.285156 6.648438 L 313.285156 220.753906 L 285.398438 220.753906 L 285.398438 27.9375 L 172.347656 221.351562 L 145.359375 221.351562 L 34.707031 27.9375 L 34.707031 220.753906 L 6.820312 220.753906 L 6.820312 6.648438 L 55.097656 6.648438 L 160.050781 185.96875 L 266.804688 6.648438 Z M 399.371094 6.648438 L 399.371094 221.351562 L 372.082031 221.351562 L 372.082031 6.648438 Z M 707.582031 6.648438 L 590.636719 80.414062 L 725.277344 221.351562 L 685.992188 221.351562 L 568.445312 95.707031 L 485.382812 146.984375 L 485.382812 221.351562 L 457.792969 221.351562 L 457.792969 6.648438 L 485.382812 6.648438 L 485.382812 117.597656 L 662.902344 6.648438 Z M 891.339844 6.648438 L 1011.285156 221.351562 L 979.5 221.351562 L 948.914062 167.078125 L 798.980469 167.078125 L 768.992188 221.351562 L 739.308594 221.351562 L 856.554688 6.648438 Z M 873.648438 30.636719 L 809.777344 144.285156 L 938.417969 144.285156 Z M 1295.96875 6.648438 L 1295.96875 221.351562 L 1267.183594 221.351562 L 1071.96875 41.730469 L 1071.96875 221.351562 L 1043.179688 221.351562 L 1043.179688 6.648438 L 1072.566406 6.648438 L 1267.183594 183.871094 L 1267.183594 6.648438 Z"/>
+  </g>
+
+  <text x="640" y="290" text-anchor="middle" font-family="-apple-system, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="600" letter-spacing="7" fill="#FF7A1A">STUDIO CRM</text>
+  <text x="640" y="326" text-anchor="middle" font-family="-apple-system, 'SF Pro Text', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" letter-spacing="1.5" fill="#A89C91">iOS-приложение · сервер · ИИ-администратор в Telegram</text>
+</svg>

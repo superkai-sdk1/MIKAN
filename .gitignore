@@ -22,3 +22,10 @@ xcuserdata/
 
 # Client data dumps (personal data)
 import/
+
+# Cloudflare Wrangler local cache (account id, auth state)
+.wrangler/
+
+# Claude Code local state
+.claude/worktrees/
+.claude/scheduled_tasks.lock
