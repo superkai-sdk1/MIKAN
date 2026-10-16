@@ -22,7 +22,7 @@
 [![Telegram](https://img.shields.io/badge/Telegram_бот-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](#-ии-администратор-в-telegram)
 [![ИИ-ассистент](https://img.shields.io/badge/ИИ--ассистент-8E4EC6?style=for-the-badge)](#-ии-администратор-в-telegram)
 [![СБП](https://img.shields.io/badge/СБП-Точка_Банк-FF7A1A?style=for-the-badge)](#-под-капотом)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](#-деплой)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](#-архитектура)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-F38020?style=for-the-badge&logo=cloudflareworkers&logoColor=white)](#-архитектура)
 
 <br>
@@ -31,7 +31,6 @@
 [ИИ-бот](#-ии-администратор-в-telegram) ·
 [Архитектура](#-архитектура) ·
 [Стек](#-стек) ·
-[Деплой](#-деплой) ·
 [API](docs/API.md) ·
 [Контакты](#-стоимость-и-контакты)
 
@@ -279,20 +278,6 @@ MIKAN/
 ├── cloudflare/               ☁️ Worker-прокси для Telegram Bot API
 └── docs/                     📜 контракт API, бренд
 ```
-
----
-
-## 🛳 Деплой
-
-Сервер работает в Docker Compose: контейнер `api` и Caddy с автоматическим HTTPS от Let's Encrypt.
-
-```bash
-deploy/deploy.sh
-```
-
-Скрипт синхронизирует код на сервер, пересобирает образ, перезапускает контейнеры и ждёт `/api/health`. Миграции применяются при старте, а `.env` и данные на сервере скрипт не трогает.
-
-Подробная инструкция в [`deploy/README.md`](deploy/README.md): первый запуск, бэкапы и восстановление, подключение оплаты по QR в Точке, смена домена, импорт прайс-листа.
 
 ---
 
