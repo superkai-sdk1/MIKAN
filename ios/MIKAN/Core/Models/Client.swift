@@ -2,9 +2,14 @@ import Foundation
 
 nonisolated struct Client: Codable, Hashable, Identifiable, Sendable {
     let id: Int
+    /// First name (older cards may hold the full name here).
     var name: String
+    var lastName: String? = nil
+    /// Required for new clients; cards imported from YCLIENTS may have none.
     var phone: String?
     var instagram: String?
+    /// Telegram username typed by staff, without "@". `telegramUsername` comes from the linked bot chat.
+    var telegramNick: String? = nil
     /// Calendar date `YYYY-MM-DD`.
     var birthday: String?
     var notes: String?
@@ -18,7 +23,11 @@ nonisolated struct Client: Codable, Hashable, Identifiable, Sendable {
     /// `nil` in lists, filled by `GET /clients/:id`.
     var stats: ClientStats?
 
-    var ref: ClientRef { ClientRef(id: id, name: name, phone: phone, telegramLinked: telegramLinked) }
+    var ref: ClientRef { ClientRef(id: id, name: name, lastName: lastName, phone: phone, telegramLinked: telegramLinked) }
+    /// "Иван Петров" — how the app names the client everywhere.
+    var fullName: String { PersonName.full(name, lastName) }
+    /// The nick typed by staff, else the username of the linked bot chat.
+    var telegramHandle: String? { telegramNick.nonEmpty ?? telegramUsername.nonEmpty }
 }
 
 nonisolated struct ClientStats: Codable, Hashable, Sendable {
@@ -32,8 +41,30 @@ nonisolated struct ClientStats: Codable, Hashable, Sendable {
 nonisolated struct ClientRef: Codable, Hashable, Identifiable, Sendable {
     let id: Int
     let name: String
+    var lastName: String? = nil
     let phone: String?
     let telegramLinked: Bool
+
+    var fullName: String { PersonName.full(name, lastName) }
+}
+
+/// A person's name split into first and last name, as the client card stores it.
+nonisolated enum PersonName {
+    /// "Иван" + "Петров" → "Иван Петров"; blank parts are skipped.
+    static func full(_ first: String, _ last: String?) -> String {
+        [first, last ?? ""]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    /// "Анна Смирнова" → ("Анна", "Смирнова"): the first word is the first name, the rest the last name.
+    /// Used to prefill the card from a name typed in one line (e.g. a booking request from the bot).
+    static func split(_ text: String) -> (first: String, last: String) {
+        let words = text.split(whereSeparator: \.isWhitespace)
+        guard let first = words.first else { return ("", "") }
+        return (String(first), words.dropFirst().joined(separator: " "))
+    }
 }
 
 nonisolated struct ClientHistory: Codable, Sendable {

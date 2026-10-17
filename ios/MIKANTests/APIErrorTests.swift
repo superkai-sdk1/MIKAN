@@ -70,10 +70,12 @@ final class RequestEncodingTests: XCTestCase {
 
     func testNullableEncodesExplicitNull() throws {
         let body = ClientBody(
-            name: "Иван", phone: Nullable("+79991234567"), instagram: nil, birthday: Nullable("1995-04-12"),
-            notes: nil, source: nil, botEnabled: true
+            name: "Иван", lastName: Nullable("Петров"), phone: Nullable("+79991234567"), instagram: nil, telegramNick: nil,
+            birthday: Nullable("1995-04-12"), notes: nil, source: nil, botEnabled: true
         )
         let json = try object(body)
+        XCTAssertEqual(json["lastName"] as? String, "Петров")
+        XCTAssertTrue(json["telegramNick"] is NSNull)
         XCTAssertEqual(json["phone"] as? String, "+79991234567")
         XCTAssertEqual(json["birthday"] as? String, "1995-04-12")
         XCTAssertTrue(json["instagram"] is NSNull, "cleared fields must be sent as null")

@@ -8,7 +8,8 @@ import {
   saveBotSettings,
   saveStudioSettings,
 } from '../domain/settings.js';
-import { isValidTimezone } from '../lib/time.js';
+import { badRequest } from '../lib/errors.js';
+import { formatTimeOfDay, isValidTimezone, parseTimeOfDay } from '../lib/time.js';
 import { nonNull, parse } from '../lib/validation.js';
 
 const text = (max: number) =>
@@ -17,6 +18,16 @@ const text = (max: number) =>
     .max(max)
     .nullish()
     .transform((v) => (v == null ? v : v.trim()));
+
+/** "HH:MM" in the studio timezone, normalized to two-digit hours ("9:00" → "09:00"). */
+const timeOfDay = z.string().transform((value, ctx) => {
+  const minutes = parseTimeOfDay(value);
+  if (minutes === null) {
+    ctx.addIssue({ code: 'custom', message: 'время должно быть в формате ЧЧ:ММ (например, 10:00)' });
+    return z.NEVER;
+  }
+  return formatTimeOfDay(minutes);
+});
 
 const studioBody = z.object({
   name: nonNull(z.string().trim().min(1).max(200)),
@@ -27,6 +38,8 @@ const studioBody = z.object({
   website: text(300),
   about: text(5000),
   timezone: nonNull(z.string().trim().refine(isValidTimezone, { message: 'неизвестный часовой пояс (пример: Europe/Moscow)' })),
+  workdayStart: nonNull(timeOfDay),
+  workdayEnd: nonNull(timeOfDay),
 });
 
 const botBody = z.object({
@@ -65,7 +78,12 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.put('/settings/studio', async (request) => {
     const input = parse(studioBody, request.body);
-    return saveStudioSettings(db, merge(getStudioSettings(db), input));
+    const next = merge(getStudioSettings(db), input);
+    // Only the calendar's default range: appointments outside it are still allowed.
+    if (parseTimeOfDay(next.workdayEnd)! <= parseTimeOfDay(next.workdayStart)!) {
+      throw badRequest(`Конец рабочего дня (${next.workdayEnd}) должен быть позже начала (${next.workdayStart})`);
+    }
+    return saveStudioSettings(db, next);
   });
 
   app.get('/settings/bot', async () => botSettingsOut(ctx));

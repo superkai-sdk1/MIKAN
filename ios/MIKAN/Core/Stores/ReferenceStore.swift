@@ -2,10 +2,15 @@ import Foundation
 import Observation
 
 /// Cached reference data used by pickers: employees (masters), services, aftercare templates;
-/// and whether the server takes SBP QR payments.
+/// whether the server takes SBP QR payments; and the studio's working hours for the calendar.
 @Observable
 final class ReferenceStore {
+    private static let workdayKey = "studio.workday"
+
     private let api: APIClient
+    /// The last known hours survive restarts, so the calendar opens on the right range before the settings load.
+    private(set) var workday: WorkdayHours = ReferenceStore.cachedWorkday() ?? .standard
+    private var loadedWorkday = false
     private(set) var employees: [Employee] = []
     private(set) var services: [Service] = []
     private(set) var templates: [AftercareTemplate] = []
@@ -66,6 +71,23 @@ final class ReferenceStore {
         loadedServices = true
     }
 
+    func ensureWorkday(force: Bool = false) async throws {
+        guard force || !loadedWorkday else { return }
+        applyStudioSettings(try await api.studioSettings())
+    }
+
+    /// Takes the working hours from settings loaded or saved anywhere in the app.
+    func applyStudioSettings(_ settings: StudioSettings) {
+        workday = WorkdayHours(settings: settings)
+        loadedWorkday = true
+        UserDefaults.standard.set([settings.workdayStart, settings.workdayEnd, settings.timezone], forKey: Self.workdayKey)
+    }
+
+    private static func cachedWorkday() -> WorkdayHours? {
+        guard let parts = UserDefaults.standard.stringArray(forKey: workdayKey), parts.count == 3 else { return nil }
+        return WorkdayHours(start: parts[0], end: parts[1], timeZoneIdentifier: parts[2])
+    }
+
     func replaceTemplates(_ items: [AftercareTemplate]) {
         templates = items
         loadedTemplates = true
@@ -78,6 +100,7 @@ final class ReferenceStore {
         loadedEmployees = false
         loadedServices = false
         loadedTemplates = false
+        loadedWorkday = false
         qrPaymentsEnabled = false
     }
 }

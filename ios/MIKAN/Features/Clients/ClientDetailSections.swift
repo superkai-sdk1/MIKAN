@@ -6,8 +6,8 @@ struct ClientHeaderSection: View {
     var body: some View {
         Section {
             VStack(spacing: 10) {
-                InitialsAvatar(name: client.name, size: 84)
-                Text(client.name)
+                InitialsAvatar(name: client.fullName, size: 84)
+                Text(client.fullName)
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
                 if let phone = client.phone.nonEmpty {
@@ -15,6 +15,10 @@ struct ClientHeaderSection: View {
                         .font(.headline)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                } else {
+                    Label("Телефон не указан", systemImage: "exclamationmark.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
                 }
                 HStack(spacing: 8) {
                     if client.telegramLinked {

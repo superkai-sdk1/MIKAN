@@ -10,7 +10,7 @@ import {
   stockMovements,
 } from '../db/schema.js';
 import { badRequest, conflict, scheduleConflict } from '../lib/errors.js';
-import { parseSteps, type AppointmentRow, type AppointmentServiceRow, type ServiceRow } from '../lib/serialize.js';
+import { clientFullName, parseSteps, type AppointmentRow, type AppointmentServiceRow, type ServiceRow } from '../lib/serialize.js';
 import { formatShortDate, formatTime, MINUTE_MS } from '../lib/time.js';
 import { cancelPendingDepositCodes } from './deposits.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
@@ -94,7 +94,7 @@ function assertOverlapFree(db: DbOrTx, a: { id?: number; masterId: number; start
   const tz = studioTimezone(db);
   const client = db.select().from(clients).where(eq(clients.id, clash.clientId)).get();
   throw scheduleConflict(
-    `У мастера уже есть запись в это время: ${client?.name ?? 'клиент'}, ` +
+    `У мастера уже есть запись в это время: ${client ? clientFullName(client) : 'клиент'}, ` +
       `${formatShortDate(clash.startsAt, tz)} ${formatTime(clash.startsAt, tz)}–${formatTime(clash.endsAt, tz)}`,
   );
 }

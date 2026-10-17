@@ -98,9 +98,9 @@ struct AppointmentDetailView: View {
                 ClientDetailView(clientId: appointment.client.id)
             } label: {
                 HStack(spacing: 12) {
-                    InitialsAvatar(name: appointment.client.name, size: 40)
+                    InitialsAvatar(name: appointment.client.fullName, size: 40)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(appointment.client.name).font(.headline)
+                        Text(appointment.client.fullName).font(.headline)
                         if let phone = appointment.client.phone.nonEmpty {
                             Text(PhoneText.display(phone)).font(.subheadline).foregroundStyle(.secondary)
                         }

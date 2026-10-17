@@ -78,9 +78,9 @@ struct AppointmentEditorView: View {
             } label: {
                 if let client = draft.client {
                     HStack(spacing: 12) {
-                        InitialsAvatar(name: client.name, size: 34)
+                        InitialsAvatar(name: client.fullName, size: 34)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(client.name).foregroundStyle(.primary)
+                            Text(client.fullName).foregroundStyle(.primary)
                             if let phone = client.phone.nonEmpty {
                                 Text(PhoneText.display(phone)).font(.caption).foregroundStyle(.secondary)
                             }
@@ -112,14 +112,21 @@ struct AppointmentEditorView: View {
         }
     }
 
+    /// Any time can be picked: the studio may open early or stay late. Outside working hours is only noted.
     private var timeSection: some View {
-        Section("Время") {
+        Section {
             DatePicker("Дата", selection: $draft.start, displayedComponents: .date)
             DatePicker("Начало", selection: $draft.start, displayedComponents: .hourAndMinute)
             Stepper(value: $draft.durationMin, in: AppointmentDraft.durationStep...(12 * 60), step: AppointmentDraft.durationStep) {
                 LabeledContent("Длительность", value: DateText.duration(minutes: draft.durationMin))
             }
             DatePicker("Окончание", selection: endBinding, in: draft.start.addingTimeInterval(5 * 60)..., displayedComponents: .hourAndMinute)
+        } header: {
+            Text("Время")
+        } footer: {
+            if !reference.workday.contains(start: draft.start, end: draft.end, calendar: .app) {
+                Label("Вне рабочего времени студии (\(reference.workday.title)). Запись сохранится — календарь покажет её.", systemImage: "clock.badge.exclamationmark")
+            }
         }
     }
 
@@ -192,6 +199,7 @@ struct AppointmentEditorView: View {
         do {
             try await reference.ensureEmployees()
             try await reference.ensureServices()
+            try? await reference.ensureWorkday()
             draft.resolveDeposits(from: reference.services)
             referenceError = nil
             if draft.masterId == nil, let me = appState.employee, me.isMaster, me.active {

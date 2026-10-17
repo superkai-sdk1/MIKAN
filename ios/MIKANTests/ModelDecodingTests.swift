@@ -30,7 +30,11 @@ final class ModelDecodingTests: XCTestCase {
         let employee = try Fixtures.decode(EmployeeRef.self, Fixtures.employeeRef)
         XCTAssertEqual(employee, EmployeeRef(id: 2, name: "Анна", color: "#FF7A1A"))
         let client = try Fixtures.decode(ClientRef.self, Fixtures.clientRef)
-        XCTAssertEqual(client, ClientRef(id: 1, name: "Иван Петров", phone: "+79991234567", telegramLinked: true))
+        XCTAssertEqual(client, ClientRef(id: 1, name: "Иван", lastName: "Петров", phone: "+79991234567", telegramLinked: true))
+        XCTAssertEqual(client.fullName, "Иван Петров")
+        let legacy = try Fixtures.decode(ClientRef.self, Fixtures.legacyClientRef)
+        XCTAssertNil(legacy.lastName)
+        XCTAssertEqual(legacy.fullName, "Иван Петров")
         let service = try Fixtures.decode(ServiceRef.self, Fixtures.serviceRef)
         XCTAssertEqual(service, ServiceRef(id: 3, name: "Прокол мочки", category: .piercing))
     }
@@ -50,6 +54,10 @@ final class ModelDecodingTests: XCTestCase {
             let client = try Fixtures.decode(Client.self, Fixtures.clientInList, fractional: fractional)
             XCTAssertEqual(client.birthday, "1995-04-12")
             XCTAssertEqual(client.instagram, "ivan.p")
+            XCTAssertEqual(client.lastName, "Петров")
+            XCTAssertEqual(client.telegramNick, "ivan_petrov")
+            XCTAssertEqual(client.fullName, "Иван Петров")
+            XCTAssertEqual(client.ref.lastName, "Петров")
             XCTAssertTrue(client.telegramLinked)
             XCTAssertNil(client.stats)
         }
@@ -59,6 +67,8 @@ final class ModelDecodingTests: XCTestCase {
         for fractional in variants {
             let client = try Fixtures.decode(Client.self, Fixtures.clientWithStats, fractional: fractional)
             XCTAssertNil(client.phone)
+            XCTAssertNil(client.lastName, "older servers send no last name")
+            XCTAssertNil(client.telegramNick)
             XCTAssertEqual(client.stats?.visits, 3)
             XCTAssertEqual(client.stats?.totalSpent, 25_000)
             XCTAssertEqual(client.stats?.lastVisitAt, Fixtures.referenceDate)
@@ -272,9 +282,13 @@ final class ModelDecodingTests: XCTestCase {
         let studio = try Fixtures.decode(StudioSettings.self, Fixtures.studioSettings)
         XCTAssertEqual(studio.timezone, "Europe/Moscow")
         XCTAssertEqual(studio.workingHours, "Ежедневно 11:00–21:00")
+        XCTAssertEqual(studio.workdayStart, "10:00")
+        XCTAssertEqual(studio.workdayEnd, "21:00")
 
         let tolerant = try Fixtures.decode(StudioSettings.self, #"{ "name": "MIKAN", "address": null, "timezone": "Europe/Moscow" }"#)
         XCTAssertEqual(tolerant.address, "")
+        XCTAssertEqual(tolerant.workdayStart, "11:00", "servers without working hours get the server default")
+        XCTAssertEqual(tolerant.workdayEnd, "21:00")
 
         let bot = try Fixtures.decode(BotSettings.self, Fixtures.botSettings)
         XCTAssertEqual(bot.botUsername, "mikan_studio_bot")

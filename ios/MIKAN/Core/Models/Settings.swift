@@ -9,10 +9,14 @@ nonisolated struct StudioSettings: Codable, Hashable, Sendable {
     var website: String
     var about: String
     var timezone: String
+    /// Opening time "HH:mm" in the studio time zone: the calendar grid starts here.
+    var workdayStart: String
+    /// Closing time "HH:mm" ("24:00" = midnight): the calendar grid ends here.
+    var workdayEnd: String
 }
 
 extension StudioSettings {
-    /// Tolerates `null` text fields — they become empty strings.
+    /// Tolerates `null` text fields — they become empty strings — and servers without working hours.
     nonisolated init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         func text(_ key: CodingKeys) throws -> String {
@@ -26,7 +30,9 @@ extension StudioSettings {
             instagram: try text(.instagram),
             website: try text(.website),
             about: try text(.about),
-            timezone: try container.decodeIfPresent(String.self, forKey: .timezone) ?? "Europe/Moscow"
+            timezone: try container.decodeIfPresent(String.self, forKey: .timezone) ?? "Europe/Moscow",
+            workdayStart: try container.decodeIfPresent(String.self, forKey: .workdayStart) ?? WorkdayHours.standard.startText,
+            workdayEnd: try container.decodeIfPresent(String.self, forKey: .workdayEnd) ?? WorkdayHours.standard.endText
         )
     }
 }

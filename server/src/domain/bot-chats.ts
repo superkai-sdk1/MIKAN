@@ -160,7 +160,7 @@ export function serializeScheduled(db: DbOrTx, rows: ScheduledRow[]) {
   const cl = clientsByIds(db, rows.map((r) => r.clientId));
   return rows.map((m) => {
     const c = cl.get(m.clientId);
-    return scheduledOut(m, c ? clientRef(c) : { id: m.clientId, name: 'Удалённый клиент', phone: null, telegramLinked: false });
+    return scheduledOut(m, c ? clientRef(c) : { id: m.clientId, name: 'Удалённый клиент', lastName: null, phone: null, telegramLinked: false });
   });
 }
 

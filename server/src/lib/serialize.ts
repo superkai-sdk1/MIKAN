@@ -30,6 +30,7 @@ export interface EmployeeRef {
 export interface ClientRef {
   id: number;
   name: string;
+  lastName: string | null;
   phone: string | null;
   telegramLinked: boolean;
 }
@@ -67,9 +68,14 @@ export const employeeOut = (e: EmployeeRow) => ({
   createdAt: toIso(e.createdAt),
 });
 
+/** "Имя Фамилия" — how staff, the bot and its notifications name a client. */
+export const clientFullName = (c: Pick<ClientRow, 'name' | 'lastName'>): string =>
+  [c.name, c.lastName].map((part) => part?.trim()).filter(Boolean).join(' ');
+
 export const clientRef = (c: ClientRow): ClientRef => ({
   id: c.id,
   name: c.name,
+  lastName: c.lastName,
   phone: c.phone,
   telegramLinked: c.telegramChatId != null,
 });
@@ -77,8 +83,10 @@ export const clientRef = (c: ClientRow): ClientRef => ({
 export const clientOut = (c: ClientRow, stats: ClientStats | null = null) => ({
   id: c.id,
   name: c.name,
+  lastName: c.lastName,
   phone: c.phone,
   instagram: c.instagram,
+  telegramNick: c.telegramNick,
   birthday: c.birthday,
   notes: c.notes,
   source: c.source,

@@ -49,7 +49,7 @@ struct ClientChatView: View {
     let client: ClientRef
 
     var body: some View {
-        ChatResolverView(title: client.name, lookup: .client(id: client.id))
+        ChatResolverView(title: client.fullName, lookup: .client(id: client.id))
     }
 }
 

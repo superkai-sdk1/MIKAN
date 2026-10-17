@@ -2,9 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { and, asc, count, desc, eq, gte, inArray, max, ne, sql } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, botChats, clients, sales } from '../db/schema.js';
-import { conflict } from '../lib/errors.js';
+import { badRequest, conflict } from '../lib/errors.js';
 import { phoneSearchVariants } from '../lib/phone.js';
-import type { ClientRow, ClientStats } from '../lib/serialize.js';
+import { clientFullName, type ClientRow, type ClientStats } from '../lib/serialize.js';
 import { normalizeSearchTerm, searchKey } from '../lib/text.js';
 import { toIso } from '../lib/time.js';
 import { likePattern } from '../lib/validation.js';
@@ -13,8 +13,11 @@ import { syncRemindersForClient } from './scheduling.js';
 
 export interface ClientInput {
   name?: string;
+  lastName?: string | null;
   phone?: string | null;
   instagram?: string | null;
+  /** Already cleaned (see `cleanTelegramNick`). */
+  telegramNick?: string | null;
   birthday?: string | null;
   notes?: string | null;
   source?: string | null;
@@ -22,10 +25,13 @@ export interface ClientInput {
   archived?: boolean;
 }
 
-function derived(row: Pick<ClientRow, 'name' | 'phone' | 'instagram' | 'telegramUsername'>) {
+type SearchFields = Pick<ClientRow, 'name' | 'lastName' | 'phone' | 'instagram' | 'telegramNick' | 'telegramUsername'>;
+
+function derived(row: SearchFields) {
+  const fullName = clientFullName(row);
   return {
-    nameSort: searchKey(row.name),
-    searchText: searchKey(row.name, phoneSearchVariants(row.phone), row.instagram, row.telegramUsername),
+    nameSort: searchKey(fullName),
+    searchText: searchKey(fullName, phoneSearchVariants(row.phone), row.instagram, row.telegramNick, row.telegramUsername),
   };
 }
 
@@ -34,7 +40,7 @@ function assertPhoneFree(db: DbOrTx, phone: string | null | undefined, exceptId?
   const conditions = [eq(clients.phone, phone)];
   if (exceptId !== undefined) conditions.push(ne(clients.id, exceptId));
   const owner = db.select().from(clients).where(and(...conditions)).get();
-  if (owner) throw conflict(`Телефон ${phone} уже принадлежит клиенту «${owner.name}»`);
+  if (owner) throw conflict(`Телефон ${phone} уже принадлежит клиенту «${clientFullName(owner)}»`);
 }
 
 export function cleanInstagram(value: string | null | undefined): string | null | undefined {
@@ -43,13 +49,26 @@ export function cleanInstagram(value: string | null | undefined): string | null 
   return cleaned === '' ? null : cleaned;
 }
 
+/** "@nick", "t.me/nick", "https://telegram.me/nick/" → "nick"; empty → null. */
+export function cleanTelegramNick(value: string | null | undefined): string | null | undefined {
+  if (value == null) return value;
+  const cleaned = value
+    .trim()
+    .replace(/^(https?:\/\/)?(www\.)?(t|telegram)\.me\//i, '')
+    .replace(/^@/, '')
+    .replace(/\/+$/, '');
+  return cleaned === '' ? null : cleaned;
+}
+
 export function createClient(db: DbOrTx, input: ClientInput & { name: string }, extra: Partial<ClientRow> = {}): ClientRow {
   assertPhoneFree(db, input.phone);
   const now = Date.now();
   const base = {
     name: input.name,
+    lastName: input.lastName ?? null,
     phone: input.phone ?? null,
     instagram: cleanInstagram(input.instagram) ?? null,
+    telegramNick: input.telegramNick ?? null,
     telegramUsername: extra.telegramUsername ?? null,
   };
   return db
@@ -70,13 +89,26 @@ export function createClient(db: DbOrTx, input: ClientInput & { name: string }, 
     .get();
 }
 
+/**
+ * A phone, once set, can be changed but not removed. Clients imported without one (YCLIENTS) stay editable:
+ * sending `phone: null` for them changes nothing.
+ */
+function assertPhoneKept(current: ClientRow, phone: string | null | undefined): void {
+  if (phone === null && current.phone !== null) {
+    throw badRequest('«Телефон»: обязательное поле — номер можно изменить, но не удалить');
+  }
+}
+
 export function updateClient(db: DbOrTx, id: number, input: ClientInput): ClientRow {
   const current = getClientRow(db, id);
+  assertPhoneKept(current, input.phone);
   if (input.phone !== undefined && input.phone !== current.phone) assertPhoneFree(db, input.phone, id);
   const next = {
     name: input.name ?? current.name,
+    lastName: input.lastName === undefined ? current.lastName : input.lastName,
     phone: input.phone === undefined ? current.phone : input.phone,
     instagram: input.instagram === undefined ? current.instagram : (cleanInstagram(input.instagram) ?? null),
+    telegramNick: input.telegramNick === undefined ? current.telegramNick : input.telegramNick,
     telegramUsername: current.telegramUsername,
   };
   return db

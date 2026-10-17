@@ -7,72 +7,59 @@ struct ClientEditorView: View {
     let client: Client?
     let onSaved: (Client) -> Void
 
-    @State private var name: String
-    @State private var phone: String
-    @State private var instagram: String
-    @State private var hasBirthday: Bool
-    @State private var birthday: Date
-    @State private var source: String
-    @State private var notes: String
-    @State private var botEnabled: Bool
+    @State private var draft: ClientDraft
     @State private var isSaving = false
     @State private var errorMessage: String?
-
-    private static let defaultBirthday = Calendar.app.date(from: DateComponents(year: 1995, month: 1, day: 1)) ?? .now
 
     init(client: Client?, onSaved: @escaping (Client) -> Void) {
         self.client = client
         self.onSaved = onSaved
-        let birthdayDate = client?.birthday.flatMap { CalendarDay.date(from: $0) }
-        _name = State(initialValue: client?.name ?? "")
-        _phone = State(initialValue: client?.phone ?? "")
-        _instagram = State(initialValue: client?.instagram ?? "")
-        _hasBirthday = State(initialValue: birthdayDate != nil)
-        _birthday = State(initialValue: birthdayDate ?? Self.defaultBirthday)
-        _source = State(initialValue: client?.source ?? "")
-        _notes = State(initialValue: client?.notes ?? "")
-        _botEnabled = State(initialValue: client?.botEnabled ?? true)
+        _draft = State(initialValue: client.map(ClientDraft.init(client:)) ?? ClientDraft())
     }
-
-    private var canSave: Bool { !name.trimmed.isEmpty && !isSaving }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Контакты") {
-                    TextField("Имя и фамилия", text: $name)
-                        .textContentType(.name)
-                    TextField("Телефон", text: $phone)
-                        .keyboardType(.phonePad)
-                        .textContentType(.telephoneNumber)
-                    HStack(spacing: 4) {
-                        Text("@").foregroundStyle(.secondary)
-                        TextField("Instagram", text: $instagram)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                Section {
+                    TextField("Имя", text: $draft.name)
+                        .textContentType(.givenName)
+                    TextField("Фамилия", text: $draft.lastName)
+                        .textContentType(.familyName)
+                    Toggle("Указать дату рождения", isOn: $draft.hasBirthday.animation())
+                    if draft.hasBirthday {
+                        DatePicker("Дата рождения", selection: $draft.birthday, in: ...Date.now, displayedComponents: .date)
                     }
+                } header: {
+                    Text("Клиент")
                 }
                 Section {
-                    Toggle("Указать день рождения", isOn: $hasBirthday.animation())
-                    if hasBirthday {
-                        DatePicker("День рождения", selection: $birthday, in: ...Date.now, displayedComponents: .date)
-                    }
-                    Picker("Откуда узнал", selection: $source) {
+                    TextField(draft.requiresPhone ? "Телефон" : "Телефон (не указан)", text: $draft.phone)
+                        .keyboardType(.phonePad)
+                        .textContentType(.telephoneNumber)
+                    handleField("Ник в Telegram", text: $draft.telegramNick)
+                    handleField("Instagram", text: $draft.instagram)
+                } header: {
+                    Text("Контакты")
+                } footer: {
+                    contactsFooter
+                }
+                Section {
+                    Picker("Откуда узнал", selection: $draft.source) {
                         Text("Не указано").tag("")
                         ForEach(ClientSource.suggestions, id: \.self) { option in
                             Text(ClientSource.title(for: option)).tag(option)
                         }
-                        if !source.isEmpty, !ClientSource.suggestions.contains(source) {
-                            Text(ClientSource.title(for: source)).tag(source)
+                        if !draft.source.isEmpty, !ClientSource.suggestions.contains(draft.source) {
+                            Text(ClientSource.title(for: draft.source)).tag(draft.source)
                         }
                     }
                 }
                 Section("Заметки") {
-                    TextField("Аллергии, предпочтения, особенности", text: $notes, axis: .vertical)
+                    TextField("Аллергии, предпочтения, особенности", text: $draft.notes, axis: .vertical)
                         .lineLimit(3...8)
                 }
                 Section {
-                    Toggle("Сообщения от бота", isOn: $botEnabled)
+                    Toggle("Сообщения от бота", isOn: $draft.botEnabled)
                 } footer: {
                     Text("Разрешить боту присылать клиенту памятки по уходу и напоминания о записи.")
                 }
@@ -87,7 +74,7 @@ struct ClientEditorView: View {
                     if isSaving {
                         ProgressView()
                     } else {
-                        Button("Сохранить", action: save).disabled(!canSave)
+                        Button("Сохранить", action: save).disabled(!draft.canSave)
                     }
                 }
             }
@@ -96,17 +83,28 @@ struct ClientEditorView: View {
         }
     }
 
+    @ViewBuilder
+    private var contactsFooter: some View {
+        if let hint = draft.missingFieldsHint {
+            Text("Обязательны имя и телефон. \(hint)")
+        } else if !draft.requiresPhone, draft.phone.trimmed.isEmpty {
+            Text("У клиента нет телефона (карточка из импорта). Добавьте его, когда узнаете.")
+        }
+    }
+
+    /// "@" + text field for a username.
+    private func handleField(_ title: String, text: Binding<String>) -> some View {
+        HStack(spacing: 4) {
+            Text("@").foregroundStyle(.secondary)
+            TextField(title, text: text)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityLabel(title)
+        }
+    }
+
     private func save() {
-        let cleanedInstagram = instagram.trimmed.hasPrefix("@") ? String(instagram.trimmed.dropFirst()) : instagram
-        let body = ClientBody(
-            name: name.trimmed,
-            phone: Nullable(phone.nonEmpty),
-            instagram: Nullable(cleanedInstagram.nonEmpty),
-            birthday: Nullable(hasBirthday ? CalendarDay.string(from: birthday) : nil),
-            notes: Nullable(notes.nonEmpty),
-            source: Nullable(source.nonEmpty),
-            botEnabled: botEnabled
-        )
+        let body = draft.body()
         isSaving = true
         Task {
             defer { isSaving = false }

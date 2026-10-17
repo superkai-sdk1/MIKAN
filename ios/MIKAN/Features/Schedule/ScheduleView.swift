@@ -34,7 +34,11 @@ struct ScheduleView: View {
         let saved = UserDefaults.standard.string(forKey: Keys.scale).flatMap(CalendarScale.init(rawValue:)) ?? .week
         _base = State(initialValue: .containing(.now, scale: saved))
         let nowMinute = TimeGridLayout.minuteOfDay(.now, calendar: .app)
-        let startMinute = TimeGridLayout.initialScrollMinute(nowMinute: nowMinute, firstAppointmentMinute: nil)
+        let startMinute = TimeGridLayout.initialScrollMinute(
+            nowMinute: nowMinute,
+            firstAppointmentMinute: nil,
+            workdayStartMinute: WorkdayHours.standard.startMinute
+        )
         _gridScroll = State(initialValue: GridScrollState(topMinute: startMinute))
     }
 
@@ -82,7 +86,9 @@ struct ScheduleView: View {
             .onChange(of: scale) { _, newScale in rebase(to: anchorDay, scale: newScale) }
             .onChange(of: pageOffset) { _, _ in pageChanged() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { focus(refresh: true) }
+                guard phase == .active else { return }
+                focus(refresh: true)
+                Task { try? await reference.ensureWorkday(force: true) }
             }
             .onAppear(perform: appeared)
         }
@@ -114,6 +120,7 @@ struct ScheduleView: View {
                 let period = base.shifted(by: index)
                 TimeGridPage(
                     period: period,
+                    workday: reference.workday,
                     query: query(for: period),
                     isActive: index == (pageOffset ?? 0),
                     showsCancelled: showsCancelled,
@@ -232,6 +239,7 @@ struct ScheduleView: View {
             gridScroll.scroll(toMinute: initialMinute(for: currentPeriod))
         }
         Task { try? await reference.ensureEmployees() }
+        Task { try? await reference.ensureWorkday() }
     }
 
     private func rebase(to day: Date, scale: CalendarScale) {
@@ -283,7 +291,8 @@ struct ScheduleView: View {
             .min { $0.startsAt < $1.startsAt }
         return TimeGridLayout.initialScrollMinute(
             nowMinute: nowMinute,
-            firstAppointmentMinute: first.map { TimeGridLayout.minuteOfDay($0.startsAt, calendar: .app) }
+            firstAppointmentMinute: first.map { TimeGridLayout.minuteOfDay($0.startsAt, calendar: .app) },
+            workdayStartMinute: reference.workday.window(on: period.visibleStart, calendar: .app).lowerBound
         )
     }
 }

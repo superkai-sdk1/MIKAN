@@ -45,14 +45,14 @@ describe('clients', () => {
       code: 'conflict',
       message: 'Телефон +79991234567 уже принадлежит клиенту «Иван Петров»',
     });
-    const other = await make(t, '/api/clients', { name: 'Пётр' });
+    const other = await make(t, '/api/clients', { name: 'Пётр', phone: '+79990000201' });
     const patch = await t.api('PATCH', `/api/clients/${other.id}`, { phone: '9991234567' });
     expect(patch.statusCode).toBe(409);
   });
 
   it('validates input', async () => {
     expect((await t.api('POST', '/api/clients', { name: '' })).statusCode).toBe(400);
-    const bad = await t.api('POST', '/api/clients', { name: 'X', birthday: '12.04.1995' });
+    const bad = await t.api('POST', '/api/clients', { name: 'X', phone: '+79990000202', birthday: '12.04.1995' });
     expect(bad.json().error.message).toBe('«Дата рождения»: дата должна быть в формате ГГГГ-ММ-ДД');
     expect((await t.api('GET', '/api/clients/999')).statusCode).toBe(404);
   });
@@ -61,7 +61,7 @@ describe('clients', () => {
     await make(t, '/api/clients', { name: 'Яна Смирнова', phone: '+79990000001', instagram: 'yana_tattoo' });
     await make(t, '/api/clients', { name: 'анна Кузнецова', phone: '+79990000002' });
     await make(t, '/api/clients', { name: 'Борис Ёлкин', phone: '+12025550143' });
-    const archived = await make(t, '/api/clients', { name: 'Архивный' });
+    const archived = await make(t, '/api/clients', { name: 'Архивный', phone: '+79990000203' });
     await t.api('PATCH', `/api/clients/${archived.id}`, { archived: true });
 
     const names = async (q: string) =>
@@ -82,7 +82,7 @@ describe('clients', () => {
   });
 
   it('updates, clears fields, and returns history and stats', async () => {
-    const c = await make(t, '/api/clients', { name: 'Иван', instagram: 'ivan', botEnabled: false });
+    const c = await make(t, '/api/clients', { name: 'Иван', phone: '+79990000204', instagram: 'ivan', botEnabled: false });
     const patched = await t.api('PATCH', `/api/clients/${c.id}`, { instagram: null, notes: 'VIP', botEnabled: true });
     expect(patched.json()).toMatchObject({ instagram: null, notes: 'VIP', botEnabled: true, name: 'Иван' });
     const history = await t.api('GET', `/api/clients/${c.id}/history`);
@@ -91,7 +91,7 @@ describe('clients', () => {
   });
 
   it('issues a Telegram deep link with the bot username', async () => {
-    const c = await make(t, '/api/clients', { name: 'Иван' });
+    const c = await make(t, '/api/clients', { name: 'Иван', phone: '+79990000205' });
     const res = await t.api('POST', `/api/clients/${c.id}/telegram-link`);
     expect(res.statusCode).toBe(200);
     expect(res.json().url).toMatch(/^https:\/\/t\.me\/mikan_test_bot\?start=c[A-Za-z0-9_-]{16}$/);
@@ -108,8 +108,8 @@ describe('clients', () => {
     };
     const chatOf = async (clientId: number) => (await t.api('GET', `/api/clients/${clientId}/chat`)).json().chat;
 
-    const ivan = await make(t, '/api/clients', { name: 'Иван' });
-    const olga = await make(t, '/api/clients', { name: 'Ольга' });
+    const ivan = await make(t, '/api/clients', { name: 'Иван', phone: '+79990000206' });
+    const olga = await make(t, '/api/clients', { name: 'Ольга', phone: '+79990000207' });
     expect((await t.api('GET', `/api/clients/${ivan.id}/chat`)).json()).toEqual({ chat: null });
 
     await link(ivan.id);

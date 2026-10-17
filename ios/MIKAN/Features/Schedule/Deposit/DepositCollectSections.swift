@@ -19,7 +19,7 @@ struct DepositCollectHeader: View {
                     .foregroundStyle(missing > 0 ? Color.orange : Color.green)
                 MoneyText(missing > 0 ? missing : appointment.deposit)
                     .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                Text("\(appointment.client.name) · \(DateText.dayMonth(appointment.startsAt)), \(DateText.time(appointment.startsAt))")
+                Text("\(appointment.client.fullName) · \(DateText.dayMonth(appointment.startsAt)), \(DateText.time(appointment.startsAt))")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 if appointment.deposit > 0, appointment.depositRequired > 0 {

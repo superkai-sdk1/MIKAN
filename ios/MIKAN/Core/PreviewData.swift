@@ -22,11 +22,12 @@ enum PreviewData {
     )
     static let employees = [anna, oleg]
 
-    static let ivanRef = ClientRef(id: 1, name: "Иван Петров", phone: "+79991234567", telegramLinked: true)
+    static let ivanRef = ClientRef(id: 1, name: "Иван", lastName: "Петров", phone: "+79991234567", telegramLinked: true)
     static let mariaRef = ClientRef(id: 2, name: "Мария Ким", phone: "+79161112233", telegramLinked: false)
 
     static let ivan = Client(
-        id: 1, name: "Иван Петров", phone: "+79991234567", instagram: "ivan.p", birthday: "1995-04-12",
+        id: 1, name: "Иван", lastName: "Петров", phone: "+79991234567", instagram: "ivan.p", telegramNick: "ivan_petrov",
+        birthday: "1995-04-12",
         notes: "Аллергия на никель", source: "instagram", telegramLinked: true, telegramUsername: "ivanp",
         botEnabled: true, archived: false, createdAt: now, updatedAt: now,
         stats: ClientStats(visits: 3, totalSpent: 25_000, lastVisitAt: at(hour: 12, dayOffset: -20), upcomingAppointments: 1)
@@ -199,7 +200,7 @@ enum PreviewData {
     static let studioSettings = StudioSettings(
         name: "MIKAN STUDIO", address: "ул. Ленина, 1", phone: "+79990000000",
         workingHours: "Ежедневно 11:00–21:00", instagram: "mikan.studio", website: "",
-        about: "Тату и пирсинг", timezone: "Europe/Moscow"
+        about: "Тату и пирсинг", timezone: "Europe/Moscow", workdayStart: "11:00", workdayEnd: "21:00"
     )
 
     static func appState(signedIn: Bool = true) -> AppState {

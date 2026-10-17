@@ -86,7 +86,7 @@ describe('grammY handlers (no network)', () => {
   });
 
   it('links the chat from a deep-link payload and from a shared contact', async () => {
-    const client = await make(t, '/api/clients', { name: 'Иван' });
+    const client = await make(t, '/api/clients', { name: 'Иван', phone: '+79990000106' });
     const url = (await t.api('POST', `/api/clients/${client.id}/telegram-link`)).json().url as string;
     await bot.handleUpdate(command(`/start ${new URL(url).searchParams.get('start')}`));
     expect(replies()[0]!.text).toMatch(/^Иван, ваш Telegram подключён/);

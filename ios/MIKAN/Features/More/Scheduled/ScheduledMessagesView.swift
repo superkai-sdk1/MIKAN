@@ -66,7 +66,7 @@ struct ScheduledMessagesView: View {
             Button("Не отправлять", role: .destructive) { cancel(message) }
             Button("Оставить", role: .cancel) {}
         } message: { message in
-            Text("Сообщение для \(message.client?.name ?? "клиента") не будет отправлено.")
+            Text("Сообщение для \(message.client?.fullName ?? "клиента") не будет отправлено.")
         }
         .navigationTitle("Запланированные")
     }
@@ -118,7 +118,7 @@ private struct ScheduledMessageRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(message.client?.name ?? "Клиент").font(.headline)
+                Text(message.client?.fullName ?? "Клиент").font(.headline)
                 StatusBadge(
                     text: message.kind == .aftercare ? "Уход" : "Напоминание",
                     color: message.kind == .aftercare ? .teal : .blue

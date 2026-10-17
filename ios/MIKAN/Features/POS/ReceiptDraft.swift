@@ -33,7 +33,7 @@ enum ReceiptDraft {
 
     /// "По записи · Анна", "Иван Петров · 2 позиции", "Без клиента · пусто".
     static func summary(itemCount: Int, client: ClientRef?, appointment: Appointment?) -> String {
-        let who = appointment.map { "По записи · \($0.client.name)" } ?? client?.name ?? "Без клиента"
+        let who = appointment.map { "По записи · \($0.client.fullName)" } ?? client?.fullName ?? "Без клиента"
         let what = itemCount == 0 ? "пусто" : Plural.count(itemCount, one: "позиция", few: "позиции", many: "позиций")
         return "\(who) · \(what)"
     }
@@ -41,7 +41,7 @@ enum ReceiptDraft {
     /// "По записи · 14:00–15:00 · Анна · Хеликс"
     static func appointmentBanner(_ appointment: Appointment) -> String {
         let time = DateText.timeRange(appointment.startsAt, appointment.endsAt)
-        return "По записи · \(time) · \(appointment.client.name) · \(appointment.displayTitle)"
+        return "По записи · \(time) · \(appointment.client.fullName) · \(appointment.displayTitle)"
     }
 
     /// "Мастер Анна · предоплата 2 000 ₽ зачтётся", or with a held prepayment larger than the receipt

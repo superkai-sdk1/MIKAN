@@ -174,7 +174,7 @@ private struct PaymentQueueRow: View {
                             .fill(Color.master(appointment.master.color))
                             .frame(width: 8, height: 8)
                             .accessibilityHidden(true)
-                        Text(appointment.client.name)
+                        Text(appointment.client.fullName)
                             .font(.headline)
                             .lineLimit(1)
                     }

@@ -31,7 +31,7 @@ struct SaleDetailView: View {
                     NavigationLink {
                         ClientDetailView(clientId: client.id)
                     } label: {
-                        Label(client.name, systemImage: "person.crop.circle")
+                        Label(client.fullName, systemImage: "person.crop.circle")
                     }
                 }
             }

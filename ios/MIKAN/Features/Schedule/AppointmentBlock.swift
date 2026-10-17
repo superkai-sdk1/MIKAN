@@ -51,7 +51,7 @@ struct AppointmentBlock: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 1) {
             timeRow
-            Text(compact ? shortName : appointment.client.name)
+            Text(compact ? shortName : appointment.client.fullName)
                 .font(compact ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                 .lineLimit(compact ? 2 : 1)
             if showsTitle {
@@ -87,20 +87,21 @@ struct AppointmentBlock: View {
     }
 
     private var initialsLabel: some View {
-        Text(Initials.from(appointment.client.name))
+        Text(Initials.from(appointment.client.fullName))
             .font(.caption2.weight(.semibold))
     }
 
     /// First name, or initials when the name is long.
     private var shortName: String {
-        let first = appointment.client.name.split(separator: " ").first.map(String.init) ?? appointment.client.name
-        return first.count > 8 ? Initials.from(appointment.client.name) : first
+        let fullName = appointment.client.fullName
+        let first = fullName.split(separator: " ").first.map(String.init) ?? fullName
+        return first.count > 8 ? Initials.from(fullName) : first
     }
 
     private var accessibilityText: String {
         var parts = [
             DateText.timeRange(appointment.startsAt, appointment.endsAt),
-            appointment.client.name,
+            appointment.client.fullName,
             appointment.displayTitle,
             "мастер \(appointment.master.name)",
         ]

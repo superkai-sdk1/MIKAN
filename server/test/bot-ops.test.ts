@@ -99,9 +99,11 @@ describe('bot chats API, staff chat, onboarding and scheduled sender', () => {
     expect(foreign.text).toMatch(/своим номером/);
 
     const created = await handleContact(t.ctx, { ...from, userId: CHAT }, { userId: CHAT, phone: '79990001111', firstName: 'Ольга', lastName: 'Ли' });
-    expect(created).toEqual({ text: 'Спасибо, Ольга Ли! Номер сохранён ✅ Чем могу помочь?', linked: true });
+    expect(created).toEqual({ text: 'Спасибо, Ольга! Номер сохранён ✅ Чем могу помочь?', linked: true });
     const client = (await t.api('GET', '/api/clients?search=Ольга')).json().items[0];
-    expect(client).toMatchObject({ name: 'Ольга Ли', phone: '+79990001111', source: 'telegram', telegramLinked: true, telegramUsername: 'olga' });
+    expect(client).toMatchObject({
+      name: 'Ольга', lastName: 'Ли', phone: '+79990001111', source: 'telegram', telegramLinked: true, telegramUsername: 'olga',
+    });
     expect(t.gateway.textsTo(STAFF)).toEqual(['👤 Новый клиент через бота: Ольга Ли, +79990001111 (@olga)']);
     expect((await t.api('GET', '/api/bot/chats')).json().items[0].client).toMatchObject({ id: client.id, telegramLinked: true });
 
@@ -167,7 +169,7 @@ describe('bot chats API, staff chat, onboarding and scheduled sender', () => {
   });
 
   it('cancels reminders whose appointment is no longer active when they come due', async () => {
-    const client = await make(t, '/api/clients', { name: 'Иван' });
+    const client = await make(t, '/api/clients', { name: 'Иван', phone: '+79990000105' });
     const url = (await t.api('POST', `/api/clients/${client.id}/telegram-link`)).json().url as string;
     handleStart(t.ctx, { chatId: CHAT, telegramName: 'Иван', username: null }, new URL(url).searchParams.get('start')!);
     const appt = await make(t, '/api/appointments', { clientId: client.id, masterId: 1, startsAt: '2026-10-17T11:00:00Z', endsAt: '2026-10-17T12:00:00Z' });

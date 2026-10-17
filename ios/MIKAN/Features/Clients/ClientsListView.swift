@@ -72,7 +72,7 @@ struct ClientsListView: View {
             }
             .auraBackground()
             .scrollEdgeEffectStyle(.soft, for: .top)
-            .searchable(text: $model.search, prompt: "Имя, телефон, Instagram, Telegram")
+            .searchable(text: $model.search, prompt: "Имя, фамилия, телефон, ник")
             .overlay {
                 RemoteStateOverlay(remote: model.remote, retry: { await model.load(api: api) }) {
                     emptyState

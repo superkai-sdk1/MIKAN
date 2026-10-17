@@ -106,10 +106,11 @@ final class TimeGridLayoutTests: XCTestCase {
     }
 
     func testInitialScrollPosition() {
-        XCTAssertEqual(TimeGridLayout.initialScrollMinute(nowMinute: 15 * 60, firstAppointmentMinute: 9 * 60), 14 * 60)
-        XCTAssertEqual(TimeGridLayout.initialScrollMinute(nowMinute: 20, firstAppointmentMinute: nil), 0)
-        XCTAssertEqual(TimeGridLayout.initialScrollMinute(nowMinute: nil, firstAppointmentMinute: 11 * 60), 10 * 60 + 30)
-        XCTAssertEqual(TimeGridLayout.initialScrollMinute(nowMinute: nil, firstAppointmentMinute: nil), 8 * 60)
+        let opening = 10 * 60
+        XCTAssertEqual(TimeGridLayout.initialScrollMinute(nowMinute: 15 * 60, firstAppointmentMinute: 9 * 60, workdayStartMinute: opening), 14 * 60)
+        XCTAssertEqual(TimeGridLayout.initialScrollMinute(nowMinute: 20, firstAppointmentMinute: nil, workdayStartMinute: opening), 0)
+        XCTAssertEqual(TimeGridLayout.initialScrollMinute(nowMinute: nil, firstAppointmentMinute: 11 * 60, workdayStartMinute: opening), 10 * 60 + 30)
+        XCTAssertEqual(TimeGridLayout.initialScrollMinute(nowMinute: nil, firstAppointmentMinute: nil, workdayStartMinute: opening), opening)
     }
 }
 

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { settings } from '../db/schema.js';
+import { formatTimeOfDay, parseTimeOfDay } from '../lib/time.js';
 
 export interface StudioSettings {
   name: string;
@@ -11,6 +12,10 @@ export interface StudioSettings {
   website: string;
   about: string;
   timezone: string;
+  /** Opening time "HH:MM" in the studio timezone: the app's calendar starts here. */
+  workdayStart: string;
+  /** Closing time "HH:MM" ("24:00" = midnight), later than `workdayStart`: the calendar ends here. */
+  workdayEnd: string;
 }
 
 export interface BotSettingsStored {
@@ -39,6 +44,8 @@ export const DEFAULT_STUDIO: StudioSettings = {
   website: '',
   about: '',
   timezone: 'Europe/Moscow',
+  workdayStart: '11:00',
+  workdayEnd: '21:00',
 };
 
 export const DEFAULT_BOT: BotSettingsStored = {
@@ -82,8 +89,28 @@ function deleteKey(db: DbOrTx, key: string): void {
   db.delete(settings).where(eq(settings.key, key)).run();
 }
 
+/** Matches "11:00–21:00", "с 10:00 до 20:30", "9:00 - 22:00" inside free text. */
+const HOURS_IN_TEXT = /(\d{1,2}:\d{2})\s*(?:[-–—]|до)\s*(\d{1,2}:\d{2})/;
+
+/**
+ * Working hours for settings saved before `workdayStart` / `workdayEnd` existed: taken from the free-text
+ * `workingHours` («Ежедневно 10:00–20:00») when it holds a valid range, otherwise the defaults.
+ */
+export function workdayFromText(text: string): Pick<StudioSettings, 'workdayStart' | 'workdayEnd'> {
+  const match = HOURS_IN_TEXT.exec(text);
+  const start = match ? parseTimeOfDay(match[1]!) : null;
+  const end = match ? parseTimeOfDay(match[2]!) : null;
+  if (start === null || end === null || end <= start) {
+    return { workdayStart: DEFAULT_STUDIO.workdayStart, workdayEnd: DEFAULT_STUDIO.workdayEnd };
+  }
+  return { workdayStart: formatTimeOfDay(start), workdayEnd: formatTimeOfDay(end) };
+}
+
 export function getStudioSettings(db: DbOrTx): StudioSettings {
-  return { ...DEFAULT_STUDIO, ...(readKey<Partial<StudioSettings>>(db, KEY_STUDIO) ?? {}) };
+  const stored = readKey<Partial<StudioSettings>>(db, KEY_STUDIO) ?? {};
+  const merged = { ...DEFAULT_STUDIO, ...stored };
+  if (stored.workdayStart !== undefined && stored.workdayEnd !== undefined) return merged;
+  return { ...merged, ...workdayFromText(merged.workingHours) };
 }
 
 export function saveStudioSettings(db: DbOrTx, value: StudioSettings): StudioSettings {

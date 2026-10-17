@@ -3,7 +3,7 @@ import { notifyStaff } from '../bot/staff.js';
 import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { badRequest, conflict, errorMessage } from '../lib/errors.js';
-import type { AppointmentRow, QrPaymentRow } from '../lib/serialize.js';
+import { clientFullName, type AppointmentRow, type QrPaymentRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
 import { formatHumanDateTime, formatShortDateTime } from '../lib/time.js';
 import { findChat, findClientChat, storeMessage, upsertChat } from './bot-chats.js';
@@ -107,7 +107,7 @@ export async function announceQrDeposit(ctx: AppContext, code: QrPaymentRow): Pr
     const tz = getStudioSettings(ctx.db).timezone;
     await notifyStaff(
       ctx,
-      `💳 Предоплата ${formatRub(code.amount)} по СБП получена: ${client.name}, запись ${formatShortDateTime(appointment.startsAt, tz)}`,
+      `💳 Предоплата ${formatRub(code.amount)} по СБП получена: ${clientFullName(client)}, запись ${formatShortDateTime(appointment.startsAt, tz)}`,
     );
     if (code.error || !DEPOSIT_OPEN_STATUSES.includes(appointment.status) || !ctx.gateway.isRunning()) return;
     const chatId = findClientChat(ctx.db, client)?.chatId;

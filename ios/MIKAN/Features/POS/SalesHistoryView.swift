@@ -106,7 +106,7 @@ struct SaleRow: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
-                Text(sale.client?.name ?? "Без клиента")
+                Text(sale.client?.fullName ?? "Без клиента")
                     .font(.subheadline)
                 Text(sale.itemsSummary)
                     .font(.caption)

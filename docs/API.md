@@ -49,18 +49,29 @@ If the implementation must deviate, update this file in the same change.
 ### EmployeeRef / ClientRef / ServiceRef (embedded summaries)
 ```json
 { "id": 2, "name": "Анна", "color": "#FF7A1A" }                         // EmployeeRef
-{ "id": 1, "name": "Иван Петров", "phone": "+79991234567", "telegramLinked": true } // ClientRef
+{ "id": 1, "name": "Иван", "lastName": "Петров", "phone": "+79991234567", "telegramLinked": true } // ClientRef
 { "id": 3, "name": "Прокол мочки", "category": "piercing" }             // ServiceRef
 ```
+`ClientRef.lastName` may be `null`; apps show the client's full name (see Client) wherever they name a client.
 
 ### Client
 ```json
-{ "id": 1, "name": "Иван Петров", "phone": "+79991234567", "instagram": "ivan.p",
-  "birthday": "1995-04-12", "notes": "Аллергия на никель", "source": "instagram",
+{ "id": 1, "name": "Иван", "lastName": "Петров", "phone": "+79991234567", "instagram": "ivan.p",
+  "telegramNick": "ivan_petrov", "birthday": "1995-04-12", "notes": "Аллергия на никель", "source": "instagram",
   "telegramLinked": true, "telegramUsername": "ivanp", "botEnabled": true,
   "archived": false, "createdAt": "...", "updatedAt": "...",
   "stats": null }
 ```
+- The client card: `name` (first name, required), `lastName`, `birthday`, `phone` (required), `telegramNick`; the
+  other fields are optional extras.
+- Full name = `name` + `" "` + `lastName` (blank parts skipped): apps show it in lists, appointments, checkout and
+  history; the bot and staff notifications use it too. Cards created before last names existed may hold the whole
+  name in `name` with `lastName: null`.
+- `phone` is required for new clients. It may be `null` only for older cards (e.g. imported from YCLIENTS); such
+  cards are read and edited as usual.
+- `telegramNick` — the Telegram username typed by staff, without `@` (Latin letters, digits and `_`, 4–32 chars;
+  `@nick` and `t.me/nick` are accepted on input). `telegramUsername` is read-only: the username of the linked bot
+  chat. Apps show `telegramNick`, falling back to `telegramUsername`.
 - `source`: free text; app offers `instagram`, `telegram`, `рекомендация`, `с улицы`, `другое`.
 - `botEnabled`: whether the bot may send this client aftercare and reminders.
 - `stats` is `null` in lists and filled in `GET /clients/:id`:
@@ -277,8 +288,15 @@ If the implementation must deviate, update this file in the same change.
 ### StudioSettings
 ```json
 { "name": "MIKAN STUDIO", "address": "", "phone": "", "workingHours": "Ежедневно 11:00–21:00",
-  "instagram": "", "website": "", "about": "", "timezone": "Europe/Moscow" }
+  "instagram": "", "website": "", "about": "", "timezone": "Europe/Moscow",
+  "workdayStart": "10:00", "workdayEnd": "21:00" }
 ```
+- `workdayStart` / `workdayEnd` — working hours «с» / «до», `"HH:MM"` in the studio `timezone` (`"24:00"` = midnight;
+  the end must be later than the start). The app's calendar (day / 3 days / week) starts and ends at these hours.
+  They are **not** a booking limit: staff may book or move appointments to any time, the server accepts them, and
+  the calendar widens its range to show appointments outside the hours. Defaults `11:00`–`21:00`; settings saved
+  before these fields existed take them from the first `HH:MM–HH:MM` range in `workingHours`.
+- `workingHours` — free text for clients (the bot quotes it); when empty, the bot names `workdayStart`–`workdayEnd`.
 
 ### BotSettings
 ```json
@@ -315,10 +333,14 @@ The token lives 90 days. On first start, if there are no employees, the server c
 ### Clients
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/clients?search=&archived=false&limit=&offset=` | — | `{ items: [Client], total }` — search matches name, phone digits, instagram, telegram username; sorted by name |
+| GET | `/clients?search=&archived=false&limit=&offset=` | — | `{ items: [Client], total }` — search matches the full name (first and last name), phone digits, instagram, Telegram nick and bot username; sorted by full name |
 | GET | `/clients/:id` | — | `Client` with `stats` |
-| POST | `/clients` | `{ name, phone?, instagram?, birthday?, notes?, source?, botEnabled? }` | `Client` · `409 conflict` if phone already belongs to another client (message names that client) |
-| PATCH | `/clients/:id` | same fields + `archived` | `Client` |
+| POST | `/clients` | `{ name, phone, lastName?, birthday?, telegramNick?, instagram?, notes?, source?, botEnabled? }` | `Client` · `400` without `phone` («Телефон»: обязательное поле) · `409 conflict` if phone already belongs to another client (message names that client) |
+| PATCH | `/clients/:id` | any of the same fields + `archived` | `Client` · `400` when clearing a phone the client has |
+
+- PATCH: omitted fields are kept, `null` / `""` clears an optional field. A phone, once set, can be changed but not
+  removed. For a card without a phone, `phone: null` changes nothing, so older builds (which send every field, the
+  empty phone as `null`) can still edit such cards.
 | GET | `/clients/:id/history` | — | `{ items: [HistoryEntry], appointments: [Appointment], sales: [Sale] }` newest first (see History) |
 | GET | `/clients/:id/chat` | — | `{ "chat": BotChat \| null }` — the client's Telegram bot chat (the linked chat, else the latest chat attributed to the client); `null` if the client has never written to the bot |
 | POST | `/clients/:id/telegram-link` | — | `{ "url": "https://t.me/<bot>?start=c<token>" }` — opening it links the Telegram chat to this client |
@@ -392,6 +414,8 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 - `endsAt` defaults (create only) to `startsAt` + the sum of line durations; it must be after `startsAt`.
 - Overlap check: if the master already has a non-cancelled, non-no-show appointment overlapping the time, respond
   `409 schedule_conflict` (message names the conflicting client and time) unless `force: true`.
+- The studio's working hours (`StudioSettings.workdayStart` / `workdayEnd`) do not restrict `startsAt` / `endsAt`:
+  appointments before opening or after closing are accepted.
 - `complete`: sets `status = completed`, `completedAt = now`; writes `usage` movements for `consumables`; when
   `sendAftercare` and the client has Telegram linked and `botEnabled`, schedules the aftercare template steps
   (template = `aftercareTemplateId` ?? the template of the first line whose service has one). Cancels pending
@@ -573,6 +597,6 @@ sale discount (rounded to whole rubles).
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/settings/studio` | — | `StudioSettings` |
-| PUT | `/settings/studio` | `StudioSettings` | `StudioSettings` |
+| PUT | `/settings/studio` | `StudioSettings` (any subset; omitted fields are kept) | `StudioSettings` · `400` for a malformed time or `workdayEnd` not after `workdayStart` |
 | GET | `/settings/bot` | — | `BotSettings` |
 | PUT | `/settings/bot` | `BotSettings` (read-only fields ignored) | `BotSettings` |

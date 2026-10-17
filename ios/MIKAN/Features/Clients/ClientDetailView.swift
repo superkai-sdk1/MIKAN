@@ -41,7 +41,7 @@ struct ClientDetailView: View {
                 RemoteStateOverlay(remote: client, retry: load)
             }
         }
-        .navigationTitle(client.value?.name ?? "Клиент")
+        .navigationTitle(client.value?.fullName ?? "Клиент")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .disabled(isWorking)
@@ -146,14 +146,20 @@ struct ClientDetailView: View {
             if let notes = current.notes.nonEmpty {
                 Text(notes)
             }
+            if let telegram = current.telegramHandle {
+                LabeledContent("Telegram") {
+                    if let url = URL(string: "https://t.me/\(telegram)") {
+                        Link("@\(telegram)", destination: url)
+                    } else {
+                        Text("@\(telegram)")
+                    }
+                }
+            }
             if let instagram = current.instagram.nonEmpty {
                 LabeledContent("Instagram", value: "@\(instagram)")
             }
-            if let username = current.telegramUsername.nonEmpty {
-                LabeledContent("Telegram", value: "@\(username)")
-            }
             if let birthday = current.birthday, let date = CalendarDay.date(from: birthday) {
-                LabeledContent("День рождения", value: DateText.fullDate(date))
+                LabeledContent("Дата рождения", value: DateText.fullDate(date))
             }
             if let source = current.source.nonEmpty {
                 LabeledContent("Откуда узнал", value: ClientSource.title(for: source))

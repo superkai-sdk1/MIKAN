@@ -92,6 +92,22 @@ export function localDaysBetween(a: number, b: number, tz: string): number {
   return Math.round(db.diff(da, 'days').days);
 }
 
+/** Minutes since midnight for a time of day "HH:MM" (00:00–24:00); null when malformed. */
+export function parseTimeOfDay(value: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (minutes > 59 || hours > 24 || (hours === 24 && minutes > 0)) return null;
+  return hours * 60 + minutes;
+}
+
+/** "HH:MM" for minutes since midnight (1440 → "24:00"). */
+export function formatTimeOfDay(minutes: number): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+}
+
 export function localHour(ms: number, tz: string): number {
   return DateTime.fromMillis(ms, { zone: tz }).hour;
 }

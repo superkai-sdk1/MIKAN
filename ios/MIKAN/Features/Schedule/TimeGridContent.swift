@@ -1,11 +1,15 @@
 import SwiftUI
 
 /// Scrollable body of the time grid: hour gutter, Canvas-drawn lines, appointment blocks, now line.
+/// Shows only `range` (minutes since midnight): the working hours, widened to appointments outside them.
 struct TimeGridContent: View {
     static let gutterWidth: CGFloat = 46
 
     let days: [Date]
     let appointments: [Appointment]
+    let range: Range<Int>
+    /// Working hours of each day in `days`, minutes since its midnight; the rest of `range` is shaded.
+    let workingWindows: [Range<Int>]
     let hourHeight: CGFloat
     let compact: Bool
     let onCreate: (Date) -> Void
@@ -15,12 +19,18 @@ struct TimeGridContent: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            HourGutter(hourHeight: hourHeight)
+            HourGutter(range: range, hourHeight: hourHeight)
                 .frame(width: Self.gutterWidth)
             GeometryReader { proxy in
                 let columnWidth = proxy.size.width / CGFloat(max(1, days.count))
                 ZStack(alignment: .topLeading) {
-                    GridLines(dayCount: days.count, hourHeight: hourHeight, todayIndex: todayIndex, showsHalfHours: !compact)
+                    GridLines(
+                        range: range,
+                        workingWindows: workingWindows,
+                        hourHeight: hourHeight,
+                        todayIndex: todayIndex,
+                        showsHalfHours: !compact
+                    )
                         .contentShape(.rect)
                         .onTapGesture { location in
                             createAppointment(at: location, columnWidth: columnWidth)
@@ -35,14 +45,14 @@ struct TimeGridContent: View {
                         .offset(x: block.frame.minX, y: block.frame.minY)
                     }
                     if let todayIndex {
-                        NowLine(hourHeight: hourHeight)
+                        NowLine(range: range, hourHeight: hourHeight)
                             .frame(width: columnWidth)
                             .offset(x: CGFloat(todayIndex) * columnWidth)
                     }
                 }
             }
         }
-        .frame(height: hourHeight * 24)
+        .frame(height: TimeGridLayout.y(forMinute: Double(range.upperBound), hourHeight: hourHeight, rangeStart: range.lowerBound))
     }
 
     private struct Block: Identifiable {
@@ -60,8 +70,8 @@ struct TimeGridContent: View {
             return TimeGridLayout.placements(for: segments).compactMap { placement -> Block? in
                 guard let appointment = byId[placement.id] else { return nil }
                 let laneWidth = columnWidth / CGFloat(placement.laneCount)
-                let top = TimeGridLayout.y(forMinute: Double(placement.startMinute), hourHeight: hourHeight)
-                let bottom = TimeGridLayout.y(forMinute: Double(placement.endMinute), hourHeight: hourHeight)
+                let top = TimeGridLayout.y(forMinute: Double(placement.startMinute), hourHeight: hourHeight, rangeStart: range.lowerBound)
+                let bottom = TimeGridLayout.y(forMinute: Double(placement.endMinute), hourHeight: hourHeight, rangeStart: range.lowerBound)
                 let minHeight = TimeGridLayout.y(forMinute: Double(TimeGridLayout.minimumLayoutMinutes), hourHeight: hourHeight)
                 let frame = CGRect(
                     x: CGFloat(dayIndex) * columnWidth + CGFloat(placement.lane) * laneWidth + inset,
@@ -77,23 +87,28 @@ struct TimeGridContent: View {
     private func createAppointment(at location: CGPoint, columnWidth: CGFloat) {
         guard !days.isEmpty, columnWidth > 0 else { return }
         let dayIndex = min(max(0, Int(location.x / columnWidth)), days.count - 1)
-        let minute = TimeGridLayout.slotStart(forY: location.y, hourHeight: hourHeight)
+        let minute = TimeGridLayout.slotStart(forY: location.y, hourHeight: hourHeight, range: range)
         guard let start = calendar.date(byAdding: .minute, value: minute, to: days[dayIndex]) else { return }
         onCreate(start)
     }
 }
 
-/// Hour labels drawn in a single Canvas.
+/// Hour labels drawn in a single Canvas; the first and last are nudged inside so they are not cut off.
 private struct HourGutter: View {
+    private static let edgeInset: CGFloat = 7
+
+    let range: Range<Int>
     let hourHeight: CGFloat
 
     var body: some View {
         Canvas { context, size in
-            for hour in 1..<24 {
+            for hour in (range.lowerBound / 60)...(range.upperBound / 60) {
+                let y = TimeGridLayout.y(forMinute: Double(hour * 60), hourHeight: hourHeight, rangeStart: range.lowerBound)
                 let label = Text(String(format: "%02d:00", hour))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                context.draw(label, at: CGPoint(x: size.width - 6, y: CGFloat(hour) * hourHeight), anchor: .trailing)
+                let inside = min(max(y, Self.edgeInset), size.height - Self.edgeInset)
+                context.draw(label, at: CGPoint(x: size.width - 6, y: inside), anchor: .trailing)
             }
         }
         .accessibilityHidden(true)
@@ -102,29 +117,43 @@ private struct HourGutter: View {
 
 /// Hour/half-hour lines, day separators, off-hours shading and today's tint — one Canvas, no per-cell views.
 private struct GridLines: View {
-    let dayCount: Int
+    let range: Range<Int>
+    let workingWindows: [Range<Int>]
     let hourHeight: CGFloat
     let todayIndex: Int?
     let showsHalfHours: Bool
 
+    private var dayCount: Int { workingWindows.count }
+
+    private func y(_ minute: Int) -> CGFloat {
+        TimeGridLayout.y(forMinute: Double(minute), hourHeight: hourHeight, rangeStart: range.lowerBound)
+    }
+
     var body: some View {
         Canvas { context, size in
             let columnWidth = size.width / CGFloat(max(1, dayCount))
-            let offHours = CGRect(x: 0, y: 0, width: size.width, height: CGFloat(TimeGridLayout.workdayStartHour) * hourHeight)
-            context.fill(Path(offHours), with: .color(.secondary.opacity(0.06)))
+            var offHours = Path()
+            for (index, window) in workingWindows.enumerated() {
+                let x = CGFloat(index) * columnWidth
+                let opensAt = min(max(window.lowerBound, range.lowerBound), range.upperBound)
+                let closesAt = max(min(window.upperBound, range.upperBound), opensAt)
+                offHours.addRect(CGRect(x: x, y: 0, width: columnWidth, height: y(opensAt)))
+                offHours.addRect(CGRect(x: x, y: y(closesAt), width: columnWidth, height: size.height - y(closesAt)))
+            }
+            context.fill(offHours, with: .color(.secondary.opacity(0.08)))
             if let todayIndex {
                 let column = CGRect(x: CGFloat(todayIndex) * columnWidth, y: 0, width: columnWidth, height: size.height)
                 context.fill(Path(column), with: .color(.accentColor.opacity(0.05)))
             }
             var hours = Path()
             var halves = Path()
-            for hour in 0...24 {
-                let y = CGFloat(hour) * hourHeight
-                hours.move(to: CGPoint(x: 0, y: y))
-                hours.addLine(to: CGPoint(x: size.width, y: y))
-                if showsHalfHours, hour < 24 {
-                    halves.move(to: CGPoint(x: 0, y: y + hourHeight / 2))
-                    halves.addLine(to: CGPoint(x: size.width, y: y + hourHeight / 2))
+            for hour in (range.lowerBound / 60)...(range.upperBound / 60) {
+                let lineY = y(hour * 60)
+                hours.move(to: CGPoint(x: 0, y: lineY))
+                hours.addLine(to: CGPoint(x: size.width, y: lineY))
+                if showsHalfHours, hour * 60 < range.upperBound {
+                    halves.move(to: CGPoint(x: 0, y: lineY + hourHeight / 2))
+                    halves.addLine(to: CGPoint(x: size.width, y: lineY + hourHeight / 2))
                 }
             }
             var separators = Path()
@@ -140,14 +169,15 @@ private struct GridLines: View {
     }
 }
 
-/// Red current-time line, refreshed every minute.
+/// Red current-time line, refreshed every minute; hidden while now is outside the visible hours.
 private struct NowLine: View {
+    let range: Range<Int>
     let hourHeight: CGFloat
 
     var body: some View {
         TimelineView(.everyMinute) { timeline in
             let minute = TimeGridLayout.minuteOfDay(timeline.date, calendar: .app)
-            let y = TimeGridLayout.y(forMinute: Double(minute), hourHeight: hourHeight)
+            let y = TimeGridLayout.y(forMinute: Double(minute), hourHeight: hourHeight, rangeStart: range.lowerBound)
             ZStack(alignment: .leading) {
                 Rectangle()
                     .fill(.red)
@@ -158,6 +188,7 @@ private struct NowLine: View {
                     .offset(x: -4)
             }
             .offset(y: y - 0.75)
+            .opacity(range.contains(minute) ? 1 : 0)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

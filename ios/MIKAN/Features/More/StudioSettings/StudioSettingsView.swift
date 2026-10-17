@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StudioSettingsView: View {
     @Environment(APIClient.self) private var api
+    @Environment(ReferenceStore.self) private var reference
     @State private var remote = Remote<StudioSettings>()
     @State private var settings: StudioSettings?
     @State private var isSaving = false
@@ -25,7 +26,14 @@ struct StudioSettingsView: View {
         ("Asia/Kamchatka", "Камчатка (UTC+12)"),
     ]
 
+    private static let openingBounds = 0...(23 * 60 + 30)
+    private static let closingBounds = 30...TimeGridLayout.minutesPerDay
+
     private var hasChanges: Bool { settings != nil && settings != remote.value }
+    private var hasValidHours: Bool {
+        guard let settings else { return false }
+        return WorkdayHours(start: settings.workdayStart, end: settings.workdayEnd, timeZoneIdentifier: settings.timezone) != nil
+    }
 
     var body: some View {
         Form {
@@ -35,8 +43,8 @@ struct StudioSettingsView: View {
                     TextField("Адрес", text: settings.address, axis: .vertical)
                     TextField("Телефон", text: settings.phone)
                         .keyboardType(.phonePad)
-                    TextField("Часы работы", text: settings.workingHours)
                 }
+                workdaySection(settings)
                 Section("Онлайн") {
                     TextField("Instagram", text: settings.instagram)
                         .textInputAutocapitalization(.never)
@@ -72,7 +80,7 @@ struct StudioSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!hasChanges) }
+                if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!hasChanges || !hasValidHours) }
             }
         }
         .refreshable { await load() }
@@ -80,6 +88,31 @@ struct StudioSettingsView: View {
         .remoteErrorAlert(remote)
         .errorAlert($errorMessage)
         .sensoryFeedback(.success, trigger: savedCount)
+    }
+
+    private func workdaySection(_ settings: Binding<StudioSettings>) -> some View {
+        Section {
+            Picker("Открытие", selection: settings.workdayStart) {
+                ForEach(WorkdayHours.timeOptions(in: Self.openingBounds, including: settings.wrappedValue.workdayStart), id: \.self) { time in
+                    Text(time).tag(time)
+                }
+            }
+            Picker("Закрытие", selection: settings.workdayEnd) {
+                ForEach(WorkdayHours.timeOptions(in: Self.closingBounds, including: settings.wrappedValue.workdayEnd), id: \.self) { time in
+                    Text(time).tag(time)
+                }
+            }
+            TextField("Часы работы для клиентов", text: settings.workingHours, axis: .vertical)
+        } header: {
+            Text("Рабочее время")
+        } footer: {
+            if hasValidHours {
+                Text("С этого времени начинается и в это время заканчивается календарь записи. Записать клиента можно и раньше, и позже — такие записи календарь тоже покажет. Текст «Часы работы для клиентов» бот называет клиентам.")
+            } else {
+                Text("Закрытие должно быть позже открытия.").foregroundStyle(.red)
+            }
+        }
+        .monospacedDigit()
     }
 
     private func timeZoneOptions(current: String) -> [(id: String, title: String)] {
@@ -90,8 +123,9 @@ struct StudioSettingsView: View {
     private func load() async {
         let keepsLocalEdits = hasChanges
         await remote.load { try await api.studioSettings() }
-        if let value = remote.value, !keepsLocalEdits {
-            settings = value
+        if let value = remote.value {
+            reference.applyStudioSettings(value)
+            if !keepsLocalEdits { settings = value }
         }
     }
 
@@ -103,6 +137,7 @@ struct StudioSettingsView: View {
             do {
                 let saved = try await api.saveStudioSettings(settings)
                 remote.set(saved)
+                reference.applyStudioSettings(saved)
                 self.settings = saved
                 savedCount += 1
             } catch {

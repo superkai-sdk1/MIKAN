@@ -18,7 +18,7 @@ struct AppointmentCard: View {
                     Spacer(minLength: 8)
                     AppointmentStatusBadge(status: appointment.status)
                 }
-                Text(appointment.client.name)
+                Text(appointment.client.fullName)
                     .font(.headline)
                     .strikethrough(!appointment.isActive)
                 Text("\(appointment.displayTitle) · \(appointment.master.name)")

@@ -19,7 +19,7 @@ describe('reports & dashboard', () => {
     const anna = await make(t, '/api/employees', { name: 'Анна', login: 'anna', password: 'pass123', isMaster: true, color: '#00AA00' });
     const product = await make(t, '/api/products', { kind: 'jewelry', name: 'Лабрет', price: 1000, initialQuantity: 10, minQuantity: 2 });
     const service = await make(t, '/api/services', { name: 'Прокол хеликса', category: 'piercing', price: 3000, durationMin: 30 });
-    const client = await make(t, '/api/clients', { name: 'Иван' });
+    const client = await make(t, '/api/clients', { name: 'Иван', phone: '+79990000101' });
     const appt = await make(t, '/api/appointments', { clientId: client.id, masterId: anna.id, serviceId: service.id, startsAt: '2026-10-13T07:00:00Z' });
     await make(t, '/api/appointments', { clientId: client.id, masterId: 1, startsAt: '2026-10-14T07:00:00Z', endsAt: '2026-10-14T08:00:00Z', status: 'no_show' });
 
@@ -84,7 +84,7 @@ describe('reports & dashboard', () => {
 
   it('lists today’s non-cancelled appointments on the dashboard and counts low stock', async () => {
     at('2026-10-15T20:30:00.000Z'); // 23:30 Moscow, still Oct 15 locally (Oct 16 in Tomsk)
-    const client = await make(t, '/api/clients', { name: 'Иван' });
+    const client = await make(t, '/api/clients', { name: 'Иван', phone: '+79990000101' });
     const a1 = await make(t, '/api/appointments', { clientId: client.id, masterId: 1, startsAt: '2026-10-15T06:00:00Z', endsAt: '2026-10-15T07:00:00Z' });
     const a2 = await make(t, '/api/appointments', { clientId: client.id, masterId: 1, startsAt: '2026-10-15T08:00:00Z', endsAt: '2026-10-15T09:00:00Z' });
     await make(t, '/api/appointments', { clientId: client.id, masterId: 1, startsAt: '2026-10-16T08:00:00Z', endsAt: '2026-10-16T09:00:00Z' });

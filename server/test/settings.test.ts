@@ -30,7 +30,7 @@ describe('settings, catalog, knowledge and uploads', () => {
   it('reads and updates studio settings with timezone validation', async () => {
     expect((await t.api('GET', '/api/settings/studio')).json()).toEqual({
       name: 'MIKAN STUDIO', address: '', phone: '', workingHours: 'Ежедневно 11:00–21:00',
-      instagram: '', website: '', about: '', timezone: 'Europe/Moscow',
+      instagram: '', website: '', about: '', timezone: 'Europe/Moscow', workdayStart: '11:00', workdayEnd: '21:00',
     });
     const put = await t.api('PUT', '/api/settings/studio', { name: 'MIKAN', address: 'ул. Ленина, 1', about: null, timezone: 'Asia/Novosibirsk' });
     expect(put.json()).toMatchObject({ name: 'MIKAN', address: 'ул. Ленина, 1', about: '', timezone: 'Asia/Novosibirsk', workingHours: 'Ежедневно 11:00–21:00' });

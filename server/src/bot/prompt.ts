@@ -14,7 +14,7 @@ import { REVIEW_MARKER } from '../db/seed-content.js';
 import { depositLedgerByAppointment, heldAmount, latestDepositCodes } from '../domain/deposit-ledger.js';
 import { serviceLinesByAppointment } from '../domain/refs.js';
 import { getBotSettings, getStudioSettings } from '../domain/settings.js';
-import { parsePhotos, parseSteps, parseVariants, type AppointmentRow, type ClientRow, type ServiceRow } from '../lib/serialize.js';
+import { clientFullName, parsePhotos, parseSteps, parseVariants, type AppointmentRow, type ClientRow, type ServiceRow } from '../lib/serialize.js';
 import { formatRub, formatServicePrice } from '../lib/text.js';
 import { DAY_MS, formatHumanDateTime, formatShortDate, localDaysBetween } from '../lib/time.js';
 
@@ -100,7 +100,7 @@ export function buildStablePrompt(db: DbOrTx): string {
     `Название: ${studio.name}`,
     line('Адрес', studio.address),
     line('Телефон', studio.phone),
-    line('Часы работы', studio.workingHours),
+    line('Часы работы', studio.workingHours.trim() || `${studio.workdayStart}–${studio.workdayEnd}`),
     line('Instagram', studio.instagram),
     line('Сайт', studio.website),
     line('О студии', studio.about),
@@ -159,7 +159,7 @@ export function buildClientContext(
     parts.push(`Клиент не идентифицирован${telegramName ? `, имя в Telegram: ${telegramName}` : ''}. Имя и телефон для записи нужно спросить.`);
     return parts.join('\n');
   }
-  parts.push(`Клиент: ${client.name}${client.phone ? `, телефон ${client.phone}` : ', телефон неизвестен'}.`);
+  parts.push(`Клиент: ${clientFullName(client)}${client.phone ? `, телефон ${client.phone}` : ', телефон неизвестен'}.`);
   if (client.notes?.trim()) parts.push(`Заметки студии о клиенте: ${client.notes.trim()}`);
 
   const masterName = (id: number) => db.select({ name: employees.name }).from(employees).where(eq(employees.id, id)).get()?.name;

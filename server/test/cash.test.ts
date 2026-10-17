@@ -82,7 +82,7 @@ describe('cash register', () => {
 
   it('shows the open shift on the dashboard', async () => {
     await t.api('POST', '/api/cash/shift/open', { openingCash: 1000 });
-    await make(t, '/api/clients', { name: 'Иван' });
+    await make(t, '/api/clients', { name: 'Иван', phone: '+79990000102' });
     const dash = (await t.api('GET', '/api/dashboard')).json();
     expect(dash.openShift).toMatchObject({ openingCash: 1000, expectedCash: 1000 });
   });

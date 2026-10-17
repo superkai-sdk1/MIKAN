@@ -41,8 +41,10 @@ nonisolated struct EmployeeBody: Encodable, Sendable {
 
 nonisolated struct ClientBody: Encodable, Sendable {
     var name: String
+    var lastName: Nullable<String>
     var phone: Nullable<String>
     var instagram: Nullable<String>
+    var telegramNick: Nullable<String>
     var birthday: Nullable<String>
     var notes: Nullable<String>
     var source: Nullable<String>

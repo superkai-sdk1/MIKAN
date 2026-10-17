@@ -18,7 +18,9 @@ enum Fixtures {
     }
 
     static let employeeRef = ##"{ "id": 2, "name": "Анна", "color": "#FF7A1A" }"##
-    static let clientRef = #"{ "id": 1, "name": "Иван Петров", "phone": "+79991234567", "telegramLinked": true }"#
+    static let clientRef = #"{ "id": 1, "name": "Иван", "lastName": "Петров", "phone": "+79991234567", "telegramLinked": true }"#
+    /// A ClientRef from a server without last names.
+    static let legacyClientRef = #"{ "id": 1, "name": "Иван Петров", "phone": "+79991234567", "telegramLinked": true }"#
     static let serviceRef = #"{ "id": 3, "name": "Прокол мочки", "category": "piercing" }"#
 
     static let employee = #"""
@@ -27,8 +29,8 @@ enum Fixtures {
     """#
 
     static let clientInList = #"""
-    { "id": 1, "name": "Иван Петров", "phone": "+79991234567", "instagram": "ivan.p",
-      "birthday": "1995-04-12", "notes": "Аллергия на никель", "source": "instagram",
+    { "id": 1, "name": "Иван", "lastName": "Петров", "phone": "+79991234567", "instagram": "ivan.p",
+      "telegramNick": "ivan_petrov", "birthday": "1995-04-12", "notes": "Аллергия на никель", "source": "instagram",
       "telegramLinked": true, "telegramUsername": "ivanp", "botEnabled": true,
       "archived": false, "createdAt": "<T>", "updatedAt": "<T>",
       "stats": null }
@@ -200,7 +202,8 @@ enum Fixtures {
 
     static let studioSettings = #"""
     { "name": "MIKAN STUDIO", "address": "", "phone": "", "workingHours": "Ежедневно 11:00–21:00",
-      "instagram": "", "website": "", "about": "", "timezone": "Europe/Moscow" }
+      "instagram": "", "website": "", "about": "", "timezone": "Europe/Moscow",
+      "workdayStart": "10:00", "workdayEnd": "21:00" }
     """#
 
     static let botSettings = #"""

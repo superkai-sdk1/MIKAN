@@ -1,10 +1,11 @@
 import Foundation
 
-/// Pure layout math for the time grid: day clipping, side-by-side lanes for overlaps, time ↔ y.
+/// Pure layout math for the time grid: visible hours, day clipping, side-by-side lanes for overlaps, time ↔ y.
+/// Minutes are counted from the day's local midnight; y is measured from the top of the visible range.
 nonisolated enum TimeGridLayout {
     static let minutesPerDay = 24 * 60
+    static let fullDay = 0..<minutesPerDay
     static let slotMinutes = 15
-    static let workdayStartHour = 8
     /// Blocks shorter than this still get room, so short neighbours don't visually collide.
     static let minimumLayoutMinutes = 20
 
@@ -94,20 +95,37 @@ nonisolated enum TimeGridLayout {
         return result
     }
 
-    static func y(forMinute minute: Double, hourHeight: Double) -> Double {
-        minute / 60 * hourHeight
+    /// Hours the grid shows: the working hours of every visible day (`windows`), widened to whole hours and
+    /// to every appointment segment outside them, so early and late appointments are never cut off.
+    static func visibleRange(
+        windows: [Range<Int>],
+        segments: [Segment],
+        minimumDuration: Int = minimumLayoutMinutes
+    ) -> Range<Int> {
+        let starts = windows.filter { !$0.isEmpty }.map(\.lowerBound) + segments.map(\.startMinute)
+        let ends = windows.filter { !$0.isEmpty }.map(\.upperBound)
+            + segments.map { max($0.endMinute, $0.startMinute + minimumDuration) }
+        guard let first = starts.min(), let last = ends.max() else { return fullDay }
+        let lower = min(max(0, first / 60 * 60), minutesPerDay - 60)
+        let upper = min(max(lower + 60, (last + 59) / 60 * 60), minutesPerDay)
+        return lower..<upper
     }
 
-    static func minute(forY y: Double, hourHeight: Double) -> Double {
-        guard hourHeight > 0 else { return 0 }
-        return y / hourHeight * 60
+    /// y of `minute` in a grid whose top is `rangeStart`.
+    static func y(forMinute minute: Double, hourHeight: Double, rangeStart: Int = 0) -> Double {
+        (minute - Double(rangeStart)) / 60 * hourHeight
     }
 
-    /// Start of the 15-minute slot under `y`, clamped to the day.
-    static func slotStart(forY y: Double, hourHeight: Double, step: Int = slotMinutes) -> Int {
-        let minute = Int(minute(forY: y, hourHeight: hourHeight).rounded(.down))
+    static func minute(forY y: Double, hourHeight: Double, rangeStart: Int = 0) -> Double {
+        guard hourHeight > 0 else { return Double(rangeStart) }
+        return Double(rangeStart) + y / hourHeight * 60
+    }
+
+    /// Start of the 15-minute slot under `y`, clamped to the visible range.
+    static func slotStart(forY y: Double, hourHeight: Double, range: Range<Int> = fullDay, step: Int = slotMinutes) -> Int {
+        let minute = Int(minute(forY: y, hourHeight: hourHeight, rangeStart: range.lowerBound).rounded(.down))
         let floored = (minute / step) * step
-        return min(max(0, floored), minutesPerDay - step)
+        return min(max(range.lowerBound, floored), max(range.lowerBound, range.upperBound - step))
     }
 
     /// Minutes since midnight of `date` in `calendar`'s time zone.
@@ -118,9 +136,9 @@ nonisolated enum TimeGridLayout {
 
     /// Where the grid opens: an hour before now when today is visible, otherwise half an hour
     /// before the first appointment, otherwise the start of the working day.
-    static func initialScrollMinute(nowMinute: Int?, firstAppointmentMinute: Int?) -> Int {
+    static func initialScrollMinute(nowMinute: Int?, firstAppointmentMinute: Int?, workdayStartMinute: Int) -> Int {
         if let nowMinute { return max(0, nowMinute - 60) }
         if let firstAppointmentMinute { return max(0, firstAppointmentMinute - 30) }
-        return workdayStartHour * 60
+        return workdayStartMinute
     }
 }

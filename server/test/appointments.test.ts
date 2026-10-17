@@ -82,7 +82,7 @@ describe('appointments, reminders and aftercare', () => {
 
   it('detects overlaps per master (409 schedule_conflict) unless forced; ignores cancelled', async () => {
     const first = await make(t, '/api/appointments', { clientId: client.id, masterId: 1, serviceId: service.id, startsAt: '2026-10-17T11:00:00Z' });
-    const other = await make(t, '/api/clients', { name: 'Пётр' });
+    const other = await make(t, '/api/clients', { name: 'Пётр', phone: '+79990000104' });
     const clash = await t.api('POST', '/api/appointments', {
       clientId: other.id,
       masterId: 1,

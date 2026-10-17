@@ -3,6 +3,7 @@ import { storeMessage, upsertChat } from '../domain/bot-chats.js';
 import { createClient, findClientByChat, findClientByLinkToken, findClientByPhone, linkTelegram } from '../domain/clients.js';
 import { getBotSettings, getStudioSettings } from '../domain/settings.js';
 import { isPlausiblePhone, normalizePhone } from '../lib/phone.js';
+import { clientFullName } from '../lib/serialize.js';
 import type { IncomingFrom } from './pipeline.js';
 import { bindStaffChat, notifyStaff } from './staff.js';
 
@@ -65,10 +66,12 @@ export async function handleContact(
     linkTelegram(db, existing.id, from.chatId, from.username);
     text = `Спасибо, ${existing.name}! Номер подтверждён ✅ Теперь сюда будут приходить напоминания о записях и рекомендации по уходу.`;
   } else {
-    const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim() || from.telegramName || 'Клиент из Telegram';
-    const created = createClient(db, { name, phone, source: 'telegram' }, { telegramUsername: from.username });
+    const firstName = contact.firstName.trim();
+    const name = firstName || from.telegramName || 'Клиент из Telegram';
+    const lastName = (firstName && contact.lastName?.trim()) || null;
+    const created = createClient(db, { name, lastName, phone, source: 'telegram' }, { telegramUsername: from.username });
     linkTelegram(db, created.id, from.chatId, from.username);
-    await notifyStaff(ctx, `👤 Новый клиент через бота: ${name}, ${phone}${from.username ? ` (@${from.username})` : ''}`);
+    await notifyStaff(ctx, `👤 Новый клиент через бота: ${clientFullName(created)}, ${phone}${from.username ? ` (@${from.username})` : ''}`);
     text = `Спасибо, ${name}! Номер сохранён ✅ Чем могу помочь?`;
   }
   storeMessage(db, from.chatId, 'system', text);

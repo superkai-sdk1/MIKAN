@@ -85,17 +85,17 @@ private struct ReceiptClientRow: View {
         HStack(spacing: 12) {
             Button(action: onChange) {
                 HStack(spacing: 12) {
-                    InitialsAvatar(name: client.name, size: 34)
+                    InitialsAvatar(name: client.fullName, size: 34)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Клиент").font(.caption).foregroundStyle(.secondary)
-                        Text(client.name).font(.subheadline.weight(.semibold))
+                        Text(client.fullName).font(.subheadline.weight(.semibold))
                     }
                     Spacer(minLength: 8)
                 }
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Клиент: \(client.name)")
+            .accessibilityLabel("Клиент: \(client.fullName)")
             .accessibilityHint("Выбрать другого клиента")
 
             Button("Убрать клиента", systemImage: "xmark.circle.fill", action: onRemove)

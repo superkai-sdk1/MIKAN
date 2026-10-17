@@ -25,10 +25,16 @@ export const clients = sqliteTable(
   'clients',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
+    /** First name (older rows may hold the full name here). */
     name: text('name').notNull(),
+    lastName: text('last_name'),
+    /** Sort key of the full name (first + last). */
     nameSort: text('name_sort').notNull(),
+    /** Required for clients created in the app; imported rows may have none. */
     phone: text('phone').unique(),
     instagram: text('instagram'),
+    /** Telegram username typed by staff (without @); `telegramUsername` comes from the linked bot chat. */
+    telegramNick: text('telegram_nick'),
     birthday: text('birthday'),
     notes: text('notes'),
     source: text('source'),

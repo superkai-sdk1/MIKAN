@@ -45,7 +45,7 @@ struct HistoryEntryRow: View {
 
     private var title: String {
         guard showsClient else { return itemName }
-        return entry.client?.name ?? "Без клиента"
+        return entry.client?.fullName ?? "Без клиента"
     }
 
     private var subtitle: String {

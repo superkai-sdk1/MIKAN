@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import {
+  cleanTelegramNick,
   clientHistory,
   clientStats,
   createClient,
@@ -26,15 +27,35 @@ import {
   requiredText,
 } from '../lib/validation.js';
 
+/** Telegram username rules: Latin letters, digits and "_"; "@nick" and t.me links are accepted. */
+const TELEGRAM_NICK = /^[A-Za-z0-9_]{4,32}$/;
+
+const telegramNick = nullableText(200).transform((value, ctx) => {
+  const nick = cleanTelegramNick(value);
+  if (nick != null && !TELEGRAM_NICK.test(nick)) {
+    ctx.addIssue({ code: 'custom', message: 'латинские буквы, цифры и «_», от 4 до 32 символов (например, @ivan_petrov)' });
+    return z.NEVER;
+  }
+  return nick;
+});
+
 const fields = {
+  lastName: nullableText(200),
   phone: phoneInput,
   instagram: nullableText(100),
+  telegramNick,
   birthday: calendarDate,
   notes: nullableText(5000),
   source: nullableText(100),
 };
 
-const createBody = z.object({ name: requiredText(200), ...fields, botEnabled: nonNull(z.boolean()) });
+const createBody = z.object({
+  name: requiredText(200),
+  ...fields,
+  // Required for new clients; older rows without a phone stay valid (see updateClient).
+  phone: phoneInput.refine((phone) => phone != null, { message: 'обязательное поле' }),
+  botEnabled: nonNull(z.boolean()),
+});
 const patchBody = z.object({
   name: nonNull(requiredText(200)),
   ...fields,

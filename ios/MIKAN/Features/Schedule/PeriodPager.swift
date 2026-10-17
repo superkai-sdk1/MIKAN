@@ -46,7 +46,7 @@ final class GridScrollState {
     /// Incremented for programmatic scrolls that every page should follow.
     private(set) var request = 0
 
-    init(topMinute: Int = TimeGridLayout.workdayStartHour * 60) {
+    init(topMinute: Int = WorkdayHours.standard.startMinute) {
         self.topMinute = Double(topMinute)
     }
 

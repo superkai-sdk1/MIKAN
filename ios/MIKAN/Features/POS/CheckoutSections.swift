@@ -52,8 +52,8 @@ struct CheckoutClientSection: View {
             } label: {
                 if let client = cart.client {
                     HStack(spacing: 12) {
-                        InitialsAvatar(name: client.name, size: 32)
-                        Text(client.name)
+                        InitialsAvatar(name: client.fullName, size: 32)
+                        Text(client.fullName)
                     }
                 } else {
                     Label("Без клиента", systemImage: "person.crop.circle.badge.plus")
@@ -211,7 +211,7 @@ struct SaleReceiptView: View {
                 }
             }
             if let client = sale.client {
-                Section("Клиент") { Text(client.name) }
+                Section("Клиент") { Text(client.fullName) }
             }
             if let completion {
                 Section("Запись") {

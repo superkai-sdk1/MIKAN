@@ -46,7 +46,7 @@ describe('history: what was done for a client, who got a service, who bought a p
     piercing = await make(t, '/api/services', { name: 'Соски', category: 'piercing', price: 2500, durationMin: 45 });
     labret = await make(t, '/api/products', { kind: 'jewelry', name: 'Лабрет', price: 1500, initialQuantity: 10 });
     ivan = await make(t, '/api/clients', { name: 'Иван', phone: '+79991234567' });
-    olga = await make(t, '/api/clients', { name: 'Ольга' });
+    olga = await make(t, '/api/clients', { name: 'Ольга', phone: '+79990000103' });
     maria = await make(t, '/api/employees', { name: 'Мария', login: 'maria', password: 'secret123', isMaster: true });
   });
   afterEach(async () => {
@@ -138,7 +138,7 @@ describe('history: what was done for a client, who got a service, who bought a p
       `as${visitCustom!.id}`,
     ]);
 
-    const ivanRef = { id: ivan.id, name: 'Иван', phone: '+79991234567', telegramLinked: false };
+    const ivanRef = { id: ivan.id, name: 'Иван', lastName: null, phone: '+79991234567', telegramLinked: false };
     const admin = { id: 1, name: 'Админ', color: '#FF7A1A' };
     expect(items[1]).toEqual({
       id: `si${standaloneProduct!.id}`,

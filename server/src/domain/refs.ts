@@ -72,7 +72,7 @@ export function serviceLinesByAppointment(db: DbOrTx, appointmentIds: number[]):
 }
 
 const missingEmployee = (id: number) => ({ id, name: 'Удалённый сотрудник', color: '#8E8E93' });
-const missingClient = (id: number) => ({ id, name: 'Удалённый клиент', phone: null, telegramLinked: false });
+const missingClient = (id: number) => ({ id, name: 'Удалённый клиент', lastName: null, phone: null, telegramLinked: false });
 
 export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): AppointmentOut[] {
   const ids = rows.map((r) => r.id);

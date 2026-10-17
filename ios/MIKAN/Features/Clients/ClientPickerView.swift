@@ -10,8 +10,7 @@ struct ClientPickerView: View {
     @State private var search = ""
     @State private var results = Remote<[Client]>()
     @State private var showsNewForm = false
-    @State private var newName = ""
-    @State private var newPhone = ""
+    @State private var newClient = ClientDraft()
     @State private var isCreating = false
     @State private var errorMessage: String?
 
@@ -21,9 +20,11 @@ struct ClientPickerView: View {
         List {
             Section {
                 DisclosureGroup(isExpanded: $showsNewForm) {
-                    TextField("Имя и фамилия", text: $newName)
-                        .textContentType(.name)
-                    TextField("Телефон", text: $newPhone)
+                    TextField("Имя", text: $newClient.name)
+                        .textContentType(.givenName)
+                    TextField("Фамилия", text: $newClient.lastName)
+                        .textContentType(.familyName)
+                    TextField("Телефон", text: $newClient.phone)
                         .keyboardType(.phonePad)
                         .textContentType(.telephoneNumber)
                     Button {
@@ -35,7 +36,7 @@ struct ClientPickerView: View {
                             Text("Создать и выбрать")
                         }
                     }
-                    .disabled(newName.trimmed.isEmpty || isCreating)
+                    .disabled(!newClient.canSave || isCreating)
                 } label: {
                     Label("Новый клиент", systemImage: "person.badge.plus")
                 }
@@ -53,7 +54,7 @@ struct ClientPickerView: View {
                 }
             }
         }
-        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Имя, телефон, Instagram")
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Имя, фамилия, телефон, ник")
         .overlay {
             RemoteStateOverlay(remote: results, retry: load) {
                 if search.trimmed.isEmpty {
@@ -87,9 +88,8 @@ struct ClientPickerView: View {
     }
 
     private func applySuggestion() {
-        guard let suggestion, newName.isEmpty, newPhone.isEmpty else { return }
-        newName = suggestion.name
-        newPhone = suggestion.phone
+        guard let suggestion, newClient == ClientDraft() else { return }
+        newClient = ClientDraft(suggestedName: suggestion.name, phone: suggestion.phone)
         showsNewForm = true
     }
 
@@ -98,15 +98,7 @@ struct ClientPickerView: View {
         Task {
             defer { isCreating = false }
             do {
-                let client = try await api.createClient(ClientBody(
-                    name: newName.trimmed,
-                    phone: Nullable(newPhone.nonEmpty),
-                    instagram: nil,
-                    birthday: nil,
-                    notes: nil,
-                    source: nil,
-                    botEnabled: true
-                ))
+                let client = try await api.createClient(newClient.body())
                 selection = client.ref
                 dismiss()
             } catch {
@@ -116,16 +108,16 @@ struct ClientPickerView: View {
     }
 }
 
-/// Client list row: avatar, name, phone, Telegram badge.
+/// Client list row: avatar, full name, phone, Telegram badge.
 struct ClientRow: View {
     let client: Client
     var isSelected = false
 
     var body: some View {
         HStack(spacing: 12) {
-            InitialsAvatar(name: client.name, size: 40)
+            InitialsAvatar(name: client.fullName, size: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(client.name)
+                Text(client.fullName)
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                 if let subtitle {
@@ -154,7 +146,8 @@ struct ClientRow: View {
 
     private var subtitle: String? {
         if let phone = client.phone.nonEmpty { return PhoneText.display(phone) }
-        if let instagram = client.instagram.nonEmpty { return "@\(instagram)" }
+        if let telegram = client.telegramHandle { return "Telegram @\(telegram)" }
+        if let instagram = client.instagram.nonEmpty { return "Instagram @\(instagram)" }
         return nil
     }
 }

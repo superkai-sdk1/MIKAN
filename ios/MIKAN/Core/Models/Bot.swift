@@ -34,7 +34,7 @@ nonisolated struct BotChat: Codable, Hashable, Identifiable, Sendable {
     var id: Int64 { chatId }
 
     var displayName: String {
-        client?.name ?? telegramName.nonEmpty ?? username.nonEmpty.map { "@\($0)" } ?? "Без имени"
+        client?.fullName ?? telegramName.nonEmpty ?? username.nonEmpty.map { "@\($0)" } ?? "Без имени"
     }
 }
 
@@ -89,7 +89,7 @@ nonisolated struct BookingRequest: Codable, Hashable, Identifiable, Sendable {
     let createdAt: Date
     let updatedAt: Date
 
-    var displayName: String { client?.name ?? contactName.nonEmpty ?? "Без имени" }
+    var displayName: String { client?.fullName ?? contactName.nonEmpty ?? "Без имени" }
 }
 
 nonisolated struct KnowledgeEntry: Codable, Hashable, Identifiable, Sendable {
