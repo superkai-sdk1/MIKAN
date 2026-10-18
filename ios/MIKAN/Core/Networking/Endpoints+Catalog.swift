@@ -125,3 +125,54 @@ extension APIClient {
         ]))
     }
 }
+
+// MARK: - Warehouse categories and stock counts
+
+extension APIClient {
+    func catalogCategories(section: CatalogSection? = nil) async throws -> [CatalogCategory] {
+        let response: ItemsResponse<CatalogCategory> = try await request(
+            .get, "catalog/categories", query: queryItems(["section": section?.rawValue])
+        )
+        return response.items
+    }
+
+    func createCategory(_ body: CategoryCreateBody) async throws -> CatalogCategory {
+        try await request(.post, "catalog/categories", body: body)
+    }
+
+    /// Renames the category and every item in it.
+    func renameCategory(id: Int, name: String) async throws -> CatalogCategory {
+        try await request(.patch, "catalog/categories/\(id)", body: ["name": name])
+    }
+
+    /// Every category of one section (and service category), in the new order.
+    func orderCategories(ids: [Int]) async throws -> [CatalogCategory] {
+        let response: ItemsResponse<CatalogCategory> = try await request(.put, "catalog/categories/order", body: ["ids": ids])
+        return response.items
+    }
+
+    /// Moves the items into `intoId` and deletes the category.
+    func mergeCategory(id: Int, into intoId: Int) async throws -> CatalogCategory {
+        try await request(.post, "catalog/categories/\(id)/merge", body: ["intoId": intoId])
+    }
+
+    /// The items stay, without a category.
+    func deleteCategory(id: Int) async throws {
+        try await requestVoid(.delete, "catalog/categories/\(id)")
+    }
+
+    func createRevision(_ body: StockRevisionBody, idempotencyKey: UUID) async throws -> StockRevision {
+        try await request(.post, "stock/revisions", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    func revisions(limit: Int = 50, offset: Int = 0) async throws -> ItemsResponse<StockRevision> {
+        try await request(.get, "stock/revisions", query: queryItems([
+            "limit": String(limit),
+            "offset": String(offset),
+        ]))
+    }
+
+    func revision(id: Int) async throws -> StockRevision {
+        try await request(.get, "stock/revisions/\(id)")
+    }
+}

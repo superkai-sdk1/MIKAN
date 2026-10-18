@@ -3,6 +3,8 @@ import Foundation
 nonisolated enum ProductKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case jewelry
     case consumable
+    /// Other things sold at the POS (aftercare sprays, gift cards…).
+    case goods
 
     var id: String { rawValue }
 
@@ -10,6 +12,7 @@ nonisolated enum ProductKind: String, Codable, CaseIterable, Identifiable, Senda
         switch self {
         case .jewelry: "Украшения"
         case .consumable: "Расходники"
+        case .goods: "Товары"
         }
     }
 
@@ -17,8 +20,12 @@ nonisolated enum ProductKind: String, Codable, CaseIterable, Identifiable, Senda
         switch self {
         case .jewelry: "Украшение"
         case .consumable: "Расходник"
+        case .goods: "Товар"
         }
     }
+
+    /// Sold at the POS (consumables are only used in procedures).
+    var isSold: Bool { self != .consumable }
 }
 
 /// How the jewelry's top is fastened.
@@ -106,6 +113,10 @@ nonisolated struct Product: Hashable, Identifiable, Sendable {
     var photos: [String]
     /// Catalog services (piercing zones) the jewelry suits.
     var serviceIds: [Int]
+    /// Consumables only: counted, or just «есть / заканчивается / нет».
+    var stockMode: StockMode = .quantity
+    /// Set in `presence` mode.
+    var presenceStatus: PresenceStatus?
     var active: Bool
     /// Sizes with their own stock, in the order staff arranged them (always at least one).
     var variants: [ProductVariant]
@@ -173,8 +184,12 @@ nonisolated struct Product: Hashable, Identifiable, Sendable {
     /// Stock of all sizes.
     var quantity: Int { variants.reduce(0) { $0 + $1.quantity } }
     var minQuantity: Int { variants.reduce(0) { $0 + $1.minQuantity } }
-    /// At least one size is at or below its minimum.
-    var lowStock: Bool { variants.contains(where: \.lowStock) }
+    /// Tracked as «есть / нет» instead of units.
+    var isPresenceTracked: Bool { stockMode == .presence }
+    /// Needs restocking: a presence consumable not marked «есть», or some size at or below its minimum.
+    var lowStock: Bool {
+        isPresenceTracked ? presenceStatus != .ok : variants.contains(where: \.lowStock)
+    }
     /// Some size can be sold.
     var isAvailable: Bool { variants.contains(where: \.isAvailable) }
     var availableVariants: [ProductVariant] { variants.filter(\.isAvailable) }
@@ -238,7 +253,7 @@ nonisolated struct Product: Hashable, Identifiable, Sendable {
 nonisolated extension Product: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, name, sku, category, material, threadType, thicknessMm, color, stone, supplier
-        case description, price, cost, unit, photos, photoUrl, serviceIds, active, variants
+        case description, price, cost, unit, photos, photoUrl, serviceIds, stockMode, presenceStatus, active, variants
         case size, quantity, minQuantity, lowStock, createdAt, updatedAt
     }
 
@@ -258,6 +273,8 @@ nonisolated extension Product: Codable {
             )]
         }
         let photoUrl = try c.decodeIfPresent(String.self, forKey: .photoUrl)
+        let stockMode = try c.decodeIfPresent(String.self, forKey: .stockMode).flatMap(StockMode.init(rawValue:)) ?? .quantity
+        let presenceStatus = try c.decodeIfPresent(String.self, forKey: .presenceStatus).flatMap(PresenceStatus.init(rawValue:))
         self.init(
             id: id,
             kind: try c.decode(ProductKind.self, forKey: .kind),
@@ -286,6 +303,8 @@ nonisolated extension Product: Codable {
             createdAt: try c.decode(Date.self, forKey: .createdAt),
             updatedAt: try c.decode(Date.self, forKey: .updatedAt)
         )
+        self.stockMode = stockMode
+        self.presenceStatus = stockMode == .presence ? (presenceStatus ?? .ok) : nil
     }
 
     /// The API shape, derived fields included.
@@ -309,6 +328,8 @@ nonisolated extension Product: Codable {
         try c.encode(photos, forKey: .photos)
         try c.encode(photoUrl, forKey: .photoUrl)
         try c.encode(serviceIds, forKey: .serviceIds)
+        try c.encode(stockMode, forKey: .stockMode)
+        try c.encode(presenceStatus, forKey: .presenceStatus)
         try c.encode(active, forKey: .active)
         try c.encode(variants, forKey: .variants)
         try c.encode(size, forKey: .size)
@@ -385,6 +406,8 @@ nonisolated struct StockMovement: Codable, Hashable, Identifiable, Sendable {
     let note: String?
     let saleId: Int?
     let appointmentId: Int?
+    /// The stock count an adjustment came from.
+    var revisionId: Int?
     let employee: EmployeeRef?
     let createdAt: Date
 

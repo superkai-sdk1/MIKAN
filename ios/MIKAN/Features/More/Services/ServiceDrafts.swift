@@ -365,6 +365,8 @@ nonisolated extension ServiceBody {
             depositAmount: service.depositAmount,
             aftercareTemplateId: Nullable(service.aftercareTemplateId),
             freshProcedure: service.freshProcedure,
+            jewelryIds: service.jewelryIds,
+            consumables: service.consumables,
             active: service.active,
             sort: service.sort
         )

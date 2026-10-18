@@ -67,6 +67,10 @@ nonisolated struct Service: Codable, Hashable, Identifiable, Sendable {
     var aftercareTemplateId: Int?
     /// «Свежий прокол» / «Свежее тату»: completing an appointment sends aftercare memos only for such services.
     var freshProcedure = true
+    /// Catalog jewelry compatible with the service (the bot offers it).
+    var jewelryIds: [Int] = []
+    /// Consumables one procedure uses; deducted when an appointment with the service is completed.
+    var consumables: [ServiceConsumable] = []
     var active: Bool
     var sort: Int
 
@@ -97,7 +101,8 @@ nonisolated struct Service: Codable, Hashable, Identifiable, Sendable {
 nonisolated extension Service {
     private enum CodingKeys: String, CodingKey {
         case id, name, category, group, price, priceMax, priceFrom, durationMin, description
-        case imageUrl, imagePrompt, photos, variants, depositAmount, aftercareTemplateId, freshProcedure, active, sort
+        case imageUrl, imagePrompt, photos, variants, depositAmount, aftercareTemplateId, freshProcedure, jewelryIds, consumables
+        case active, sort
     }
 
     /// Tolerates servers that predate service cards (no group, photos, variants, cover), prepayments or the
@@ -120,6 +125,8 @@ nonisolated extension Service {
         depositAmount = try c.decodeIfPresent(Int.self, forKey: .depositAmount) ?? 0
         aftercareTemplateId = try c.decodeIfPresent(Int.self, forKey: .aftercareTemplateId)
         freshProcedure = try c.decodeIfPresent(Bool.self, forKey: .freshProcedure) ?? true
+        jewelryIds = try c.decodeIfPresent([Int].self, forKey: .jewelryIds) ?? []
+        consumables = try c.decodeIfPresent([ServiceConsumable].self, forKey: .consumables) ?? []
         active = try c.decode(Bool.self, forKey: .active)
         sort = try c.decode(Int.self, forKey: .sort)
     }

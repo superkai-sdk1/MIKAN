@@ -210,7 +210,8 @@ final class CartStore {
     /// Body for `POST /appointments/:id/complete`, or `nil` when checkout should go straight to the sale.
     func makeCompleteBody() -> CompleteBody? {
         guard hasPendingAppointment, completesAppointment else { return nil }
-        return CompleteBody(sendAftercare: sendsAftercare && canSendAftercare, aftercareTemplateId: nil, consumables: [])
+        // No consumables list: the server deducts the norms of the appointment's services.
+        return CompleteBody(sendAftercare: sendsAftercare && canSendAftercare, aftercareTemplateId: nil, consumables: nil)
     }
 
     /// Stores the completed appointment, so a retried checkout skips the completion and sends only the sale.

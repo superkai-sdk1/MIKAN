@@ -14,10 +14,13 @@ final class ReferenceStore {
     private(set) var employees: [Employee] = []
     private(set) var services: [Service] = []
     private(set) var templates: [AftercareTemplate] = []
+    /// Warehouse categories of every section, in staff order.
+    private(set) var categories: [CatalogCategory] = []
     private(set) var qrPaymentsEnabled = false
     private var loadedEmployees = false
     private var loadedServices = false
     private var loadedTemplates = false
+    private var loadedCategories = false
 
     init(api: APIClient) {
         self.api = api
@@ -53,6 +56,18 @@ final class ReferenceStore {
         guard force || !loadedTemplates else { return }
         templates = try await api.aftercareTemplates()
         loadedTemplates = true
+    }
+
+    func ensureCategories(force: Bool = false) async throws {
+        guard force || !loadedCategories else { return }
+        categories = try await api.catalogCategories()
+        loadedCategories = true
+    }
+
+    /// Takes categories created, renamed, reordered or merged anywhere in the app.
+    func replaceCategories(_ items: [CatalogCategory], section: CatalogSection) {
+        categories = categories.filter { $0.section != section } + items
+        loadedCategories = true
     }
 
     /// Asked again on every checkout until enabled, so turning QR on at the server needs no app restart.
@@ -97,6 +112,8 @@ final class ReferenceStore {
         employees = []
         services = []
         templates = []
+        categories = []
+        loadedCategories = false
         loadedEmployees = false
         loadedServices = false
         loadedTemplates = false

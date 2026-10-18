@@ -355,7 +355,7 @@ final class CartStoreTests: XCTestCase {
         let body = try XCTUnwrap(cart.makeCompleteBody())
         XCTAssertTrue(body.sendAftercare)
         XCTAssertNil(body.aftercareTemplateId, "the server falls back to the service's template")
-        XCTAssertEqual(body.consumables, [])
+        XCTAssertNil(body.consumables, "no list: the server deducts the services' consumption norms")
 
         cart.sendsAftercare = false
         XCTAssertEqual(cart.makeCompleteBody()?.sendAftercare, false)

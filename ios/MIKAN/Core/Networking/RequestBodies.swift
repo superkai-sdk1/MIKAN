@@ -76,6 +76,9 @@ nonisolated struct ServiceBody: Encodable, Sendable {
     var aftercareTemplateId: Nullable<Int>
     /// «Свежий прокол» / «Свежее тату»: aftercare memos are sent only for such services.
     var freshProcedure: Bool
+    /// Replace the compatible jewelry and the consumption norm.
+    var jewelryIds: [Int] = []
+    var consumables: [ServiceConsumable] = []
     var active: Bool
     var sort: Int
 }
@@ -110,6 +113,10 @@ nonisolated struct ProductBody: Encodable, Hashable, Sendable {
     var unit: String
     var photos: [String]
     var serviceIds: [Int]
+    /// Consumables only; omitted keeps it.
+    var stockMode: StockMode? = nil
+    /// Presence consumables only; omitted otherwise.
+    var presenceStatus: PresenceStatus? = nil
     var active: Bool
     var variants: [ProductVariantBody]
 }
@@ -231,7 +238,28 @@ nonisolated struct ConsumableUse: Encodable, Hashable, Sendable {
 nonisolated struct CompleteBody: Encodable, Sendable {
     let sendAftercare: Bool
     let aftercareTemplateId: Int?
-    let consumables: [ConsumableUse]
+    /// `nil` (omitted) — the server deducts the norms of the appointment's services; a list — exactly these.
+    var consumables: [ConsumableUse]?
+}
+
+/// `POST /catalog/categories`.
+nonisolated struct CategoryCreateBody: Encodable, Sendable {
+    let section: CatalogSection
+    var serviceCategory: ServiceCategory?
+    let name: String
+}
+
+/// `POST /stock/revisions` — the counted stock per size and the marked status per presence consumable.
+nonisolated struct StockRevisionBody: Encodable, Hashable, Sendable {
+    var section: CatalogSection?
+    var note: String?
+    var counts: [StockLineBody]
+    var presence: [PresenceLineBody]
+}
+
+nonisolated struct PresenceLineBody: Encodable, Hashable, Sendable {
+    let productId: Int
+    let status: PresenceStatus
 }
 
 nonisolated struct SaleItemBody: Encodable, Hashable, Sendable {

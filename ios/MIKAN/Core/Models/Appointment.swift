@@ -105,4 +105,17 @@ nonisolated struct AppointmentServiceLine: Codable, Hashable, Identifiable, Send
 nonisolated struct CompleteAppointmentResult: Codable, Sendable {
     let appointment: Appointment
     let scheduledMessages: Int
+    /// What was taken from the stock; empty from a server that predates consumption norms.
+    var consumption = Consumption()
+}
+
+nonisolated extension CompleteAppointmentResult {
+    private enum CodingKeys: String, CodingKey { case appointment, scheduledMessages, consumption }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        appointment = try c.decode(Appointment.self, forKey: .appointment)
+        scheduledMessages = try c.decode(Int.self, forKey: .scheduledMessages)
+        consumption = try c.decodeIfPresent(Consumption.self, forKey: .consumption) ?? Consumption()
+    }
 }
