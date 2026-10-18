@@ -131,10 +131,14 @@ private struct CheckoutDepositRows: View {
 /// «Запись»: completes the appointment (and schedules aftercare) right before the sale.
 struct CheckoutAppointmentSection: View {
     @Environment(CartStore.self) private var cart
+    @Environment(ReferenceStore.self) private var reference
 
     var body: some View {
         @Bindable var cart = cart
         if let appointment = cart.appointment, cart.hasPendingAppointment {
+            // The server sends a memo only for a fresh piercing / tattoo among the visit's services.
+            let hasFreshProcedure = AftercareDefaults.sendsMemo(for: appointment, services: reference.services)
+            let canSend = cart.canSendAftercare && hasFreshProcedure
             Section {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(appointment.displayTitle).font(.headline)
@@ -145,10 +149,10 @@ struct CheckoutAppointmentSection: View {
                 .accessibilityElement(children: .combine)
                 Toggle("Завершить запись при оплате", isOn: $cart.completesAppointment)
                 Toggle("Отправить памятку по уходу", isOn: Binding(
-                    get: { cart.sendsAftercare && cart.canSendAftercare && cart.completesAppointment },
+                    get: { cart.sendsAftercare && canSend && cart.completesAppointment },
                     set: { cart.sendsAftercare = $0 }
                 ))
-                .disabled(!cart.canSendAftercare || !cart.completesAppointment)
+                .disabled(!canSend || !cart.completesAppointment)
             } header: {
                 Text("Запись")
             } footer: {
@@ -156,6 +160,8 @@ struct CheckoutAppointmentSection: View {
                     Text("После оплаты запись всё равно отметится завершённой, но без памятки по уходу.")
                 } else if !cart.canSendAftercare {
                     Text("Клиент не подключил Telegram-бота")
+                } else if !hasFreshProcedure {
+                    Text(AftercareDefaults.noFreshProcedureHint)
                 } else if cart.sendsAftercare {
                     Text("Памятка по шаблону услуги придёт клиенту в Telegram.")
                 }

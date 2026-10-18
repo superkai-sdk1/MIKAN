@@ -72,6 +72,8 @@ struct CheckoutView: View {
         .task {
             try? await reference.ensureQrPaymentsConfig()
             cart.dropQrIfUnavailable(qrEnabled: reference.qrPaymentsEnabled)
+            // Only tells the «Запись» section whether a memo will go out; the server decides either way.
+            if cart.hasPendingAppointment { try? await reference.ensureServices() }
         }
         .onDisappear {
             if completedSale != nil { cart.clear() }
