@@ -29,6 +29,12 @@ extension APIClient {
         try await request(.patch, "bot/chats/\(chatId)", body: AIPausedBody(aiPaused: paused))
     }
 
+    /// Makes the chat the staff chat of an active employee (for employees who never shared their phone with the bot);
+    /// the bot greets them with the staff keyboard. Returns the chat with `employee`.
+    func bindChatEmployee(chatId: Int64, employeeId: Int) async throws -> BotChat {
+        try await request(.put, "bot/chats/\(chatId)/employee", body: ChatEmployeeBody(employeeId: employeeId))
+    }
+
     /// The chat becomes an ordinary client chat; the employee links again by sharing their phone with the bot.
     func unlinkChatEmployee(chatId: Int64) async throws {
         try await requestVoid(.delete, "bot/chats/\(chatId)/employee")

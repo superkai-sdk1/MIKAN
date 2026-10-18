@@ -30,8 +30,9 @@ nonisolated struct BotChat: Codable, Hashable, Identifiable, Sendable {
     var unreadCount: Int
     var lastMessage: BotMessage?
     var updatedAt: Date
-    /// The employee whose phone matched the contact shared in this chat: the bot answers them as the studio's
-    /// assistant (appointments, clients, analytics, stock). `nil` for client chats and on older servers.
+    /// The employee whose phone matched the contact shared in this chat, or whom staff bound to it in the app
+    /// («Это сотрудник…»): the bot answers them as the studio's assistant (appointments, clients, analytics, stock).
+    /// `nil` for client chats and on older servers.
     var employee: EmployeeRef?
 
     var id: Int64 { chatId }

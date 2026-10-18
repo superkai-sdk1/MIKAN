@@ -20,6 +20,7 @@ struct ChatView: View {
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var sentCount = 0
     @State private var unlinkedCount = 0
+    @State private var boundCount = 0
 
     private static let pageSize = 50
     private static let pollInterval: Duration = .seconds(5)
@@ -77,6 +78,7 @@ struct ChatView: View {
         .errorAlert($errorMessage)
         .sensoryFeedback(.success, trigger: sentCount)
         .sensoryFeedback(.success, trigger: unlinkedCount)
+        .sensoryFeedback(.success, trigger: boundCount)
     }
 
     @ViewBuilder
@@ -115,6 +117,12 @@ struct ChatView: View {
             }
             .disabled(isTogglingAI)
             .accessibilityHint(chat.aiPaused ? "Включить ответы ИИ" : "Поставить ИИ на паузу")
+        }
+        if StaffBinding.canBind(chat) {
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) {
+                StaffBindingMenu(chat: chat, onBound: employeeBound)
+            }
         }
     }
 
@@ -240,6 +248,14 @@ struct ChatView: View {
         chat.employee = nil
         onChange?(chat)
         unlinkedCount += 1
+    }
+
+    /// The chat is now the employee's staff chat: the banner shows, the bot's greeting appears in the conversation.
+    private func employeeBound(_ updated: BotChat) {
+        chat = updated
+        onChange?(chat)
+        boundCount += 1
+        Task { await refresh() }
     }
 
     private func toggleAI() {
