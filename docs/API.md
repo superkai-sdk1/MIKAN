@@ -89,8 +89,15 @@ If the implementation must deviate, update this file in the same change.
   "variants": [ { "name": "Один", "price": 2500, "durationMin": null },
                 { "name": "Два", "price": 4000, "durationMin": 60 } ],
   "depositAmount": 0,
-  "aftercareTemplateId": 2, "freshProcedure": true, "active": true, "sort": 0 }
+  "aftercareTemplateId": 2, "freshProcedure": true,
+  "jewelryIds": [1, 7], "consumables": [ { "productId": 12, "quantity": 1 }, { "productId": 15, "quantity": 2 } ],
+  "active": true, "sort": 0 }
 ```
+- `jewelryIds` — catalog jewelry compatible with the service (the same link as `Product.serviceIds`, edited from either
+  side); the bot offers these pieces when a client asks what fits the procedure. `[]` when none.
+- `consumables` — the consumption norm of one procedure: consumables (`kind: consumable`) and how many units it
+  uses. Completing an appointment deducts the norms of its services (see `complete`); `presence` consumables are
+  listed with `quantity: 1` and are never deducted. `[]` when none.
 - `freshProcedure` — the service leaves a fresh wound: «Свежий прокол» (piercing), «Свежее тату» (tattoo), «Нужна
   памятка по уходу» (other). Aftercare memos are sent only for appointments with at least one such service (see
   `complete`); a jewelry change, cleaning or consultation keeps it `false`. On create it defaults to whether
@@ -98,8 +105,9 @@ If the implementation must deviate, update this file in the same change.
 - `depositAmount`: prepayment required to book this service (whole rubles); `0` — no prepayment. An appointment's
   `depositRequired` defaults to the sum over its lines' catalog services (a service booked twice counts twice).
 - `category`: `tattoo` | `piercing` | `other` (drives the default aftercare template and icons).
-- `group`: free-text subgroup inside the category («Лицо», «Ухо», «Тело», «Доп. услуги», …) or `null`;
-  lists are grouped by category, then group.
+- `group`: the service's catalog category inside `category` («Лицо», «Ухо», «Тело», «Доп. услуги», …) or `null` —
+  a `CatalogCategory` of section `service` (see below); lists are grouped by category, then group in the categories'
+  order.
 - Price: `price` — base / minimal price (the default amount of a booked line); `priceMax` — optional upper bound;
   `priceFrom` — the final price is set per appointment. The server stores `priceFrom = true` whenever `priceMax`
   is set; `priceMax` must be greater than `price`. Display:
@@ -124,14 +132,27 @@ If the implementation must deviate, update this file in the same change.
 `dayOffset: 0` is sent a few minutes after the appointment is completed; `dayOffset: N > 0` is sent N days later at
 `botSettings.aftercareHour` (studio local time).
 
-### Product (jewelry and consumables)
+### CatalogCategory
+```json
+{ "id": 4, "section": "jewelry", "serviceCategory": null, "name": "Лабрет", "position": 0, "itemCount": 12 }
+```
+The warehouse has four sections: `jewelry` (Украшения), `service` (Услуги), `consumable` (Расходники) and `goods`
+(Товары). Each section has its own categories in staff order (`position`, 0-based); service categories exist per
+service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` for product sections).
+- Items link to a category by name: `Product.category` (in the section of its `kind`) and `Service.group` (in its
+  `category`). Saving an item with a category name matching an existing one (case- and «ё»-insensitive) stores that
+  category's spelling; a new name creates the category at the end. Older builds keep sending plain names.
+- `itemCount` — products / services (inactive included) in the category.
+- Lists of products and services follow the categories' order; items without a category come last («Без категории»).
+
+### Product (jewelry, goods and consumables)
 ```json
 { "id": 1, "kind": "jewelry", "name": "Лабрет", "sku": "LB-12", "category": "Лабрет",
   "material": "Титан ASTM F136", "threadType": "internal", "thicknessMm": 1.2,
   "color": "Серебристый", "stone": "Фианит", "supplier": "Industrial Strength",
   "description": "...", "price": 1500, "cost": 600, "unit": "шт",
   "photos": ["/uploads/3f1c….jpg", "/uploads/9a0b….jpg"], "photoUrl": "/uploads/3f1c….jpg",
-  "serviceIds": [3, 7], "active": true,
+  "serviceIds": [3, 7], "stockMode": "quantity", "presenceStatus": null, "active": true,
   "variants": [
     { "id": 1, "name": "6 мм", "sku": null, "price": null, "cost": null,
       "quantity": 4, "minQuantity": 1, "lowStock": false },
@@ -140,7 +161,12 @@ If the implementation must deviate, update this file in the same change.
   "quantity": 4, "minQuantity": 2, "lowStock": true, "size": "6 мм, 8 мм",
   "createdAt": "...", "updatedAt": "..." }
 ```
-- `kind`: `jewelry` (sold to clients, visible to the bot) | `consumable` (used in procedures, not sold).
+- `kind`: `jewelry` (sold to clients, visible to the bot) | `goods` (other things sold at the POS: aftercare sprays,
+  gift cards…; sizes allowed, listed by the bot as «Товары») | `consumable` (used in procedures, not sold).
+- `stockMode` (consumables only, else always `quantity`): `quantity` — counted in units like everything else;
+  `presence` — only «есть / заканчивается / нет» is tracked (`presenceStatus`: `ok` | `low` | `out`, `null` in
+  `quantity` mode). Presence consumables take no stock movements (`400`); staff mark the status in the card or during a
+  stock count. `lowStock` of a presence consumable = `presenceStatus != "ok"`.
 - `variants` — the sizes of the product (always at least one), in the order staff arranged them. Stock lives on
   variants: every receipt, sale, write-off, usage, count and return moves one variant.
   - A product without sizes has a single variant with `name: ""`. With two or more variants every `name` is required
@@ -170,12 +196,26 @@ If the implementation must deviate, update this file in the same change.
 ```json
 { "id": 1, "productId": 1, "productName": "Лабрет", "variantId": 5, "variantName": "8 мм",
   "delta": -1, "quantityAfter": 11,
-  "type": "sale", "note": null, "saleId": 5, "appointmentId": null,
+  "type": "sale", "note": null, "saleId": 5, "appointmentId": null, "revisionId": null,
   "employee": { "id": 1, "name": "Анна", "color": "#FF7A1A" }, "createdAt": "..." }
 ```
 `type`: `receipt` (приход) | `sale` | `return` | `writeoff` (списание) | `usage` (расход на процедуру) | `adjustment` (инвентаризация).
 `variantName` — the size's current name (`""` for a product without sizes); `quantityAfter` — the stock of that size
-after the movement.
+after the movement. `revisionId` — the stock count (`StockRevision`) an `adjustment` came from, else `null`.
+
+### StockRevision (ревизия)
+```json
+{ "id": 3, "number": 3, "section": "consumable", "note": "Конец месяца",
+  "employee": { EmployeeRef }, "counted": 24, "changed": 3,
+  "surplus": 2, "shortage": 5, "surplusCost": 80, "shortageCost": 1200,
+  "presenceChanges": [ { "productId": 15, "productName": "Антисептик", "from": "ok", "to": "low" } ],
+  "movements": [ StockMovement ], "createdAt": "..." }
+```
+One stock count: what was counted and what differed. `counted` — sizes counted plus presence consumables marked;
+`changed` — of them, those that differed; `surplus` / `shortage` — units found above / below the expected stock
+(`…Cost` — the same at `variant.cost ?? product.cost`, unknown costs count as 0). `movements` — its `adjustment`
+movements (only in `GET /stock/revisions/:id` and the `POST` response; `[]` in lists). `section` — the section counted
+or `null` for a mixed count.
 
 ### Appointment
 ```json
@@ -394,9 +434,14 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/services?includeInactive=true` | — | `{ items: [Service] }` sorted by `sort`, then name |
-| POST | `/services` | `{ name, category, group?, price, priceMax?, priceFrom?, durationMin, description?, imageUrl?, imagePrompt?, photos?, variants?, depositAmount?, aftercareTemplateId?, active?, sort? }` | `Service` |
+| POST | `/services` | `{ name, category, group?, price, priceMax?, priceFrom?, durationMin, description?, imageUrl?, imagePrompt?, photos?, variants?, depositAmount?, aftercareTemplateId?, freshProcedure?, jewelryIds?, consumables?, active?, sort? }` | `Service` |
 | PATCH | `/services/:id` | any of the above | `Service` |
 | GET | `/services/:id/history?limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who got this service and when, newest first |
+
+- `GET /services` is sorted by `category`, then the group's position (no group last), then `sort`, then name.
+- `jewelryIds` (≤ 100) replaces the compatible jewelry (`kind: jewelry` products, `400` «Украшение не найдено»
+  otherwise); `consumables` (≤ 50, `{ productId, quantity: 1…1000 }`, distinct products) replaces the norm (`kind:
+  consumable` products, `400` «Расходник не найден» otherwise). Omitted — unchanged.
 | POST | `/services/:id/image/generate` | `{ prompt? }` (≤ 1000 chars) | `Service` with a new `imageUrl` — generates the schematic cover with AI (Polza Media API, ~1–2 min; apps use a 4-minute timeout). A non-empty `prompt` is used and saved as `imagePrompt`; `prompt: ""` / `null` resets it (generates from the name/description and saves `imagePrompt = null`); without `prompt` the saved `imagePrompt` (or name/description) is used. Only `imageUrl` (and `imagePrompt` when `prompt` is sent) change, so edits made during generation are kept. `409 conflict` when the AI key (`AI_API_KEY` + `AI_BASE_URL`) is not configured or a generation for this service is already running, `502 upstream_error` when generation fails (message says why). The previous picture file is kept. |
 
 ### Aftercare templates
@@ -406,6 +451,18 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | POST | `/aftercare-templates` | `{ name, category, steps: [{ dayOffset ≥ 0, text }] (≥1) }` | `AftercareTemplate` |
 | PATCH | `/aftercare-templates/:id` | any of the above | `AftercareTemplate` |
 | DELETE | `/aftercare-templates/:id` | — | `204` (services referencing it get `aftercareTemplateId = null`) |
+
+### Catalog categories
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/catalog/categories?section=` | — | `{ items: [CatalogCategory] }` by section, service category, position |
+| POST | `/catalog/categories` | `{ section, serviceCategory?, name }` | `CatalogCategory` (added at the end) · `409` «Категория «Лабрет» уже есть» |
+| PATCH | `/catalog/categories/:id` | `{ name }` | `CatalogCategory` — renames it and every item in it · `409` when another category of the same section (and service category) has that name |
+| PUT | `/catalog/categories/order` | `{ ids: [4, 2, 9] }` | `{ items: [CatalogCategory] }` — positions in this order; every id of one section (and service category), all of them listed (`400` otherwise) |
+| POST | `/catalog/categories/:id/merge` | `{ intoId }` | `CatalogCategory` (the target) — moves the items into `intoId` (same section and service category) and deletes this one |
+| DELETE | `/catalog/categories/:id` | — | `204` — the items stay, without a category |
+
+`serviceCategory` is required for `section: "service"` and must be absent / `null` otherwise. Names: 1–100 chars.
 
 ### Products & stock
 | Method | Path | Body | Response |
@@ -421,7 +478,12 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | GET | `/stock/movements?type=&limit=&offset=` | — | `{ items: [StockMovement], total }` newest first |
 
 - `search` matches the name, SKUs (product and sizes), category, material, colour, stone, supplier and size names.
-  `lowStock=true` — products with at least one low size.
+  `lowStock=true` — products with at least one low size (presence consumables: status not `ok`).
+- `GET /products` is sorted by kind's category order (uncategorized last), then name.
+- `POST/PATCH /products` also take `stockMode` and `presenceStatus` (consumables only; `400` for other kinds).
+  Switching a consumable to `presence` keeps its counted stock aside (shown nowhere) and starts `ok` when it had
+  stock, `out` otherwise; switching back to `quantity` uses the counted stock again.
+- `goods` follow the rules of `jewelry` for sizes, sales and stock; only consumables are limited to one size.
 
 `POST /products` body:
 ```json
@@ -462,6 +524,18 @@ Movements:
   lines whose count equals the current stock are skipped, and a count that changes nothing → `400` «Остатки не
   изменились». `movements` are in line order.
 
+Stock counts (ревизии):
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/stock/revisions` | `{ section?, note?, counts: [{ variantId, quantity }], presence: [{ productId, status }] }` | `StockRevision` · accepts `Idempotency-Key` |
+| GET | `/stock/revisions?limit=&offset=` | — | `{ items: [StockRevision], total }` newest first (`movements: []`) |
+| GET | `/stock/revisions/:id` | — | `StockRevision` with `movements` |
+
+- `counts` (≤ 2 000, distinct sizes of quantity-mode products): the counted stock of each size; a differing one gets an
+  `adjustment` movement «Ревизия №N» (+ note). `presence` (≤ 500, presence consumables): the marked status.
+- At least one line (`400` «Ревизия пустая»); a count that matches everything is still recorded (`changed: 0`) —
+  it documents that the stock was checked. One transaction; `number` is sequential.
+
 ### Uploads
 | Method | Path | Body | Response |
 |---|---|---|---|
@@ -476,7 +550,7 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 | GET | `/appointments/:id` | — | `Appointment` |
 | POST | `/appointments` | `{ clientId, masterId, services?, serviceId?, title?, startsAt, endsAt?, price?, depositRequired?, notes?, status?, force? }` | `Appointment` |
 | PATCH | `/appointments/:id` | any of the above (incl. `status`) + `force?` | `Appointment` |
-| POST | `/appointments/:id/complete` | `{ sendAftercare: true, aftercareTemplateId?, consumables?: [{ productId, variantId?, quantity }] }` | `{ appointment: Appointment, scheduledMessages: 3 }` |
+| POST | `/appointments/:id/complete` | `{ sendAftercare: true, aftercareTemplateId?, consumables?: [{ productId, variantId?, quantity }] }` | `{ appointment: Appointment, scheduledMessages: 3, consumption: Consumption }` |
 | POST | `/appointments/:id/deposit` | `{ amount > 0, method: "cash"\|"card"\|"transfer", note? }` | `Appointment` · accepts `Idempotency-Key` |
 | POST | `/appointments/:id/deposit/refund` | `{ amount?, method?, reason? }` | `Appointment` · accepts `Idempotency-Key` |
 | POST | `/appointments/:id/deposit/retain` | `{ amount?, reason? }` | `Appointment` · accepts `Idempotency-Key` |
@@ -500,6 +574,14 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
   `409 schedule_conflict` (message names the conflicting client and time) unless `force: true`.
 - The studio's working hours (`StudioSettings.workdayStart` / `workdayEnd`) do not restrict `startsAt` / `endsAt`:
   appointments before opening or after closing are accepted.
+- Consumption: `consumables` **omitted or `null`** → the server deducts the norms of the appointment's services
+  (Σ over its service lines of each service's `consumables`, quantity-mode only), never failing: a consumable short of
+  stock gives what it has and is reported. `consumables` given (an array, `[]` included) → exactly those, and a shortage
+  is `409 insufficient_stock` (older builds always send the array). Usage is recorded once per appointment: a repeated
+  `complete` writes nothing. A sale that completes a not yet completed appointment (`POST /sales` with `appointmentId`,
+  also via QR) deducts the norms the same way when nothing was recorded.
+  `Consumption`: `{ "used": [ { "productId": 12, "productName": "Игла 1.2", "quantity": 1 } ], "shortages": [ {
+  "productId": 15, "productName": "Перчатки", "needed": 2, "deducted": 1 } ] }` (`[]`/`[]` when nothing).
 - `complete`: sets `status = completed`, `completedAt = now`; writes `usage` movements for `consumables` (the only
   size of the product unless `variantId` is given; a product with several sizes needs `variantId`: `409 conflict` asking
   to update the app otherwise); when

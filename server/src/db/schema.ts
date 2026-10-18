@@ -95,7 +95,30 @@ export const services = sqliteTable('services', {
   updatedAt: ms('updated_at').notNull(),
 });
 
-/** Jewelry and consumables. Stock lives on `product_variants` (sizes); a product always has at least one. */
+/**
+ * Catalog categories of the warehouse sections (`jewelry` | `goods` | `consumable` | `service`), in staff order. Items
+ * link to a category by name: `products.category` / `services.group_name` hold the category's exact name (services
+ * within their `service_category`). Saving an item with a new name creates its category.
+ */
+export const catalogCategories = sqliteTable(
+  'catalog_categories',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    section: text('section').notNull(),
+    /** `tattoo` | `piercing` | `other` for the `service` section; '' otherwise. */
+    serviceCategory: text('service_category').notNull().default(''),
+    name: text('name').notNull(),
+    position: integer('position').notNull().default(0),
+    createdAt: ms('created_at').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('catalog_categories_name_unique').on(t.section, t.serviceCategory, t.name)],
+);
+
+/**
+ * Jewelry, goods (sold, not jewelry) and consumables. Stock lives on `product_variants` (sizes); a product always has
+ * at least one.
+ */
 export const products = sqliteTable(
   'products',
   {
@@ -122,6 +145,10 @@ export const products = sqliteTable(
     photoUrl: text('photo_url'),
     /** JSON array of upload paths, the cover first. */
     photosJson: text('photos_json').notNull().default('[]'),
+    /** `quantity` — counted; `presence` — consumables only tracked as «есть / заканчивается / нет». */
+    stockMode: text('stock_mode').notNull().default('quantity'),
+    /** `ok` | `low` | `out` — meaningful for `presence` products only. */
+    presenceStatus: text('presence_status').notNull().default('ok'),
     active: bool('active').notNull().default(true),
     /** Built from the product's text fields and its sizes (names, SKUs). */
     searchText: text('search_text').notNull().default(''),
@@ -157,6 +184,22 @@ export const productVariants = sqliteTable(
     index('product_variants_product_idx').on(t.productId, t.position),
     check('product_variants_quantity_non_negative', sql`${t.quantity} >= 0`),
   ],
+);
+
+/** Consumables one procedure of a service uses (deducted when an appointment with it is completed). */
+export const serviceConsumables = sqliteTable(
+  'service_consumables',
+  {
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    productId: integer('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    /** Per procedure; ignored for `presence` consumables. */
+    quantity: integer('quantity').notNull().default(1),
+  },
+  (t) => [primaryKey({ columns: [t.serviceId, t.productId] }), index('service_consumables_product_idx').on(t.productId)],
 );
 
 /** Catalog services (piercing zones) a piece of jewelry suits. */
@@ -387,6 +430,29 @@ export const depositOperations = sqliteTable(
   ],
 );
 
+/** A stock count (ревизия): its adjustments are stock movements with `revision_id`. */
+export const stockRevisions = sqliteTable('stock_revisions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  number: integer('number').notNull().unique(),
+  /** The warehouse section counted, or null for several. */
+  section: text('section'),
+  note: text('note'),
+  employeeId: integer('employee_id').references(() => employees.id),
+  /** Lines checked (sizes counted + presence consumables marked). */
+  counted: integer('counted').notNull(),
+  /** Lines that differed. */
+  changed: integer('changed').notNull(),
+  /** Units found above / below the expected stock. */
+  surplus: integer('surplus').notNull(),
+  shortage: integer('shortage').notNull(),
+  /** The same at cost (sizes with a known cost). */
+  surplusCost: integer('surplus_cost').notNull(),
+  shortageCost: integer('shortage_cost').notNull(),
+  /** JSON array of `{ productId, productName, from, to }` presence status changes. */
+  presenceJson: text('presence_json').notNull().default('[]'),
+  createdAt: ms('created_at').notNull(),
+});
+
 export const stockMovements = sqliteTable(
   'stock_movements',
   {
@@ -404,6 +470,8 @@ export const stockMovements = sqliteTable(
     note: text('note'),
     saleId: integer('sale_id').references(() => sales.id),
     appointmentId: integer('appointment_id').references(() => appointments.id),
+    /** The stock count this adjustment came from. */
+    revisionId: integer('revision_id').references(() => stockRevisions.id),
     employeeId: integer('employee_id').references(() => employees.id),
     createdAt: ms('created_at').notNull(),
   },
@@ -435,6 +503,8 @@ export const cashOperations = sqliteTable(
 export const botChats = sqliteTable('bot_chats', {
   chatId: integer('chat_id').primaryKey(),
   clientId: integer('client_id').references(() => clients.id, { onDelete: 'set null' }),
+  /** Set when the chat shared the phone number of an employee: the bot treats it as staff. */
+  employeeId: integer('employee_id').references(() => employees.id),
   telegramName: text('telegram_name'),
   username: text('username'),
   aiPaused: bool('ai_paused').notNull().default(false),
