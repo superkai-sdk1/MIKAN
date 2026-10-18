@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BotUnavailableError } from '../src/bot/gateway.js';
 import { mainKeyboard, registerHandlers } from '../src/bot/handlers.js';
 import { BotController } from '../src/bot/index.js';
+import { STAFF_KEYBOARD } from '../src/bot/keyboards.js';
 import { BotPipeline } from '../src/bot/pipeline.js';
 import { issueStaffCode } from '../src/bot/staff.js';
 import { setCachedBotUsername } from '../src/domain/settings.js';
@@ -79,6 +80,8 @@ describe('grammY handlers (no network)', () => {
     await bot.handleUpdate(command('/start'));
     const [reply] = replies();
     expect(reply!.text).toMatch(/^Здравствуйте!/);
+    expect(reply!.text).toMatch(/Нажмите кнопку «📱 Поделиться номером» внизу — так я вас узнаю\. Если вы сотрудник студии/);
+    expect(reply!.reply_markup).toMatchObject({ resize_keyboard: true, is_persistent: true });
     const keyboard = (reply!.reply_markup as { keyboard: Array<Array<{ text: string; request_contact?: boolean }>> }).keyboard;
     expect(keyboard.flat().map((b) => b.text)).toEqual(['💉 Услуги и цены', '💎 Украшения', '📅 Записаться', '🩹 Уход после процедуры', '📱 Поделиться номером']);
     expect(keyboard[2]![0]!.request_contact).toBe(true);
@@ -215,8 +218,9 @@ describe('grammY handlers (no network)', () => {
   });
 
   it('shows the staff keyboard to a recognised employee', async () => {
-    await make(t, '/api/employees', { name: 'Анна', login: 'anna', password: 'secret123', phone: '+79990001122' });
-    await bot.handleUpdate(privateMsg({ contact: { phone_number: '+79990001122', first_name: 'Анна', user_id: USER } }));
+    await make(t, '/api/employees', { name: 'Анна', login: 'anna', password: 'secret123', phone: '8 (999) 000-11-22' });
+    // Telegram usually sends the number without «+».
+    await bot.handleUpdate(privateMsg({ contact: { phone_number: '79990001122', first_name: 'Анна', user_id: USER } }));
     const reply = replies().at(-1)!;
     expect(reply.text).toMatch(/^Здравствуйте, Анна! Узнал вас/);
     const keyboard = (reply.reply_markup as { keyboard: Array<Array<{ text: string }>> }).keyboard;
@@ -284,6 +288,47 @@ describe('BotController polling lifecycle (#9)', () => {
     await controller.stop();
     expect(controller.isRunning()).toBe(false);
     expect(running).toBe(0);
+    await t.close();
+  });
+});
+
+describe('BotController sending', () => {
+  it('sends a keyboard under the input field with the last chunk; inline buttons win over it', async () => {
+    const t = await createTestApp({ env: { BOT_ENABLED: 'true', TELEGRAM_BOT_TOKEN: '123:fake' } });
+    const sent: Array<Record<string, unknown>> = [];
+    let finish: (() => void) | null = null;
+    const factory = () =>
+      ({
+        botInfo,
+        isInited: () => true,
+        isRunning: () => finish !== null,
+        init: async () => undefined,
+        start: async (opts: { onStart?: (info: UserFromGetMe) => void }) => {
+          opts.onStart?.(botInfo);
+          await new Promise<void>((resolve) => (finish = resolve));
+        },
+        stop: async () => finish?.(),
+        api: {
+          sendMessage: async (_chatId: number, _text: string, other: Record<string, unknown>) => {
+            sent.push(other);
+            return { message_id: sent.length };
+          },
+        },
+      }) as unknown as Bot;
+    const controller = new BotController(t.ctx, { botFactory: factory, debounceMs: 0 });
+    controller.refresh();
+    await new Promise((r) => setTimeout(r, 10));
+
+    await controller.sendText(USER, 'Привет', { replyKeyboard: STAFF_KEYBOARD });
+    await controller.sendText(USER, 'Меню', { keyboard: [[{ text: 'Все', data: 'x' }]], replyKeyboard: STAFF_KEYBOARD });
+    expect(sent[0]!.reply_markup).toMatchObject({
+      keyboard: [[{ text: '📋 Что сегодня' }, { text: '📊 Выручка за неделю' }], [{ text: '📦 Что заканчивается' }, { text: '💎 Украшения' }]],
+      resize_keyboard: true,
+      is_persistent: true,
+    });
+    expect(sent[1]!.reply_markup).toEqual({ inline_keyboard: [[{ text: 'Все', callback_data: 'x' }]] });
+
+    await controller.stop();
     await t.close();
   });
 });

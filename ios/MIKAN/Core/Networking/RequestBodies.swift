@@ -310,6 +310,11 @@ nonisolated struct AIPausedBody: Encodable, Sendable {
     let aiPaused: Bool
 }
 
+/// `PUT /bot/chats/:chatId/employee`.
+nonisolated struct ChatEmployeeBody: Encodable, Sendable {
+    let employeeId: Int
+}
+
 nonisolated struct KnowledgeBody: Encodable, Sendable {
     var title: String
     var content: String

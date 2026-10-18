@@ -13,9 +13,20 @@ export interface InlineButton {
 /** Rows of inline buttons under a message. */
 export type InlineKeyboard = InlineButton[][];
 
+/** One button of the keyboard under the input field; `requestContact` makes it share the user's own phone. */
+export interface ReplyButton {
+  text: string;
+  requestContact?: boolean;
+}
+
+/** Rows of buttons under the input field (shown resized and persistent). */
+export type ReplyKeyboard = ReplyButton[][];
+
 export interface SendOptions {
   /** Inline buttons under the message (under the last chunk of a long text). */
   keyboard?: InlineKeyboard;
+  /** Replaces the keyboard under the input field (sent with the last chunk). Ignored when `keyboard` is set. */
+  replyKeyboard?: ReplyKeyboard;
 }
 
 export interface SentMessage {

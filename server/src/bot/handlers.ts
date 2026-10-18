@@ -1,52 +1,18 @@
-import { Keyboard, type Bot, type Context } from 'grammy';
+import type { Bot, Context, Keyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { errorMessage } from '../lib/errors.js';
 import { handleCallback } from './callbacks.js';
 import { jewelryCategoriesMenu, sendMenu, serviceSectionsMenu } from './catalog.js';
+import { BUTTONS, mainKeyboard, staffKeyboard } from './keyboards.js';
 import { handleContact, handleStaffCommand, handleStart } from './onboarding.js';
 import type { BotPipeline, IncomingFrom } from './pipeline.js';
 import type { PendingImage } from './prompt.js';
 
+export { BUTTONS, mainKeyboard, STAFF_BUTTONS, staffKeyboard } from './keyboards.js';
+
 export const MAX_CLIENT_IMAGE_BYTES = 5 * 1024 * 1024;
 
-export const BUTTONS = {
-  services: '💉 Услуги и цены',
-  jewelry: '💎 Украшения',
-  booking: '📅 Записаться',
-  aftercare: '🩹 Уход после процедуры',
-  contact: '📱 Поделиться номером',
-} as const;
-
-/** Keyboard of a staff chat: quick questions to the staff-mode AI and the catalog. */
-export const STAFF_BUTTONS = {
-  today: '📋 Что сегодня',
-  revenue: '📊 Выручка за неделю',
-  low: '📦 Что заканчивается',
-} as const;
-
-export function staffKeyboard(): Keyboard {
-  return new Keyboard()
-    .text(STAFF_BUTTONS.today)
-    .text(STAFF_BUTTONS.revenue)
-    .row()
-    .text(STAFF_BUTTONS.low)
-    .text(BUTTONS.jewelry)
-    .resized()
-    .persistent();
-}
-
 const keyboardFor = (reply: { linked: boolean; staff?: boolean }): Keyboard => (reply.staff ? staffKeyboard() : mainKeyboard(reply.linked));
-
-export function mainKeyboard(linked: boolean): Keyboard {
-  const keyboard = new Keyboard()
-    .text(BUTTONS.services)
-    .text(BUTTONS.jewelry)
-    .row()
-    .text(BUTTONS.booking)
-    .text(BUTTONS.aftercare);
-  if (!linked) keyboard.row().requestContact(BUTTONS.contact);
-  return keyboard.resized().persistent();
-}
 
 export interface HandlerDeps {
   ctx: AppContext;

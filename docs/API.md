@@ -364,11 +364,11 @@ sale dated at the end of the visit (note «Перенесено из YCLIENTS»,
   "lastMessage": { BotMessage } | null, "updatedAt": "..." }
 ```
 - `needsAttention` — the bot handed the conversation to staff (cleared when staff replies or marks read).
-- `employee` — the studio employee recognised in this chat by the phone number they shared with the bot (see «Staff
-  chats» in the Bot section): the bot answers this chat in staff mode. Only an **active** employee is shown — a
-  deactivated one is `null` and loses staff mode at once (it comes back if the employee is reactivated, until staff
-  unlink it). `null` for client chats. Apps mark such chats «Сотрудник: Анна»; `DELETE /bot/chats/:chatId/employee`
-  unlinks (`204`).
+- `employee` — the studio employee recognised in this chat by the phone number they shared with the bot, or bound to
+  it by staff in the app (`PUT /bot/chats/:chatId/employee`; see «Staff chats» in the Bot section): the bot answers
+  this chat in staff mode. Only an **active** employee is shown — a deactivated one is `null` and loses staff mode at
+  once (it comes back if the employee is reactivated, until staff unlink it). `null` for client chats. Apps mark such
+  chats «Сотрудник: Анна»; `DELETE /bot/chats/:chatId/employee` unlinks (`204`).
 
 ### BotMessage
 ```json
@@ -939,6 +939,7 @@ Fields:
 | POST | `/bot/chats/:chatId/messages` | `{ text }` | `BotMessage` (role `staff`, delivered to Telegram immediately; clears `needsAttention`) |
 | POST | `/bot/chats/:chatId/read` | — | `204` (unreadCount → 0, needsAttention → false) |
 | PATCH | `/bot/chats/:chatId` | `{ aiPaused }` | `BotChat` |
+| PUT | `/bot/chats/:chatId/employee` | `{ "employeeId": 3 }` | `BotChat` with `employee` — binds the chat to that active employee by hand (see Staff chats): the bot sends the staff greeting with the staff keyboard, the staff chat is notified; the chat is bound even if Telegram fails · `404` for an unknown chat · `400` for an unknown or deactivated employee |
 | DELETE | `/bot/chats/:chatId/employee` | — | `204` — unlinks the employee: the staff chat becomes an ordinary client chat (`employee: null`; the employee may share the phone again) · `404` for an unknown chat |
 | GET | `/bot/scheduled?status=pending` | — | `{ items: [ScheduledMessage] }` sorted by `sendAt` |
 | POST | `/bot/scheduled/:id/cancel` | — | `ScheduledMessage` |
@@ -1033,6 +1034,21 @@ removed: «Эта запись уже неактуальна»). A button under 
   заканчивается», «💎 Украшения») and the staff chat is notified («🔑 … подключил(а) Telegram к боту как сотрудник»).
   No client card is created. Sharing any other phone later makes the chat a client chat again. The `/staff` group
   binding is never affected.
+- Phones are compared normalized (see `normalizePhone`): Telegram's `phone_number` comes as `79931234567` or
+  `+79931234567`, the profile phone may be written `8 (993) 123-45-67`, `+7 993 123 45 67`, `9931234567` — all match.
+- Telegram never gives a bot the user's phone by itself, so the bot asks for it: `/start` in a private chat that is
+  neither linked to a client nor a staff chat appends to the greeting «Нажмите кнопку «📱 Поделиться номером» внизу —
+  так я вас узнаю. Если вы сотрудник студии, узнаю вас по номеру из вашего профиля в MIKAN.» The client AI, when
+  someone says they work at the studio or asks to be recognised, points to the same button (a typed number does not
+  count; a chat already linked to a client has no such button — staff then bind it in the app) and never claims to
+  have recognised them.
+- A refused contact leaves a `system` message in the chat: «Контакт не принят: прислана чужая карточка контакта
+  (+7…), а не свой номер. …» or «Контакт не принят: не удалось распознать номер «…». …».
+- Binding by hand: `PUT /bot/chats/:chatId/employee { employeeId }` (an active employee) makes any chat that
+  employee's staff chat — for employees who never shared their phone. The bot sends the staff greeting with the staff
+  keyboard (stored as a `system` message when delivered; a delivery failure is logged, the chat is bound anyway) and the
+  staff chat gets «🔑 <name> подключён(а) к боту как сотрудник (вручную, @username)». Binding the chat to the employee
+  it already belongs to sends nothing. `DELETE` undoes it.
 - Staff mode is checked on every message: only while the employee is active (deactivation removes it at once).
   The AI then uses a staff system prompt (studio info and price list, the employee's name, the masters) and staff tools
   only — client tools are not offered, and client chats never get the staff tools (a client chat calling one gets

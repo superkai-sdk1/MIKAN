@@ -46,6 +46,7 @@
 		207A9304A1A46FE60F77D155 /* ServicePhotosEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9205D26DACA02685C77FF5 /* ServicePhotosEditor.swift */; };
 		23AF225399630E407752EEF7 /* MovementSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731F62CB33852CE670C1FB05 /* MovementSheet.swift */; };
 		25FD60A0575A93708FA3FC4D /* CategoriesEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD19197944A0FE076CA6BFE5 /* CategoriesEditorView.swift */; };
+		266CF5E2469904EEF102D8B6 /* StaffBindingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692FE5EDE09A9D59857A973F /* StaffBindingTests.swift */; };
 		28D259E8D61B74FCE24F6EE6 /* CompletionSuccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 251EA52949CC23D105C42A84 /* CompletionSuccessView.swift */; };
 		29E3086D5C2EBC69FA523432 /* AnalyticsTimingCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C68106223E88DFC01B7B6A1 /* AnalyticsTimingCard.swift */; };
 		2A103F2F74941F6A2D7268C2 /* AppointmentServicesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5BE31C742F5DC36E85AD4B /* AppointmentServicesSection.swift */; };
@@ -56,6 +57,7 @@
 		2DF2882B85ED04403CD919B0 /* CalendarPeriod.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33AF0ACC9932851C7726897D /* CalendarPeriod.swift */; };
 		2EEC34BC81BA68469C91654B /* EmployeeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30477A752EB8EFC0AD92C66 /* EmployeeEditorView.swift */; };
 		2FADEA35FCA2247E6BF02A80 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF3329D7F4E46E0179BE4D5 /* ModelDecodingTests.swift */; };
+		307B738A097A0D415D2F31D1 /* StaffBindingMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 821D504BA84289CC198CEC2E /* StaffBindingMenu.swift */; };
 		309D7E1549E83689CD020548 /* ProductDraftKindsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52BDABF882425AA236F09E16 /* ProductDraftKindsTests.swift */; };
 		30E9B2FA861BBA535BFBA424 /* ClientHistorySection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9A66943AD8E9CEFF55DB3BF /* ClientHistorySection.swift */; };
 		314328FFFCC3997CE3A45AD5 /* ServicesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E244B6EF6EA7B8AF5A8E7491 /* ServicesListView.swift */; };
@@ -157,6 +159,7 @@
 		9D5F4A01038214199B77C9DA /* ServicePickingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7376C571BFA57295D5F70F2 /* ServicePickingTests.swift */; };
 		9EC1839766A47B8D7F4E1B48 /* CategoryMergeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E94142BDBD36F389B14D900 /* CategoryMergeSheet.swift */; };
 		9F6A6EA45B5505A193BC1100 /* WarehousePreviewData.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA24C16D8565B13D0596E9D4 /* WarehousePreviewData.swift */; };
+		A07FE279730B2AB34939C82E /* StaffBinding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02D37E8DF7351A8D786FADCF /* StaffBinding.swift */; };
 		A23AECA870D9EAC00573329F /* GridScrollStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A999F395F10C25D1E24C69CF /* GridScrollStateTests.swift */; };
 		A23D32AE105AFCDC898B7A75 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C205AFC64CEEB734DEAA36E /* ChatView.swift */; };
 		A447B7435E512065F9CEC6FB /* ShiftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7434591F5D261CAEDF661C4F /* ShiftStore.swift */; };
@@ -259,6 +262,7 @@
 
 /* Begin PBXFileReference section */
 		01ADAA590898F92D16B47A3A /* AnalyticsContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsContent.swift; sourceTree = "<group>"; };
+		02D37E8DF7351A8D786FADCF /* StaffBinding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffBinding.swift; sourceTree = "<group>"; };
 		02F61A56A4A6799B56AF6405 /* RevisionSummaryBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevisionSummaryBar.swift; sourceTree = "<group>"; };
 		0483EAAF12832E06C966B1BE /* WarehouseModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarehouseModelTests.swift; sourceTree = "<group>"; };
 		05574A78F7CE1E57C9A7BC8C /* CategoryEditingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryEditingTests.swift; sourceTree = "<group>"; };
@@ -351,6 +355,7 @@
 		640DCF9373A3B925897F1920 /* ServiceCardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceCardTests.swift; sourceTree = "<group>"; };
 		6524151EFA47C98CAD9D63BB /* Client.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Client.swift; sourceTree = "<group>"; };
 		683CB351A05E92572A85481B /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		692FE5EDE09A9D59857A973F /* StaffBindingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffBindingTests.swift; sourceTree = "<group>"; };
 		692FF34639D9170594D4853C /* Cash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Cash.swift; sourceTree = "<group>"; };
 		6970656A9A0E43A07044C344 /* Catalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalog.swift; sourceTree = "<group>"; };
 		6A5A335B1A7DB0D58B1DEA64 /* ServiceDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceDrafts.swift; sourceTree = "<group>"; };
@@ -383,6 +388,7 @@
 		806C8FD8DE9F085AFCEEC8AB /* ShiftBreakdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftBreakdown.swift; sourceTree = "<group>"; };
 		808C367179EBB43F4143923F /* Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Service.swift; sourceTree = "<group>"; };
 		80E73B408973D3865755A4F4 /* AddServiceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddServiceSheet.swift; sourceTree = "<group>"; };
+		821D504BA84289CC198CEC2E /* StaffBindingMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffBindingMenu.swift; sourceTree = "<group>"; };
 		8302D9E4251B164B428A56A9 /* RevisionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevisionDetailView.swift; sourceTree = "<group>"; };
 		836825577E80C15BA76F849E /* ImagePreparerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreparerTests.swift; sourceTree = "<group>"; };
 		843B5CA992CEA3AE0C5D4D73 /* BookingRequestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookingRequestDetailView.swift; sourceTree = "<group>"; };
@@ -685,6 +691,7 @@
 				640DCF9373A3B925897F1920 /* ServiceCardTests.swift */,
 				87BE563101A8FCFD9AD2EF40 /* ServiceLinksTests.swift */,
 				B7376C571BFA57295D5F70F2 /* ServicePickingTests.swift */,
+				692FE5EDE09A9D59857A973F /* StaffBindingTests.swift */,
 				2EF2B69CC60FFD9AA74F14C2 /* StockBatchDraftTests.swift */,
 				4A9D33DAEEECB9574FBA1D11 /* VisitConsumptionTests.swift */,
 				BCC393D1EC084A74146D2EAA /* WarehouseGroupingTests.swift */,
@@ -991,6 +998,8 @@
 				24243E2A2B75BBAE69EBC518 /* ChatsListView.swift */,
 				7C205AFC64CEEB734DEAA36E /* ChatView.swift */,
 				FE769D54A2C3002367984A9F /* ClientChatView.swift */,
+				02D37E8DF7351A8D786FADCF /* StaffBinding.swift */,
+				821D504BA84289CC198CEC2E /* StaffBindingMenu.swift */,
 				5DAA1D7170D1E5DD97048737 /* StaffChatBanner.swift */,
 			);
 			path = Chats;
@@ -1302,6 +1311,8 @@
 				A447B7435E512065F9CEC6FB /* ShiftStore.swift in Sources */,
 				BE4C5679F576E5F304CC0A30 /* ShiftsHistoryView.swift in Sources */,
 				A6B41B9E086569C6EBBB7CBA /* SizePickerSheet.swift in Sources */,
+				A07FE279730B2AB34939C82E /* StaffBinding.swift in Sources */,
+				307B738A097A0D415D2F31D1 /* StaffBindingMenu.swift in Sources */,
 				DB74B98E9A28F07EC2426EA0 /* StaffBotSection.swift in Sources */,
 				CBE00A3690728DF459EDEC64 /* StaffChatBanner.swift in Sources */,
 				680E6096D6AA6FDE20826B62 /* StockBatchDraft.swift in Sources */,
@@ -1354,6 +1365,7 @@
 				753A857822C167F8EC540BA6 /* ServiceCardTests.swift in Sources */,
 				AD1129526EB6ECE087C60034 /* ServiceLinksTests.swift in Sources */,
 				9D5F4A01038214199B77C9DA /* ServicePickingTests.swift in Sources */,
+				266CF5E2469904EEF102D8B6 /* StaffBindingTests.swift in Sources */,
 				35671AA8FAF34CCD55CC1AF4 /* StockBatchDraftTests.swift in Sources */,
 				10FC6C85EE8A5C81AAFF7A96 /* VisitConsumptionTests.swift in Sources */,
 				EDE536072699C450D107925B /* WarehouseGroupingTests.swift in Sources */,

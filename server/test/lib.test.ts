@@ -29,6 +29,15 @@ describe('phone normalization', () => {
     ['9991234567', '+79991234567'],
     ['+1 202 555 0143', '+12025550143'],
     ['8 (999) 123 45 67', '+79991234567'],
+    // Telegram's contact `phone_number`: usually without «+», sometimes with it.
+    ['79931234567', '+79931234567'],
+    ['+79931234567', '+79931234567'],
+    // Employee profile phones as people type them.
+    ['8 (993) 123-45-67', '+79931234567'],
+    ['8-993-123-45-67', '+79931234567'],
+    ['+7 993 123 45 67', '+79931234567'],
+    ['(993) 123-45-67', '+79931234567'],
+    [' +7 993 123-45-67 ', '+79931234567'],
   ])('normalizes %s → %s', (input, expected) => {
     expect(normalizePhone(input)).toBe(expected);
   });
