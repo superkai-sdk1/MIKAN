@@ -61,7 +61,7 @@ export function jewelryLines(db: DbOrTx, rows: ProductRow[], services: ServiceRo
 export function productCaption(p: ProductRow, sizes: VariantRow[]): string {
   const { named, min, differ } = sizePrices(p, sizes);
   const title = [p.name, p.material, p.thicknessMm != null ? formatThickness(p.thicknessMm) : null].filter(Boolean).join(' · ');
-  const head = `${title} — ${differ ? 'от ' : ''}${formatRub(min)}`;
+  const head = `**${title}** — ${differ ? 'от ' : ''}${formatRub(min)}`;
   return named.length ? `${head}\nРазмеры в наличии: ${sizeList(p, named, differ)}` : head;
 }
 

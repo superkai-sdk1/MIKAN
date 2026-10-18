@@ -101,9 +101,9 @@ describe('bot: jewelry sizes in stock, never quantities', () => {
       {
         chatId: CHAT,
         photo: { kind: 'file', path: path.join(uploads, 'labret.jpg') },
-        caption: 'Лабрет · Титан ASTM F136 · 1.2 мм (16G) — 1 500 ₽\nРазмеры в наличии: 6 мм, 10 мм',
+        caption: '**Лабрет · Титан ASTM F136 · 1.2 мм (16G)** — 1 500 ₽\nРазмеры в наличии: 6 мм, 10 мм',
       },
     ]);
-    expect(t.gateway.textsTo(CHAT)).toEqual(['Вот что есть:', 'Кольцо — от 900 ₽\nРазмеры в наличии: 8 мм — 900 ₽, 10 мм — 1 100 ₽']);
+    expect(t.gateway.textsTo(CHAT)).toEqual(['Вот что есть:', '**Кольцо** — от 900 ₽\nРазмеры в наличии: 8 мм — 900 ₽, 10 мм — 1 100 ₽']);
   });
 });

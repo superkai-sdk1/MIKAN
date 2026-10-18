@@ -10,7 +10,7 @@ import type { ProductRow, ServiceRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
 import type { JewelryList } from './callback-data.js';
 import { buildClientToolHandlers } from './client-tools.js';
-import { photoMessageText, servicePhotoSource } from './media.js';
+import { photoMessageText, serviceCaptionTitle, servicePhotoSource } from './media.js';
 import { HISTORY_LIMIT } from './prompt.js';
 import { clientLabel, notifyStaff } from './staff.js';
 
@@ -202,7 +202,8 @@ function activeService(ctx: AppContext, id: number): ServiceRow | undefined {
 /** Whether this service's picture is already in the part of the chat the model sees. */
 function serviceShownRecently(ctx: AppContext, chatId: number | null, service: ServiceRow): boolean {
   if (chatId === null) return false;
-  const marker = photoMessageText(`${service.name}\n`);
+  // Captions before bold titles had the plain name.
+  const markers = [photoMessageText(`${serviceCaptionTitle(service.name)}\n`), photoMessageText(`${service.name}\n`)];
   return ctx.db
     .select({ role: botMessages.role, text: botMessages.text })
     .from(botMessages)
@@ -210,7 +211,7 @@ function serviceShownRecently(ctx: AppContext, chatId: number | null, service: S
     .orderBy(desc(botMessages.id))
     .limit(HISTORY_LIMIT)
     .all()
-    .some((m) => m.role === 'assistant' && m.text.startsWith(marker));
+    .some((m) => m.role === 'assistant' && markers.some((marker) => m.text.startsWith(marker)));
 }
 
 export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolSink): Record<string, ToolHandler> {

@@ -13,7 +13,7 @@ import { createTestApp, make, message, ScriptedAi, text, toolUse, type TestApp }
 const CHAT = 700_002;
 const from = { chatId: CHAT, telegramName: 'Мария', username: 'masha' };
 const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(16)]);
-const NIPPLE_CAPTION = 'Соски\nот 2 500 до 4 000 ₽\nВарианты:\n• Один — 2 500 ₽\n• Два — 4 000 ₽\nПрокол через сосок';
+const NIPPLE_CAPTION = '**Соски**\nот 2 500 до 4 000 ₽\nВарианты:\n• Один — 2 500 ₽\n• Два — 4 000 ₽\nПрокол через сосок';
 
 describe('bot: services price list and show_service', () => {
   let t: TestApp;
@@ -138,7 +138,7 @@ describe('bot: services price list and show_service', () => {
     });
     ai.push(message([toolUse('s', 'show_service', { serviceId: s.id })], 'tool_use'), message([text('Мини-тату — от 5 000 ₽.')]));
     await say('Что по мини тату?');
-    expect(t.gateway.photos).toEqual([{ chatId: CHAT, photo: { kind: 'file', path: work }, caption: 'Тату мини\nот 5 000 ₽' }]);
+    expect(t.gateway.photos).toEqual([{ chatId: CHAT, photo: { kind: 'file', path: work }, caption: '**Тату мини**\nот 5 000 ₽' }]);
 
     const other = await make(t, '/api/services', { name: 'Брови', category: 'other', price: 0, durationMin: 30, imageUrl: 'https://cdn.test/brows.png' });
     t.gateway.sendPhoto = async () => {
@@ -146,7 +146,7 @@ describe('bot: services price list and show_service', () => {
     };
     ai.push(message([toolUse('o', 'show_service', { serviceId: other.id })], 'tool_use'), message([text('Брови — бесплатно.')]));
     await say('А брови?');
-    expect(t.gateway.textsTo(CHAT)).toEqual(['Мини-тату — от 5 000 ₽.', 'Брови — бесплатно.', 'Брови\nБесплатно']);
+    expect(t.gateway.textsTo(CHAT)).toEqual(['Мини-тату — от 5 000 ₽.', 'Брови — бесплатно.', '**Брови**\nБесплатно']);
   });
 
   it('only notes the picture in /bot/test', async () => {

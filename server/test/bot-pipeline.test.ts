@@ -140,12 +140,12 @@ describe('bot AI pipeline', () => {
       );
       await say('Покажите украшения');
       expect(ai.calls[0]!.system).toEqual(expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining(`[id ${withPhoto.id}] Лабрет · Титан · 1 500 ₽ · есть фото`) })]));
-      expect(t.gateway.textsTo(CHAT)).toEqual(['Вот варианты:', 'Кольцо — 900 ₽']);
+      expect(t.gateway.textsTo(CHAT)).toEqual(['Вот варианты:', '**Кольцо** — 900 ₽']);
       expect(t.gateway.photos).toEqual([
-        { chatId: CHAT, photo: { kind: 'file', path: path.join(uploads, 'labret.jpg') }, caption: 'Лабрет · Титан — 1 500 ₽' },
+        { chatId: CHAT, photo: { kind: 'file', path: path.join(uploads, 'labret.jpg') }, caption: '**Лабрет · Титан** — 1 500 ₽' },
       ]);
       const history = (await t.api('GET', `/api/bot/chats/${CHAT}/messages`)).json().items.map((m: { text: string }) => m.text);
-      expect(history).toEqual(['Покажите украшения', 'Вот варианты:', '[Фото] Лабрет · Титан — 1 500 ₽', 'Кольцо — 900 ₽']);
+      expect(history).toEqual(['Покажите украшения', 'Вот варианты:', '[Фото] **Лабрет · Титан** — 1 500 ₽', '**Кольцо** — 900 ₽']);
     });
 
     it('falls back politely on refusal and on API errors, flagging the chat and alerting staff', async () => {

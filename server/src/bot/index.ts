@@ -3,6 +3,7 @@ import type { InlineKeyboardMarkup, Message, ReplyKeyboardMarkup } from 'grammy/
 import type { AppContext } from '../context.js';
 import { getBotSettings, getCachedBotUsername, setCachedBotUsername } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
+import { toPlainText, toTelegramHtml } from '../lib/telegram-format.js';
 import { splitMessage, TELEGRAM_MAX_CAPTION, TELEGRAM_MAX_MESSAGE, truncate } from '../lib/text.js';
 import {
   BotSendError,
@@ -39,6 +40,23 @@ function sendMarkup(options: SendOptions): { reply_markup?: InlineKeyboardMarkup
 /** Editing a message to exactly what it already shows is a harmless no-op for us. */
 const notModified = (err: unknown): boolean =>
   err instanceof GrammyError && err.error_code === 400 && /message is not modified/i.test(err.description);
+
+/** Telegram rejected the HTML made from the message's Markdown. */
+const badMarkup = (err: unknown): boolean =>
+  err instanceof GrammyError && err.error_code === 400 && /can't parse entities|unsupported start tag|can't find end/i.test(err.description);
+
+/**
+ * Sends `text` with its light Markdown rendered as Telegram HTML; when Telegram rejects the markup, sends it again
+ * plain, markers stripped (see lib/telegram-format.ts).
+ */
+async function withMarkup<T>(text: string, send: (formatted: { text: string; parse_mode?: 'HTML' }) => Promise<T>): Promise<T> {
+  try {
+    return await send({ text: toTelegramHtml(text), parse_mode: 'HTML' });
+  } catch (err) {
+    if (!badMarkup(err)) throw err;
+    return send({ text: toPlainText(text) });
+  }
+}
 
 function toSendError(err: unknown): BotSendError {
   if (err instanceof GrammyError) {
@@ -221,10 +239,13 @@ export class BotController implements BotGateway {
     for (const [index, chunk] of chunks.entries()) {
       const last = index === chunks.length - 1;
       try {
-        const sent = await bot.api.sendMessage(chatId, chunk, {
-          link_preview_options: { is_disabled: true },
-          ...(last ? sendMarkup(options) : {}),
-        });
+        const sent = await withMarkup(chunk, (formatted) =>
+          bot.api.sendMessage(chatId, formatted.text, {
+            ...(formatted.parse_mode ? { parse_mode: formatted.parse_mode } : {}),
+            link_preview_options: { is_disabled: true },
+            ...(last ? sendMarkup(options) : {}),
+          }),
+        );
         messageId = sent.message_id;
       } catch (err) {
         throw toSendError(err);
@@ -251,10 +272,13 @@ export class BotController implements BotGateway {
     const bot = this.requireBot();
     const { key, input } = this.photoInput(photo);
     try {
-      const sent = await bot.api.sendPhoto(chatId, input, {
-        caption: truncate(caption, TELEGRAM_MAX_CAPTION),
-        ...(options.keyboard ? { reply_markup: markup(options.keyboard) } : {}),
-      });
+      const sent = await withMarkup(truncate(caption, TELEGRAM_MAX_CAPTION), (formatted) =>
+        bot.api.sendPhoto(chatId, input, {
+          caption: formatted.text,
+          ...(formatted.parse_mode ? { parse_mode: formatted.parse_mode } : {}),
+          ...(options.keyboard ? { reply_markup: markup(options.keyboard) } : {}),
+        }),
+      );
       this.rememberFileId(key, sent);
       return { messageId: sent.message_id };
     } catch (err) {
@@ -266,11 +290,13 @@ export class BotController implements BotGateway {
     const bot = this.requireBot();
     const { key, input } = this.photoInput(photo);
     try {
-      const edited = await bot.api.editMessageMedia(
-        chatId,
-        messageId,
-        { type: 'photo', media: input, caption: truncate(caption, TELEGRAM_MAX_CAPTION) },
-        { reply_markup: markup(keyboard ?? []) },
+      const edited = await withMarkup(truncate(caption, TELEGRAM_MAX_CAPTION), (formatted) =>
+        bot.api.editMessageMedia(
+          chatId,
+          messageId,
+          { type: 'photo', media: input, caption: formatted.text, ...(formatted.parse_mode ? { parse_mode: formatted.parse_mode } : {}) },
+          { reply_markup: markup(keyboard ?? []) },
+        ),
       );
       this.rememberFileId(key, edited);
     } catch (err) {
@@ -281,10 +307,13 @@ export class BotController implements BotGateway {
   async editText(chatId: number, messageId: number, text: string, keyboard?: InlineKeyboard): Promise<void> {
     const bot = this.requireBot();
     try {
-      await bot.api.editMessageText(chatId, messageId, truncate(text, TELEGRAM_MAX_MESSAGE), {
-        link_preview_options: { is_disabled: true },
-        reply_markup: markup(keyboard ?? []),
-      });
+      await withMarkup(truncate(text, TELEGRAM_MAX_MESSAGE), (formatted) =>
+        bot.api.editMessageText(chatId, messageId, formatted.text, {
+          ...(formatted.parse_mode ? { parse_mode: formatted.parse_mode } : {}),
+          link_preview_options: { is_disabled: true },
+          reply_markup: markup(keyboard ?? []),
+        }),
+      );
     } catch (err) {
       if (!notModified(err)) throw toSendError(err);
     }

@@ -8,11 +8,14 @@ import type { PhotoSource } from './gateway.js';
 const CAPTION_DESCRIPTION_MAX = 300;
 
 /** Service card caption: name, price, variants and a short description (within Telegram's caption limit). */
+/** The first line of a service picture's caption: the service name in bold. */
+export const serviceCaptionTitle = (name: string): string => `**${name}**`;
+
 export function serviceCaption(s: ServiceRow): string {
   const variants = parseVariants(s.variantsJson);
   const description = s.description?.trim();
   const lines = [
-    s.name,
+    serviceCaptionTitle(s.name),
     formatServicePrice(s.price, s.priceMax, s.priceFrom),
     ...(variants.length ? ['Варианты:', ...variants.map((v) => `• ${v.name} — ${formatRub(v.price)}`)] : []),
     ...(description ? [truncate(description, CAPTION_DESCRIPTION_MAX)] : []),

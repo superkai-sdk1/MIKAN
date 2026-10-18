@@ -171,7 +171,7 @@ describe('bot: interactive catalogs', () => {
 
     await press(button(services.keyboard, 'Пирсинг · Ухо'), 600, false);
     const card = t.gateway.sent.at(-1)!; // Хеликс has no picture → a text card
-    expect(card.text).toBe('💉 Пирсинг · Ухо\n\nХеликс\n3 000 ₽');
+    expect(card.text).toBe('💉 Пирсинг · Ухо\n\n**Хеликс**\n3 000 ₽');
     expect(labels(card.keyboard)).toEqual([['📅 Записаться'], ['💎 Подходящие украшения'], ['📂 Все услуги']]);
 
     ai.push(message([text('С радостью запишу вас на хеликс! Как вас зовут?')]));
