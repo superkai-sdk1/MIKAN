@@ -25,10 +25,7 @@ struct ClientEditorView: View {
                         .textContentType(.givenName)
                     TextField("Фамилия", text: $draft.lastName)
                         .textContentType(.familyName)
-                    Toggle("Указать дату рождения", isOn: $draft.hasBirthday.animation())
-                    if draft.hasBirthday {
-                        DatePicker("Дата рождения", selection: $draft.birthday, in: ...Date.now, displayedComponents: .date)
-                    }
+                    ClientBirthdayFields(draft: $draft)
                 } header: {
                     Text("Клиент")
                 }
@@ -36,8 +33,8 @@ struct ClientEditorView: View {
                     TextField(draft.requiresPhone ? "Телефон" : "Телефон (не указан)", text: $draft.phone)
                         .keyboardType(.phonePad)
                         .textContentType(.telephoneNumber)
-                    handleField("Ник в Telegram", text: $draft.telegramNick)
-                    handleField("Instagram", text: $draft.instagram)
+                    ClientHandleField(title: "Ник в Telegram", text: $draft.telegramNick)
+                    ClientHandleField(title: "Instagram", text: $draft.instagram)
                 } header: {
                     Text("Контакты")
                 } footer: {
@@ -89,17 +86,6 @@ struct ClientEditorView: View {
             Text("Обязательны имя и телефон. \(hint)")
         } else if !draft.requiresPhone, draft.phone.trimmed.isEmpty {
             Text("У клиента нет телефона (карточка из импорта). Добавьте его, когда узнаете.")
-        }
-    }
-
-    /// "@" + text field for a username.
-    private func handleField(_ title: String, text: Binding<String>) -> some View {
-        HStack(spacing: 4) {
-            Text("@").foregroundStyle(.secondary)
-            TextField(title, text: text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .accessibilityLabel(title)
         }
     }
 

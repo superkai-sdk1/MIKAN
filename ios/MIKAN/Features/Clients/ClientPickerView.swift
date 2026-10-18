@@ -27,6 +27,8 @@ struct ClientPickerView: View {
                     TextField("Телефон", text: $newClient.phone)
                         .keyboardType(.phonePad)
                         .textContentType(.telephoneNumber)
+                    ClientHandleField(title: "Ник в Telegram", text: $newClient.telegramNick)
+                    ClientBirthdayFields(draft: $newClient)
                     Button {
                         createClient()
                     } label: {
