@@ -26,7 +26,7 @@ If the implementation must deviate, update this file in the same change.
   `message` is always human-readable Russian; the app shows it as is.
 - All employees have identical permissions.
 - Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /receipts`, `POST /cash/operations`,
-  `POST /products/:id/movements`, `POST /products/:id/movements/batch`
+  `POST /products/:id/movements`, `POST /products/:id/movements/batch`, `POST /products/:id/purchases`
   and the prepayment writes `POST /appointments/:id/deposit`, `…/deposit/refund`, `…/deposit/retain` accept an optional `Idempotency-Key: <UUID>` header. The app generates one key per user action and resends the
   same key when it retries that action (timeout, dropped connection, repeated tap after an unclear outcome).
   - The first request with a key runs normally; its successful response is stored for **24 h**, scoped to the
@@ -166,8 +166,9 @@ service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` f
   gift cards…; sizes allowed, listed by the bot as «Товары») | `consumable` (used in procedures, not sold).
 - `stockMode` (consumables only, else always `quantity`): `quantity` — counted in units like everything else;
   `presence` — only «есть / заканчивается / нет» is tracked (`presenceStatus`: `ok` | `low` | `out`, `null` in
-  `quantity` mode). Presence consumables take no stock movements (`400`); staff mark the status in the card or during a
-  stock count. `lowStock` of a presence consumable = `presenceStatus != "ok"`.
+  `quantity` mode). Presence consumables take no quantity movements (`400`); staff mark the status in the card or during
+  a stock count, and record each restock with what it cost (`POST /products/:id/purchases`), so the analytics counts
+  their expense. `lowStock` of a presence consumable = `presenceStatus != "ok"`.
 - `variants` — the sizes of the product (always at least one), in the order staff arranged them. Stock lives on
   variants: every receipt, sale, write-off, usage, count and return moves one variant.
   - A product without sizes has a single variant with `name: ""`. With two or more variants every `name` is required
@@ -197,10 +198,12 @@ service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` f
 ```json
 { "id": 1, "productId": 1, "productName": "Лабрет", "variantId": 5, "variantName": "8 мм",
   "delta": -1, "quantityAfter": 11,
-  "type": "sale", "note": null, "saleId": 5, "appointmentId": null, "revisionId": null,
+  "type": "sale", "note": null, "saleId": 5, "appointmentId": null, "revisionId": null, "amount": null,
   "employee": { "id": 1, "name": "Анна", "color": "#FF7A1A" }, "createdAt": "..." }
 ```
-`type`: `receipt` (приход) | `sale` | `return` | `writeoff` (списание) | `usage` (расход на процедуру) | `adjustment` (инвентаризация).
+`type`: `receipt` (приход) | `sale` | `return` | `writeoff` (списание) | `usage` (расход на процедуру) | `adjustment` (инвентаризация)
+| `purchase` (покупка расходника «есть / нет»: `delta` 0, `quantityAfter` 0, `amount` — what it cost).
+`amount` — rubles paid; set only on `purchase`, `null` otherwise.
 `variantName` — the size's current name (`""` for a product without sizes); `quantityAfter` — the stock of that size
 after the movement. `revisionId` — the stock count (`StockRevision`) an `adjustment` came from, else `null`.
 
@@ -518,6 +521,7 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | PATCH | `/products/:id` | any of the POST fields | `Product` |
 | POST | `/products/:id/movements` | `{ type: "receipt"\|"writeoff"\|"usage"\|"adjustment", variantId?, quantity, note? }` | `{ product: Product, movement: StockMovement }` · accepts `Idempotency-Key` |
 | POST | `/products/:id/movements/batch` | `{ type, note?, lines: [{ variantId, quantity }] }` | `{ product: Product, movements: [StockMovement] }` · accepts `Idempotency-Key` |
+| POST | `/products/:id/purchases` | `{ amount, note?, presenceStatus? }` | `{ product: Product, movement: StockMovement }` · accepts `Idempotency-Key` |
 | GET | `/products/:id/movements?variantId=&limit=&offset=` | — | `{ items: [StockMovement], total }` |
 | GET | `/products/:id/history?variantId=&limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who bought this product (or this size) and when, newest first |
 | GET | `/stock/movements?type=&limit=&offset=` | — | `{ items: [StockMovement], total }` newest first |
@@ -567,6 +571,11 @@ Movements:
   1–50 lines with distinct `variantId`s. `receipt` / `writeoff` / `usage` lines need `quantity > 0`; `adjustment`
   lines whose count equals the current stock are skipped, and a count that changes nothing → `400` «Остатки не
   изменились». `movements` are in line order.
+- `purchases` — a restock of a **presence** consumable (gloves, wipes…) with what it cost: `amount` 1…100 000 000 ₽
+  (required), `note` (supplier, how many packs), `presenceStatus` after it (default `ok`). Writes a `purchase`
+  movement (`delta` 0, `amount`) and sets the status. Other products → `400` «Сумму покупки записывают для расходников
+  «есть / нет». Для остальных — приход количеством.». The analytics counts the amount as a stock expense of the day
+  of the purchase (`stock.purchases`).
 
 Stock counts (ревизии):
 | Method | Path | Body | Response |
@@ -864,7 +873,8 @@ picture of `[from, to)` plus the headline numbers of the **previous period of th
                 "top": [ { "productId": 1, "name": "Лабрет", "kind": "jewelry", …same margin keys,
                            "variants": [ { "variantId": 2, "name": "8 мм", …same margin keys } ] } ] },
   "stock": { "writeoffs": { "quantity": 2, "value": 800, "unitsWithoutCost": 0 },
-             "usage": { "quantity": 8, "value": 50, "unitsWithoutCost": 3 }, "expenses": 850,
+             "usage": { "quantity": 8, "value": 50, "unitsWithoutCost": 3 },
+             "purchases": { "count": 1, "value": 3500 }, "expenses": 4350,
              "top": [ { "productId": 1, "name": "Лабрет", "kind": "jewelry", "type": "writeoff", "quantity": 2, "value": 800 } ],
              "onHand": { "units": 118, "value": 6850, "unitsWithoutCost": 10,
                          "byKind": [ { "kind": "jewelry", "units": 16, "value": 5900, "unitsWithoutCost": 3 } ] } },
@@ -916,8 +926,9 @@ Fields:
   product without sizes; items sold before sizes existed have no size entry). Costs are today's, not the ones at sale
   time.
 - `stock` — `writeoffs` and `usage` (consumables used in procedures) recorded in the period: `quantity` (units),
-  `value` at the current unit cost, `unitsWithoutCost`; `expenses = writeoffs.value + usage.value`; `top` — up to 20
-  products by value of what left the stock (`type`: `writeoff` | `usage`). `onHand` — a snapshot **now**, not at the
+  `value` at the current unit cost, `unitsWithoutCost`; `purchases` — restocks of presence consumables: `count` and
+  `value` (the amounts paid); `expenses = writeoffs.value + usage.value + purchases.value`; `top` — up to 20 products
+  by value (`type`: `writeoff` | `usage` | `purchase`; for `purchase` `quantity` is the number of purchases). `onHand` — a snapshot **now**, not at the
   end of the period: units in stock of every product (inactive ones included), their value at cost,
   `unitsWithoutCost`, and the same split `byKind`.
 - `deposits` — exactly the summary's prepayments block.
