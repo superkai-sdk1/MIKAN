@@ -3,10 +3,10 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { products } from '../db/schema.js';
-import { createProduct, productSearchFields } from '../domain/products.js';
-import { getProductRow, listMovements, recordManualMovement, serializeMovements } from '../domain/stock.js';
+import { createProduct, hasLowSize, serializeProduct, serializeProducts, updateProduct } from '../domain/products.js';
+import { getProductRow, listMovements, recordBatchMovement, recordManualMovement, serializeMovements } from '../domain/stock.js';
 import { idempotent } from '../lib/idempotency.js';
-import { productOut, type ProductRow } from '../lib/serialize.js';
+import { THREAD_TYPES } from '../lib/jewelry.js';
 import { normalizeSearchTerm } from '../lib/text.js';
 import {
   idParams,
@@ -17,54 +17,71 @@ import {
   pagination,
   parse,
   queryBool,
+  queryId,
   requiredText,
 } from '../lib/validation.js';
 
+const id = z.number().int().positive();
 const kind = z.enum(['jewelry', 'consumable']);
-const photoUrl = z
+const photoPath = z
   .string()
   .trim()
   .max(500)
-  .refine((v) => v === '' || v.startsWith('/uploads/') || /^https?:\/\//.test(v), {
+  .refine((v) => v.startsWith('/uploads/') || /^https?:\/\//.test(v), {
     message: 'ссылка на фото должна начинаться с /uploads/ или http(s)://',
-  })
+  });
+const photoUrl = z
+  .union([z.literal(''), photoPath])
   .nullish()
   .transform((v) => (v === '' ? null : v));
 const quantity = z.number().int().min(0).max(1_000_000);
+const thicknessMm = z
+  .number()
+  .positive()
+  .max(30)
+  .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, { message: 'не больше двух знаков после запятой' })
+  .nullish();
 
-const textFields = {
+const variant = z.object({
+  id: id.nullish(),
+  name: nullableText(100),
+  sku: nullableText(100),
+  price: money.nullish(),
+  cost: money.nullish(),
+  minQuantity: nonNull(quantity),
+  initialQuantity: nonNull(quantity),
+});
+
+const fields = {
   sku: nullableText(100),
   category: nullableText(100),
   material: nullableText(200),
-  size: nullableText(100),
+  threadType: z.enum(THREAD_TYPES).nullish(),
+  thicknessMm,
+  color: nullableText(100),
+  stone: nullableText(100),
+  supplier: nullableText(100),
   description: nullableText(5000),
+  price: nonNull(money),
+  cost: money.nullish(),
+  unit: nonNull(requiredText(20)),
+  photos: nonNull(z.array(photoPath).max(10)),
   photoUrl,
+  serviceIds: nonNull(z.array(id).max(30)),
+  active: nonNull(z.boolean()),
+  variants: nonNull(z.array(variant).min(1).max(50)),
+  // Older builds describe the only size with these.
+  size: nullableText(100),
+  minQuantity: nonNull(quantity),
 };
-const createBody = z.object({
-  kind,
-  name: requiredText(200),
-  ...textFields,
-  price: nonNull(money),
-  cost: money.nullish(),
-  minQuantity: nonNull(quantity),
-  unit: nonNull(requiredText(20)),
-  active: nonNull(z.boolean()),
-  initialQuantity: nonNull(quantity),
-});
-const patchBody = z.object({
-  kind: nonNull(kind),
-  name: nonNull(requiredText(200)),
-  ...textFields,
-  price: nonNull(money),
-  cost: money.nullish(),
-  minQuantity: nonNull(quantity),
-  unit: nonNull(requiredText(20)),
-  active: nonNull(z.boolean()),
-});
-const movementBody = z.object({
-  type: z.enum(['receipt', 'writeoff', 'usage', 'adjustment']),
-  quantity,
+const createBody = z.object({ kind, name: requiredText(200), ...fields, initialQuantity: nonNull(quantity) });
+const patchBody = z.object({ kind: nonNull(kind), name: nonNull(requiredText(200)), ...fields });
+const manualType = z.enum(['receipt', 'writeoff', 'usage', 'adjustment']);
+const movementBody = z.object({ type: manualType, variantId: id.nullish(), quantity, note: nullableText(500) });
+const batchBody = z.object({
+  type: manualType,
   note: nullableText(500),
+  lines: z.array(z.object({ variantId: id, quantity })).min(1).max(50),
 });
 const listQuery = z.object({
   kind: kind.optional(),
@@ -73,6 +90,7 @@ const listQuery = z.object({
   includeInactive: queryBool,
 });
 const movementTypes = z.enum(['receipt', 'sale', 'return', 'writeoff', 'usage', 'adjustment']);
+const sizeQuery = pagination.extend({ variantId: queryId });
 
 export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { db } = ctx;
@@ -82,7 +100,7 @@ export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
     const conditions = [];
     if (!q.includeInactive) conditions.push(eq(products.active, true));
     if (q.kind) conditions.push(eq(products.kind, q.kind));
-    if (q.lowStock) conditions.push(sql`${products.quantity} <= ${products.minQuantity}`);
+    if (q.lowStock) conditions.push(hasLowSize);
     if (q.search) conditions.push(sql`${products.searchText} like ${likePattern(normalizeSearchTerm(q.search))} escape '\\'`);
     const rows = db
       .select()
@@ -90,52 +108,23 @@ export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(asc(products.categorySort), asc(products.nameSort), asc(products.id))
       .all();
-    return { items: rows.map(productOut) };
+    return { items: serializeProducts(db, rows) };
   });
 
   app.get('/products/:id', async (request) => {
     const { id } = parse(idParams, request.params);
-    return productOut(getProductRow(db, id));
+    return serializeProduct(db, getProductRow(db, id));
   });
 
   app.post('/products', async (request) => {
     const input = parse(createBody, request.body);
-    const row = db.transaction((tx) => createProduct(tx, input, request.employee.id));
-    return productOut(row);
+    return db.transaction((tx) => serializeProduct(tx, createProduct(tx, input, request.employee.id)));
   });
 
   app.patch('/products/:id', async (request) => {
     const { id } = parse(idParams, request.params);
     const input = parse(patchBody, request.body);
-    const current = getProductRow(db, id);
-    const pick = <K extends keyof typeof input & keyof ProductRow>(k: K) =>
-      (input[k] === undefined ? current[k] : input[k]) as ProductRow[K];
-    const base = {
-      name: input.name ?? current.name,
-      sku: pick('sku'),
-      category: pick('category'),
-      material: pick('material'),
-      size: pick('size'),
-    };
-    const row = db
-      .update(products)
-      .set({
-        ...base,
-        ...productSearchFields(base),
-        kind: input.kind ?? current.kind,
-        description: pick('description'),
-        price: input.price ?? current.price,
-        cost: pick('cost'),
-        minQuantity: input.minQuantity ?? current.minQuantity,
-        unit: input.unit ?? current.unit,
-        photoUrl: pick('photoUrl'),
-        active: input.active ?? current.active,
-        updatedAt: Date.now(),
-      })
-      .where(eq(products.id, id))
-      .returning()
-      .get();
-    return productOut(row);
+    return serializeProduct(db, updateProduct(db, id, input, request.employee.id));
   });
 
   app.post('/products/:id/movements', async (request, reply) => {
@@ -143,15 +132,24 @@ export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
     const input = parse(movementBody, request.body);
     return idempotent(db, request, reply, (tx) => {
       const { product, movement } = recordManualMovement(tx, id, input, request.employee.id);
-      return { product: productOut(product), movement: serializeMovements(tx, [movement])[0] };
+      return { product: serializeProduct(tx, product), movement: serializeMovements(tx, [movement])[0] };
+    });
+  });
+
+  app.post('/products/:id/movements/batch', async (request, reply) => {
+    const { id } = parse(idParams, request.params);
+    const input = parse(batchBody, request.body);
+    return idempotent(db, request, reply, (tx) => {
+      const { product, movements } = recordBatchMovement(tx, id, input, request.employee.id);
+      return { product: serializeProduct(tx, product), movements: serializeMovements(tx, movements) };
     });
   });
 
   app.get('/products/:id/movements', async (request) => {
     const { id } = parse(idParams, request.params);
-    const q = parse(pagination, request.query);
+    const q = parse(sizeQuery, request.query);
     getProductRow(db, id);
-    return listMovements(db, { productId: id, limit: q.limit, offset: q.offset });
+    return listMovements(db, { productId: id, variantId: q.variantId, limit: q.limit, offset: q.offset });
   });
 
   app.get('/stock/movements', async (request) => {

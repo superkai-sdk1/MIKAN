@@ -16,7 +16,7 @@ import { cancelPendingDepositCodes } from './deposits.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
-import { applyMovement } from './stock.js';
+import { applyMovement, getProductRow, resolveVariant } from './stock.js';
 
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
@@ -326,7 +326,7 @@ function defaultAftercareTemplateId(db: DbOrTx, appointment: AppointmentRow): nu
 export interface CompleteInput {
   sendAftercare: boolean;
   aftercareTemplateId?: number | null;
-  consumables: Array<{ productId: number; quantity: number }>;
+  consumables: Array<{ productId: number; variantId?: number | null; quantity: number }>;
 }
 
 export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput, employeeId: number) {
@@ -342,8 +342,11 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
         .where(and(eq(stockMovements.appointmentId, id), eq(stockMovements.type, 'usage')))
         .get() !== undefined;
     for (const item of consumablesRecorded ? [] : input.consumables) {
+      const product = getProductRow(tx, item.productId);
+      const variant = resolveVariant(tx, product, item.variantId, () => badRequest(`«${product.name}»: выберите размер`));
       applyMovement(tx, {
         productId: item.productId,
+        variantId: variant.id,
         delta: -item.quantity,
         type: 'usage',
         appointmentId: id,

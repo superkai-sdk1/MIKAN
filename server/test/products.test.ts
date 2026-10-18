@@ -58,7 +58,7 @@ describe('products & stock', () => {
 
     const tooMuch = await move({ type: 'writeoff', quantity: 10 });
     expect(tooMuch.statusCode).toBe(409);
-    expect(tooMuch.json().error).toEqual({ code: 'insufficient_stock', message: 'Недостаточно на складе: Лабрет (осталось 9)' });
+    expect(tooMuch.json().error).toEqual({ code: 'insufficient_stock', message: 'Недостаточно на складе: Лабрет — 1.2×8 мм (осталось 9)' });
     expect((await t.api('GET', `/api/products/${p.id}`)).json().quantity).toBe(9);
 
     expect((await move({ type: 'receipt', quantity: 0 })).statusCode).toBe(400);

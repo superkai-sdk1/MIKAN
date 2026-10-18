@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /** All instants are stored as integer milliseconds since epoch (UTC). Money is integer rubles. */
 
@@ -90,6 +90,7 @@ export const services = sqliteTable('services', {
   updatedAt: ms('updated_at').notNull(),
 });
 
+/** Jewelry and consumables. Stock lives on `product_variants` (sizes); a product always has at least one. */
 export const products = sqliteTable(
   'products',
   {
@@ -101,20 +102,70 @@ export const products = sqliteTable(
     category: text('category'),
     categorySort: text('category_sort').notNull().default(''),
     material: text('material'),
-    size: text('size'),
+    /** `internal` | `external` | `threadless`; null — not specified. */
+    threadType: text('thread_type'),
+    /** Bar / wire thickness, mm. */
+    thicknessMm: real('thickness_mm'),
+    color: text('color'),
+    stone: text('stone'),
+    supplier: text('supplier'),
     description: text('description'),
     price: integer('price').notNull(),
     cost: integer('cost'),
-    quantity: integer('quantity').notNull().default(0),
-    minQuantity: integer('min_quantity').notNull().default(0),
     unit: text('unit').notNull().default('шт'),
+    /** The cover photo: always `photos[0]` (kept as a column for the bot and the lists). */
     photoUrl: text('photo_url'),
+    /** JSON array of upload paths, the cover first. */
+    photosJson: text('photos_json').notNull().default('[]'),
     active: bool('active').notNull().default(true),
+    /** Built from the product's text fields and its sizes (names, SKUs). */
     searchText: text('search_text').notNull().default(''),
     createdAt: ms('created_at').notNull(),
     updatedAt: ms('updated_at').notNull(),
   },
   (t) => [index('products_kind_idx').on(t.kind)],
+);
+
+/**
+ * A size of a product («8 мм») with its own stock; a product without sizes has one variant named ''. `sku`, `price`
+ * and `cost` override the product's when set. A removed size that has history is `archived` (hidden, never deleted).
+ */
+export const productVariants = sqliteTable(
+  'product_variants',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    productId: integer('product_id')
+      .notNull()
+      .references(() => products.id),
+    name: text('name').notNull().default(''),
+    sku: text('sku'),
+    price: integer('price'),
+    cost: integer('cost'),
+    quantity: integer('quantity').notNull().default(0),
+    minQuantity: integer('min_quantity').notNull().default(0),
+    archived: bool('archived').notNull().default(false),
+    position: integer('position').notNull().default(0),
+    createdAt: ms('created_at').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  (t) => [
+    index('product_variants_product_idx').on(t.productId, t.position),
+    check('product_variants_quantity_non_negative', sql`${t.quantity} >= 0`),
+  ],
+);
+
+/** Catalog services (piercing zones) a piece of jewelry suits. */
+export const productServices = sqliteTable(
+  'product_services',
+  {
+    productId: integer('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    serviceId: integer('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.productId, t.serviceId] }), index('product_services_service_idx').on(t.serviceId)],
 );
 
 export const cashShifts = sqliteTable(
@@ -236,7 +287,12 @@ export const saleItems = sqliteTable(
       .references(() => sales.id, { onDelete: 'cascade' }),
     type: text('type').notNull(),
     productId: integer('product_id').references(() => products.id),
+    /** The size sold (product items). */
+    variantId: integer('variant_id').references(() => productVariants.id),
+    /** The size's name at the moment of sale; null for services, unnamed sizes and items sold before sizes existed. */
+    variantName: text('variant_name'),
     serviceId: integer('service_id').references(() => services.id),
+    /** Snapshot: «<product> — <size>» for products, the service line name otherwise. */
     name: text('name').notNull(),
     quantity: integer('quantity').notNull(),
     price: integer('price').notNull(),
@@ -331,7 +387,11 @@ export const stockMovements = sqliteTable(
     productId: integer('product_id')
       .notNull()
       .references(() => products.id),
+    variantId: integer('variant_id')
+      .notNull()
+      .references(() => productVariants.id),
     delta: integer('delta').notNull(),
+    /** Stock of the size after the movement. */
     quantityAfter: integer('quantity_after').notNull(),
     type: text('type').notNull(),
     note: text('note'),
@@ -340,7 +400,11 @@ export const stockMovements = sqliteTable(
     employeeId: integer('employee_id').references(() => employees.id),
     createdAt: ms('created_at').notNull(),
   },
-  (t) => [index('stock_movements_product_idx').on(t.productId, t.id), index('stock_movements_type_idx').on(t.type)],
+  (t) => [
+    index('stock_movements_product_idx').on(t.productId, t.id),
+    index('stock_movements_variant_idx').on(t.variantId, t.id),
+    index('stock_movements_type_idx').on(t.type),
+  ],
 );
 
 export const cashOperations = sqliteTable(

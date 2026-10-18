@@ -20,6 +20,8 @@ export interface HistoryFilter {
   clientId?: number;
   serviceId?: number;
   productId?: number;
+  /** One size of `productId`. */
+  variantId?: number;
 }
 
 export interface HistoryPage {
@@ -38,6 +40,8 @@ interface RawEntry {
   name: string;
   serviceId: number | null;
   productId: number | null;
+  variantId: number | null;
+  variantName: string | null;
   quantity: number;
   price: number;
   total: number;
@@ -54,6 +58,8 @@ const lineEntry = (a: AppointmentRow, line: AppointmentServiceRow): RawEntry => 
   name: line.name,
   serviceId: line.serviceId,
   productId: null,
+  variantId: null,
+  variantName: null,
   quantity: 1,
   price: line.price,
   total: line.price,
@@ -71,6 +77,8 @@ const titleEntry = (a: AppointmentRow): RawEntry => ({
   name: a.title?.trim() || UNTITLED_PROCEDURE,
   serviceId: null,
   productId: null,
+  variantId: null,
+  variantName: null,
   quantity: 1,
   price: a.price,
   total: a.price,
@@ -87,6 +95,8 @@ const saleItemEntry = (sale: SaleRow, item: SaleItemRow): RawEntry => ({
   name: item.name,
   serviceId: item.serviceId,
   productId: item.productId,
+  variantId: item.variantId,
+  variantName: item.variantName,
   quantity: item.quantity,
   price: item.price,
   total: item.total,
@@ -98,7 +108,7 @@ const saleItemEntry = (sale: SaleRow, item: SaleItemRow): RawEntry => ({
 
 /** Services performed in completed appointments. */
 function appointmentEntries(db: DbOrTx, f: HistoryFilter): RawEntry[] {
-  if (f.productId !== undefined) return [];
+  if (f.productId !== undefined || f.variantId !== undefined) return [];
   const conditions: SQL[] = [eq(appointments.status, 'completed')];
   if (f.clientId !== undefined) conditions.push(eq(appointments.clientId, f.clientId));
   if (f.serviceId !== undefined) {
@@ -128,6 +138,7 @@ function saleItemEntries(db: DbOrTx, f: HistoryFilter): RawEntry[] {
   if (f.clientId !== undefined) conditions.push(eq(sales.clientId, f.clientId));
   if (f.serviceId !== undefined) conditions.push(eq(saleItems.type, 'service'), eq(saleItems.serviceId, f.serviceId));
   if (f.productId !== undefined) conditions.push(eq(saleItems.type, 'product'), eq(saleItems.productId, f.productId));
+  if (f.variantId !== undefined) conditions.push(eq(saleItems.variantId, f.variantId));
   const rows = db
     .select({ sale: sales, item: saleItems })
     .from(saleItems)
@@ -249,6 +260,8 @@ function hydrate(db: DbOrTx, raw: RawEntry[]): HistoryEntryOut[] {
       name: e.name,
       serviceId: e.serviceId,
       productId: e.productId,
+      variantId: e.variantId,
+      variantName: e.variantName,
       quantity: e.quantity,
       price: e.price,
       total: e.total,
@@ -280,7 +293,7 @@ export function serviceHistory(db: DbOrTx, serviceId: number, page: HistoryPage)
   return historyEntriesPage(db, { serviceId }, page);
 }
 
-export function productHistory(db: DbOrTx, productId: number, page: HistoryPage) {
+export function productHistory(db: DbOrTx, productId: number, page: HistoryPage & { variantId?: number }) {
   getProductRow(db, productId);
-  return historyEntriesPage(db, { productId }, page);
+  return historyEntriesPage(db, { productId, variantId: page.variantId }, page);
 }

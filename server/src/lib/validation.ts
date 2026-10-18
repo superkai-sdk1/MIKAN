@@ -86,6 +86,16 @@ const FIELD_LABELS: Record<string, string> = {
   imagePrompt: 'Описание картинки',
   prompt: 'Описание картинки',
   services: 'Услуги',
+  material: 'Материал',
+  threadType: 'Резьба',
+  thicknessMm: 'Толщина',
+  stone: 'Камень',
+  supplier: 'Поставщик',
+  size: 'Размер',
+  serviceIds: 'Подходящие услуги',
+  variantId: 'Размер',
+  lines: 'Размеры',
+  description: 'Описание',
 };
 
 function fieldLabel(path: PropertyKey[]): string | null {

@@ -1,6 +1,6 @@
 import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, appointmentServices, clients, employees, products, saleItems, sales, services } from '../db/schema.js';
+import { appointments, appointmentServices, clients, employees, products, productVariants, saleItems, sales, services } from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
 import { depositLedgerByAppointment, depositStatusOf, heldAmount, latestDepositCodes } from './deposit-ledger.js';
 import {
@@ -22,6 +22,7 @@ import {
   type SaleOut,
   type SaleRow,
   type ServiceRow,
+  type VariantRow,
 } from '../lib/serialize.js';
 
 const unique = (ids: Array<number | null | undefined>): number[] => [
@@ -50,6 +51,13 @@ export function productsByIds(db: DbOrTx, ids: Array<number | null | undefined>)
   const list = unique(ids);
   if (list.length === 0) return new Map();
   return new Map(db.select().from(products).where(inArray(products.id, list)).all().map((r) => [r.id, r]));
+}
+
+/** Sizes by id, archived ones included (movements and sales still name them). */
+export function variantsByIds(db: DbOrTx, ids: Array<number | null | undefined>): Map<number, VariantRow> {
+  const list = unique(ids);
+  if (list.length === 0) return new Map();
+  return new Map(db.select().from(productVariants).where(inArray(productVariants.id, list)).all().map((r) => [r.id, r]));
 }
 
 /** Service lines of the given appointments, grouped by appointment and ordered by position. */

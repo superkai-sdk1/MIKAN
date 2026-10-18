@@ -7,6 +7,7 @@ export type ClientRow = Row<typeof s.clients>;
 export type ServiceRow = Row<typeof s.services>;
 export type TemplateRow = Row<typeof s.aftercareTemplates>;
 export type ProductRow = Row<typeof s.products>;
+export type VariantRow = Row<typeof s.productVariants>;
 export type MovementRow = Row<typeof s.stockMovements>;
 export type AppointmentRow = Row<typeof s.appointments>;
 export type AppointmentServiceRow = Row<typeof s.appointmentServices>;
@@ -161,31 +162,63 @@ export const templateOut = (t: TemplateRow) => ({
   updatedAt: toIso(t.updatedAt),
 });
 
-export const productOut = (p: ProductRow) => ({
-  id: p.id,
-  kind: p.kind,
-  name: p.name,
-  sku: p.sku,
-  category: p.category,
-  material: p.material,
-  size: p.size,
-  description: p.description,
-  price: p.price,
-  cost: p.cost,
-  quantity: p.quantity,
-  minQuantity: p.minQuantity,
-  unit: p.unit,
-  photoUrl: p.photoUrl,
-  active: p.active,
-  lowStock: p.quantity <= p.minQuantity,
-  createdAt: toIso(p.createdAt),
-  updatedAt: toIso(p.updatedAt),
+export const isLowStock = (v: Pick<VariantRow, 'quantity' | 'minQuantity'>): boolean => v.quantity <= v.minQuantity;
+
+export const variantOut = (v: VariantRow) => ({
+  id: v.id,
+  name: v.name,
+  sku: v.sku,
+  price: v.price,
+  cost: v.cost,
+  quantity: v.quantity,
+  minQuantity: v.minQuantity,
+  lowStock: isLowStock(v),
 });
 
-export const movementOut = (m: MovementRow, productName: string, employee: EmployeeRef | null) => ({
+/**
+ * `variants` — the product's current (not archived) sizes in order. Product-level `quantity`, `minQuantity`,
+ * `lowStock` and `size` are derived from them for older app builds.
+ */
+export const productOut = (p: ProductRow, variants: VariantRow[], serviceIds: number[]) => {
+  const photos = parsePhotos(p.photosJson);
+  const sizeNames = variants.map((v) => v.name.trim()).filter(Boolean);
+  return {
+    id: p.id,
+    kind: p.kind,
+    name: p.name,
+    sku: p.sku,
+    category: p.category,
+    material: p.material,
+    threadType: p.threadType,
+    thicknessMm: p.thicknessMm,
+    color: p.color,
+    stone: p.stone,
+    supplier: p.supplier,
+    description: p.description,
+    price: p.price,
+    cost: p.cost,
+    unit: p.unit,
+    photos,
+    photoUrl: photos[0] ?? null,
+    serviceIds,
+    active: p.active,
+    variants: variants.map(variantOut),
+    quantity: variants.reduce((sum, v) => sum + v.quantity, 0),
+    minQuantity: variants.reduce((sum, v) => sum + v.minQuantity, 0),
+    lowStock: variants.some(isLowStock),
+    size: sizeNames.length ? sizeNames.join(', ') : null,
+    createdAt: toIso(p.createdAt),
+    updatedAt: toIso(p.updatedAt),
+  };
+};
+export type ProductOut = ReturnType<typeof productOut>;
+
+export const movementOut = (m: MovementRow, productName: string, variantName: string, employee: EmployeeRef | null) => ({
   id: m.id,
   productId: m.productId,
   productName,
+  variantId: m.variantId,
+  variantName,
   delta: m.delta,
   quantityAfter: m.quantityAfter,
   type: m.type,
@@ -280,6 +313,8 @@ export const saleItemOut = (i: SaleItemRow) => ({
   id: i.id,
   type: i.type,
   productId: i.productId,
+  variantId: i.variantId,
+  variantName: i.variantName,
   serviceId: i.serviceId,
   name: i.name,
   quantity: i.quantity,
@@ -320,6 +355,9 @@ export interface HistoryEntryOut {
   name: string;
   serviceId: number | null;
   productId: number | null;
+  /** The size sold (product entries). */
+  variantId: number | null;
+  variantName: string | null;
   quantity: number;
   price: number;
   total: number;

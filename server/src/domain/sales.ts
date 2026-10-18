@@ -1,18 +1,21 @@
-import { and, count, desc, eq, gte, lt, max } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, lt, max } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, clients, products, saleItems, sales, services } from '../db/schema.js';
+import { appointments, clients, products, productVariants, saleItems, sales, services } from '../db/schema.js';
 import { badRequest, conflict, insufficientStock } from '../lib/errors.js';
-import type { AppointmentRow, SaleRow } from '../lib/serialize.js';
+import { sizedName } from '../lib/jewelry.js';
+import type { AppointmentRow, ProductRow, SaleItemRow, SaleRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
 import { getOpenShift } from './cash.js';
 import { applyDeposit, cancelPendingDepositCodes, heldDeposit, unapplyDeposit } from './deposits.js';
 import { getAppointmentRow, getSaleRow, serializeSales } from './refs.js';
 import { cancelPendingForAppointment } from './scheduling.js';
-import { applyMovement, getProductRow, insufficientMessage } from './stock.js';
+import { applyMovement, getProductRow, insufficientMessage, resolveVariant } from './stock.js';
 
 export interface SaleItemInput {
   type: 'product' | 'service';
   productId?: number | null;
+  /** The size sold; older builds omit it (allowed only for a product with one size). */
+  variantId?: number | null;
   serviceId?: number | null;
   name?: string | null;
   quantity: number;
@@ -44,6 +47,8 @@ export interface SaleInput {
 interface ResolvedItem {
   type: 'product' | 'service';
   productId: number | null;
+  variantId: number | null;
+  variantName: string | null;
   serviceId: number | null;
   name: string;
   quantity: number;
@@ -58,8 +63,19 @@ function resolveItem(db: DbOrTx, item: SaleItemInput, position: number): Resolve
     const product = db.select().from(products).where(eq(products.id, item.productId)).get();
     if (!product) throw badRequest(`${label}: товар не найден`);
     if (product.kind !== 'jewelry') throw badRequest(`«${product.name}» — расходник, его нельзя продать`);
-    const price = item.price ?? product.price;
-    return { type: 'product', productId: product.id, serviceId: null, name: product.name, quantity: item.quantity, price, total: price * item.quantity };
+    const variant = resolveVariant(db, product, item.variantId, severalSizesForSale(product), `${label}: размер не найден`);
+    const price = item.price ?? variant.price ?? product.price;
+    return {
+      type: 'product',
+      productId: product.id,
+      variantId: variant.id,
+      variantName: variant.name.trim() || null,
+      serviceId: null,
+      name: sizedName(product.name, variant.name),
+      quantity: item.quantity,
+      price,
+      total: price * item.quantity,
+    };
   }
   const service = item.serviceId != null ? db.select().from(services).where(eq(services.id, item.serviceId)).get() : undefined;
   if (item.serviceId != null && !service) throw badRequest(`${label}: услуга не найдена`);
@@ -67,8 +83,22 @@ function resolveItem(db: DbOrTx, item: SaleItemInput, position: number): Resolve
   if (!name) throw badRequest(`${label}: укажите название услуги`);
   const price = item.price ?? service?.price;
   if (price == null) throw badRequest(`${label}: укажите цену`);
-  return { type: 'service', productId: null, serviceId: service?.id ?? null, name, quantity: item.quantity, price, total: price * item.quantity };
+  return {
+    type: 'service',
+    productId: null,
+    variantId: null,
+    variantName: null,
+    serviceId: service?.id ?? null,
+    name,
+    quantity: item.quantity,
+    price,
+    total: price * item.quantity,
+  };
 }
+
+/** An older build sold a product that now has several sizes: it cannot say which one. */
+const severalSizesForSale = (product: ProductRow) => () =>
+  conflict(`У «${product.name}» несколько размеров. Обновите приложение MIKAN, чтобы выбрать размер.`);
 
 interface PreparedSale {
   items: ResolvedItem[];
@@ -78,15 +108,18 @@ interface PreparedSale {
   appointment: AppointmentRow | null;
 }
 
-/** Product quantities summed per product, so two lines of one product are checked against stock together. */
+/** Quantities summed per size, so two lines of one size are checked against its stock together. */
 function assertInStock(db: DbOrTx, items: ResolvedItem[]): void {
-  const wanted = new Map<number, number>();
+  const wanted = new Map<number, { productId: number; quantity: number }>();
   for (const item of items) {
-    if (item.productId != null) wanted.set(item.productId, (wanted.get(item.productId) ?? 0) + item.quantity);
+    if (item.productId == null || item.variantId == null) continue;
+    const entry = wanted.get(item.variantId) ?? { productId: item.productId, quantity: 0 };
+    entry.quantity += item.quantity;
+    wanted.set(item.variantId, entry);
   }
-  for (const [productId, quantity] of wanted) {
-    const product = getProductRow(db, productId);
-    if (product.quantity < quantity) throw insufficientStock(insufficientMessage(product));
+  for (const [variantId, { productId, quantity }] of wanted) {
+    const variant = db.select().from(productVariants).where(eq(productVariants.id, variantId)).get()!;
+    if (variant.quantity < quantity) throw insufficientStock(insufficientMessage(getProductRow(db, productId), variant));
   }
 }
 
@@ -166,8 +199,15 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
       .get();
     tx.insert(saleItems).values(items.map((i) => ({ ...i, saleId: sale.id }))).run();
     for (const item of items) {
-      if (item.type === 'product' && item.productId != null) {
-        applyMovement(tx, { productId: item.productId, delta: -item.quantity, type: 'sale', saleId: sale.id, employeeId });
+      if (item.type === 'product' && item.productId != null && item.variantId != null) {
+        applyMovement(tx, {
+          productId: item.productId,
+          variantId: item.variantId,
+          delta: -item.quantity,
+          type: 'sale',
+          saleId: sale.id,
+          employeeId,
+        });
       }
     }
     applyDeposit(tx, sale, sale.payDeposit, employeeId);
@@ -215,13 +255,36 @@ export function refundSale(db: DbOrTx, id: number, input: { reason: string; rest
     if (input.restock) {
       const items = tx.select().from(saleItems).where(eq(saleItems.saleId, id)).all();
       for (const item of items) {
-        if (item.type === 'product' && item.productId != null) {
-          applyMovement(tx, { productId: item.productId, delta: item.quantity, type: 'return', saleId: id, employeeId, note: input.reason });
-        }
+        if (item.type !== 'product' || item.productId == null) continue;
+        applyMovement(tx, {
+          productId: item.productId,
+          variantId: soldVariantId(tx, item.productId, item),
+          delta: item.quantity,
+          type: 'return',
+          saleId: id,
+          employeeId,
+          note: input.reason,
+        });
       }
     }
     return updated;
   });
+}
+
+/**
+ * The size a sold item goes back to. Every product item names one (items sold before sizes existed were linked to
+ * their product's only size by the migration); a hand-edited row without it falls back to the product's first size.
+ */
+function soldVariantId(db: DbOrTx, productId: number, item: SaleItemRow): number {
+  if (item.variantId != null) return item.variantId;
+  const first = db
+    .select({ id: productVariants.id })
+    .from(productVariants)
+    .where(eq(productVariants.productId, productId))
+    .orderBy(asc(productVariants.archived), asc(productVariants.position), asc(productVariants.id))
+    .get();
+  if (!first) throw conflict(`Не найден размер товара «${item.name}» для возврата на склад`);
+  return first.id;
 }
 
 export function listSales(

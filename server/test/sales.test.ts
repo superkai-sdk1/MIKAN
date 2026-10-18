@@ -3,7 +3,7 @@ import { createTestApp, make, type TestApp } from './helpers.js';
 
 describe('sales (POS)', () => {
   let t: TestApp;
-  let product: { id: number };
+  let product: { id: number; variants: Array<{ id: number }> };
   let service: { id: number };
   let client: { id: number };
 
@@ -48,8 +48,8 @@ describe('sales (POS)', () => {
       refundReason: null,
     });
     expect(sale.items).toEqual([
-      { id: expect.any(Number), type: 'product', productId: product.id, serviceId: null, name: 'Лабрет', quantity: 1, price: 1500, total: 1500 },
-      { id: expect.any(Number), type: 'service', productId: null, serviceId: service.id, name: 'Прокол мочки', quantity: 1, price: 2500, total: 2500 },
+      { id: expect.any(Number), type: 'product', productId: product.id, variantId: product.variants[0].id, variantName: null, serviceId: null, name: 'Лабрет', quantity: 1, price: 1500, total: 1500 },
+      { id: expect.any(Number), type: 'service', productId: null, variantId: null, variantName: null, serviceId: service.id, name: 'Прокол мочки', quantity: 1, price: 2500, total: 2500 },
     ]);
     expect((await t.api('GET', `/api/products/${product.id}`)).json().quantity).toBe(2);
     const moves = (await t.api('GET', `/api/products/${product.id}/movements`)).json().items;

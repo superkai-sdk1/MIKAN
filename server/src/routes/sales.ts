@@ -11,6 +11,7 @@ const id = z.number().int().positive();
 const item = z.object({
   type: z.enum(['product', 'service']),
   productId: id.nullish(),
+  variantId: id.nullish(),
   serviceId: id.nullish(),
   name: nullableText(200),
   quantity: nonNull(z.number().int().min(1).max(10_000)),

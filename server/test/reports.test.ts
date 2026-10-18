@@ -63,7 +63,15 @@ describe('reports & dashboard', () => {
       { date: '2026-10-14', revenue: 0, salesCount: 0 },
       { date: '2026-10-15', revenue: 3000, salesCount: 1 },
     ]);
-    expect(r.topProducts).toEqual([{ productId: product.id, name: 'Лабрет', quantity: 3, revenue: 3900 }]);
+    expect(r.topProducts).toEqual([
+      {
+        productId: product.id,
+        name: 'Лабрет',
+        quantity: 3,
+        revenue: 3900,
+        variants: [{ variantId: product.variants[0].id, name: '', quantity: 3, revenue: 3900 }],
+      },
+    ]);
     expect(r.topServices).toEqual([{ serviceId: service.id, name: 'Прокол хеликса', quantity: 1, revenue: 2700 }]);
     expect(r.byMaster).toEqual([{ employee: { id: anna.id, name: 'Анна', color: '#00AA00' }, appointmentsCompleted: 1, revenue: 3600 }]);
 

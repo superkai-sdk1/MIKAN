@@ -9,7 +9,8 @@ import { truncate } from '../lib/text.js';
 import { HOUR_MS, localDayBounds } from '../lib/time.js';
 import { runAi, type AiRunResult } from './ai.js';
 import type { PhotoSource } from './gateway.js';
-import { photoMessageText, photoSourceFor, productCaption, serviceCaption, servicePhotoSource } from './media.js';
+import { productCaption, sizesInStock } from './jewelry.js';
+import { photoMessageText, photoSourceFor, serviceCaption, servicePhotoSource } from './media.js';
 import { buildClientContext, buildHistory, buildStablePrompt, buildSystem, type PendingImage } from './prompt.js';
 import { clientLabel, notifyStaff } from './staff.js';
 import { buildToolHandlers, TOOLS, type ToolSink } from './tools.js';
@@ -316,7 +317,7 @@ export class BotPipeline {
 
   private async sendProduct(chatId: number, product: ProductRow): Promise<void> {
     const source = photoSourceFor(this.ctx.config.dataDir, product.photoUrl);
-    await this.sendPicture(chatId, source, productCaption(product), { productId: product.id });
+    await this.sendPicture(chatId, source, productCaption(product, sizesInStock(this.ctx.db, product.id)), { productId: product.id });
   }
 
   private async sendService(chatId: number, service: ServiceRow): Promise<void> {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { openDatabase } from '../src/db/client.js';
-import { products, stockMovements } from '../src/db/schema.js';
+import { products, productVariants, stockMovements } from '../src/db/schema.js';
 import { importProducts, type ProductImportRecord } from '../src/scripts/import-products.js';
 
 const opts = { apply: true, source: 'yclients' };
@@ -27,8 +27,13 @@ describe('importProducts', () => {
 
     importProducts(db, records, opts);
 
-    const rows = db.select().from(products).orderBy(asc(products.id)).all();
-    expect(rows.map((r) => [r.name, r.category, r.unit, r.minQuantity, r.quantity])).toEqual([
+    const rows = db
+      .select({ product: products, size: productVariants })
+      .from(products)
+      .innerJoin(productVariants, eq(productVariants.productId, products.id))
+      .orderBy(asc(products.id))
+      .all();
+    expect(rows.map(({ product: r, size }) => [r.name, r.category, r.unit, size.minQuantity, size.quantity])).toEqual([
       ['Перчатки', 'Основные расходники', 'пар', 100, 0],
       ['Бинты эластичные', 'Тату', 'шт', 3, 0],
       ['Бинты эластичные', 'Основные расходники', 'шт', 3, 0],

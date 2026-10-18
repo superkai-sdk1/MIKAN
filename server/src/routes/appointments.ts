@@ -55,7 +55,7 @@ const completeBody = z.object({
   sendAftercare: nonNull(z.boolean()),
   aftercareTemplateId: id.nullish(),
   consumables: z
-    .array(z.object({ productId: id, quantity: z.number().int().min(1).max(100_000) }))
+    .array(z.object({ productId: id, variantId: id.nullish(), quantity: z.number().int().min(1).max(100_000) }))
     .max(100)
     .nullish(),
 });

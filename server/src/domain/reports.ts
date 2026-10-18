@@ -3,7 +3,8 @@ import type { DbOrTx } from '../db/client.js';
 import { appointments, botChats, bookingRequests, clients, depositOperations, products, saleItems, sales } from '../db/schema.js';
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
 import { localDate, localDatesInRange, toIso } from '../lib/time.js';
-import { employeeRefOrMissing, employeesByIds, productsByIds } from './refs.js';
+import { hasLowSize } from './products.js';
+import { employeeRefOrMissing, employeesByIds, productsByIds, variantsByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 
 const TOP_LIMIT = 10;
@@ -76,17 +77,20 @@ interface TopEntry {
   name: string;
   quantity: number;
   revenue: number;
+  /** Products: the same split by size. */
+  sizes: Map<string, TopEntry>;
 }
 
-function addTop(map: Map<string, TopEntry>, key: string, id: number | null, name: string, quantity: number, revenue: number) {
-  const entry = map.get(key) ?? { id, name, quantity: 0, revenue: 0 };
+function addTop(map: Map<string, TopEntry>, key: string, id: number | null, name: string, quantity: number, revenue: number): TopEntry {
+  const entry = map.get(key) ?? { id, name, quantity: 0, revenue: 0, sizes: new Map() };
   entry.quantity += quantity;
   entry.revenue += revenue;
   map.set(key, entry);
+  return entry;
 }
 
-const topOf = (map: Map<string, TopEntry>) =>
-  [...map.values()].sort((a, b) => b.revenue - a.revenue || b.quantity - a.quantity).slice(0, TOP_LIMIT);
+const byRevenue = (a: TopEntry, b: TopEntry) => b.revenue - a.revenue || b.quantity - a.quantity;
+const topOf = (map: Map<string, TopEntry>) => [...map.values()].sort(byRevenue).slice(0, TOP_LIMIT);
 
 export function reportSummary(db: DbOrTx, from: number, to: number) {
   const tz = studioTimezone(db);
@@ -140,7 +144,15 @@ export function reportSummary(db: DbOrTx, from: number, to: number) {
     servicesRevenue,
     productsRevenue,
     byDay: [...byDayMap.values()],
-    topProducts: topProducts.map((t) => ({ productId: t.id, name: t.name, quantity: t.quantity, revenue: t.revenue })),
+    topProducts: topProducts.map((t) => ({
+      productId: t.id,
+      name: t.name,
+      quantity: t.quantity,
+      revenue: t.revenue,
+      variants: [...t.sizes.values()]
+        .sort(byRevenue)
+        .map((v) => ({ variantId: v.id, name: v.name, quantity: v.quantity, revenue: v.revenue })),
+    })),
     topServices: topServices.map((t) => ({ serviceId: t.id, name: t.name, quantity: t.quantity, revenue: t.revenue })),
     byMaster,
     newClients:
@@ -162,6 +174,7 @@ function itemBreakdown(db: DbOrTx, rangeSales: SaleRow[]) {
     .where(inArray(saleItems.saleId, rangeSales.map((s) => s.id)))
     .all();
   const productNames = productsByIds(db, items.map((i) => i.productId));
+  const sizeNames = variantsByIds(db, items.map((i) => i.variantId));
   const bySale = new Map<number, SaleItemRow[]>();
   for (const item of items) bySale.set(item.saleId, [...(bySale.get(item.saleId) ?? []), item]);
   for (const sale of rangeSales) {
@@ -172,7 +185,11 @@ function itemBreakdown(db: DbOrTx, rangeSales: SaleRow[]) {
       if (item.type === 'product') {
         productsRevenue += value;
         const name = (item.productId != null ? productNames.get(item.productId)?.name : undefined) ?? item.name;
-        addTop(productTop, `p${item.productId ?? item.name}`, item.productId, name, item.quantity, value);
+        const top = addTop(productTop, `p${item.productId ?? item.name}`, item.productId, name, item.quantity, value);
+        if (item.variantId != null) {
+          const sizeName = sizeNames.get(item.variantId)?.name ?? item.variantName ?? '';
+          addTop(top.sizes, `v${item.variantId}`, item.variantId, sizeName, item.quantity, value);
+        }
       } else {
         servicesRevenue += value;
         const key = item.serviceId != null ? `s${item.serviceId}` : `n${item.name.toLowerCase()}`;
@@ -218,12 +235,6 @@ export function badges(db: DbOrTx) {
     unreadChats: n(db.select({ n: count() }).from(botChats).where(sql`${botChats.unreadCount} > 0`).get()),
     needsAttention: n(db.select({ n: count() }).from(botChats).where(eq(botChats.needsAttention, true)).get()),
     newBookingRequests: n(db.select({ n: count() }).from(bookingRequests).where(eq(bookingRequests.status, 'new')).get()),
-    lowStock: n(
-      db
-        .select({ n: count() })
-        .from(products)
-        .where(and(eq(products.active, true), sql`${products.quantity} <= ${products.minQuantity}`))
-        .get(),
-    ),
+    lowStock: n(db.select({ n: count() }).from(products).where(and(eq(products.active, true), hasLowSize)).get()),
   };
 }

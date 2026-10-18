@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.js';
 import { productHistory, serviceHistory } from '../domain/history.js';
-import { idParams, pagination, parse } from '../lib/validation.js';
+import { idParams, pagination, parse, queryId } from '../lib/validation.js';
 
 /** "Who got / bought it and when" lists for a catalog service and a product (see API.md, History). */
 export function historyRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -15,7 +15,7 @@ export function historyRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/products/:id/history', async (request) => {
     const { id } = parse(idParams, request.params);
-    const page = parse(pagination, request.query);
+    const page = parse(pagination.extend({ variantId: queryId }), request.query);
     return productHistory(db, id, page);
   });
 }

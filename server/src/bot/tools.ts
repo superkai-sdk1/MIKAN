@@ -1,9 +1,10 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { and, desc, eq, gt, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { bookingRequests, botMessages, products, services } from '../db/schema.js';
 import { findChat, updateChatFlags } from '../domain/bot-chats.js';
+import { hasSizeInStock } from '../domain/products.js';
 import { normalizePhone, isPlausiblePhone } from '../lib/phone.js';
 import type { ProductRow, ServiceRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
@@ -45,7 +46,7 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'show_products',
     description:
-      'Отправляет клиенту фото украшений из списка «Украшения в наличии» (с названием, материалом, размером и ценой). ' +
+      'Отправляет клиенту фото украшений из списка «Украшения в наличии» (с названием, материалом, толщиной, ценой и размерами в наличии). ' +
       'Вызывай, когда клиент хочет посмотреть варианты. Фото придут сразу после твоего текстового ответа.',
     input_schema: {
       type: 'object',
@@ -116,7 +117,7 @@ function availableJewelry(ctx: AppContext, ids: number[]): ProductRow[] {
   const rows = ctx.db
     .select()
     .from(products)
-    .where(and(inArray(products.id, ids), eq(products.kind, 'jewelry'), eq(products.active, true), gt(products.quantity, 0)))
+    .where(and(inArray(products.id, ids), eq(products.kind, 'jewelry'), eq(products.active, true), hasSizeInStock))
     .all();
   return ids.map((id) => rows.find((r) => r.id === id)).filter((r): r is ProductRow => r !== undefined);
 }

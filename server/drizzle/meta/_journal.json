@@ -50,6 +50,13 @@
       "when": 1792222914771,
       "tag": "0006_client_last_name_telegram_nick",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792339500805,
+      "tag": "0007_product_variants",
+      "breakpoints": true
     }
   ]
 }

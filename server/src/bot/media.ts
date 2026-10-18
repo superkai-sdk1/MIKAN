@@ -1,15 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { parsePhotos, parseVariants, type ProductRow, type ServiceRow } from '../lib/serialize.js';
+import { parsePhotos, parseVariants, type ServiceRow } from '../lib/serialize.js';
 import { formatRub, formatServicePrice, TELEGRAM_MAX_CAPTION, truncate } from '../lib/text.js';
 import type { PhotoSource } from './gateway.js';
 
 /** Description length inside a service caption (the rest of the caption stays readable). */
 const CAPTION_DESCRIPTION_MAX = 300;
-
-export function productCaption(p: ProductRow): string {
-  return [p.name, p.material, p.size].filter(Boolean).join(' · ') + ` — ${formatRub(p.price)}`;
-}
 
 /** Service card caption: name, price, variants and a short description (within Telegram's caption limit). */
 export function serviceCaption(s: ServiceRow): string {
