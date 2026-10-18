@@ -393,9 +393,15 @@ export const botMessageOut = (m: BotMessageRow, employee: EmployeeRef | null) =>
 });
 export type BotMessageOut = ReturnType<typeof botMessageOut>;
 
-export const botChatOut = (c: BotChatRow, client: ClientRef | null, lastMessage: BotMessageOut | null) => ({
+export const botChatOut = (
+  c: BotChatRow,
+  client: ClientRef | null,
+  lastMessage: BotMessageOut | null,
+  employee: EmployeeRef | null = null,
+) => ({
   chatId: c.chatId,
   client,
+  employee,
   telegramName: c.telegramName,
   username: c.username,
   aiPaused: c.aiPaused,

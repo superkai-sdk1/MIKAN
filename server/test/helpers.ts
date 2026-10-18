@@ -4,7 +4,7 @@ import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import { buildApp } from '../src/app.js';
-import { BotSendError, type BotGateway, type PhotoSource } from '../src/bot/gateway.js';
+import { BotSendError, type BotGateway, type InlineKeyboard, type PhotoSource, type SendOptions, type SentMessage } from '../src/bot/gateway.js';
 import { loadConfig, type Config } from '../src/config.js';
 import { silentLogger, type AiClient, type AppContext, type ImageGenerator } from '../src/context.js';
 import { openDatabase } from '../src/db/client.js';
@@ -13,14 +13,25 @@ import type { CreatedQr, QrBankStatus, QrProvider } from '../src/payments/qr-pro
 
 export const ADMIN = { login: 'admin', password: 'secret123', name: 'Админ' };
 
+export interface FakeEdit {
+  kind: 'photo' | 'text' | 'keyboard' | 'delete';
+  chatId: number;
+  messageId: number;
+  photo?: PhotoSource;
+  text?: string;
+  keyboard?: InlineKeyboard | null;
+}
+
 export class FakeGateway implements BotGateway {
   running = true;
   usernameValue: string | null = 'mikan_test_bot';
-  sent: Array<{ chatId: number; text: string }> = [];
-  photos: Array<{ chatId: number; photo: PhotoSource; caption: string }> = [];
+  sent: Array<{ chatId: number; text: string; keyboard?: InlineKeyboard; messageId: number }> = [];
+  photos: Array<{ chatId: number; photo: PhotoSource; caption: string; keyboard?: InlineKeyboard; messageId?: number }> = [];
+  edits: FakeEdit[] = [];
   typing = 0;
   /** Errors to throw on the next sendText calls (consumed in order). */
   failures: Error[] = [];
+  private nextMessageId = 1000;
 
   isRunning(): boolean {
     return this.running;
@@ -28,13 +39,30 @@ export class FakeGateway implements BotGateway {
   username(): string | null {
     return this.usernameValue;
   }
-  async sendText(chatId: number, text: string): Promise<void> {
+  async sendText(chatId: number, text: string, options: SendOptions = {}): Promise<SentMessage> {
     const failure = this.failures.shift();
     if (failure) throw failure;
-    this.sent.push({ chatId, text });
+    const messageId = ++this.nextMessageId;
+    this.sent.push({ chatId, text, messageId, ...(options.keyboard ? { keyboard: options.keyboard } : {}) });
+    return { messageId };
   }
-  async sendPhoto(chatId: number, photo: PhotoSource, caption: string): Promise<void> {
-    this.photos.push({ chatId, photo, caption });
+  async sendPhoto(chatId: number, photo: PhotoSource, caption: string, options: SendOptions = {}): Promise<SentMessage> {
+    const messageId = ++this.nextMessageId;
+    // `messageId` is kept off the record unless the photo has buttons, so plain photo assertions stay simple.
+    this.photos.push({ chatId, photo, caption, ...(options.keyboard ? { keyboard: options.keyboard, messageId } : {}) });
+    return { messageId };
+  }
+  async editPhoto(chatId: number, messageId: number, photo: PhotoSource, text: string, keyboard?: InlineKeyboard): Promise<void> {
+    this.edits.push({ kind: 'photo', chatId, messageId, photo, text, keyboard: keyboard ?? null });
+  }
+  async editText(chatId: number, messageId: number, text: string, keyboard?: InlineKeyboard): Promise<void> {
+    this.edits.push({ kind: 'text', chatId, messageId, text, keyboard: keyboard ?? null });
+  }
+  async editKeyboard(chatId: number, messageId: number, keyboard: InlineKeyboard | null): Promise<void> {
+    this.edits.push({ kind: 'keyboard', chatId, messageId, keyboard });
+  }
+  async deleteMessage(chatId: number, messageId: number): Promise<void> {
+    this.edits.push({ kind: 'delete', chatId, messageId });
   }
   async sendTyping(): Promise<void> {
     this.typing += 1;

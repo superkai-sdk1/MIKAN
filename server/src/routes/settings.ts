@@ -1,12 +1,20 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
+import { resyncUpcomingReminders } from '../domain/scheduling.js';
 import {
   getBotSettings,
   getStaffChatId,
   getStudioSettings,
+  LEGACY_REMINDER_HOURS_MAX,
+  legacyReminderHours,
+  MAX_REMINDER_OFFSETS,
+  normalizeReminderOffsets,
+  REMINDER_OFFSET_MAX,
+  REMINDER_OFFSET_MIN,
   saveBotSettings,
   saveStudioSettings,
+  type BotSettingsStored,
 } from '../domain/settings.js';
 import { badRequest } from '../lib/errors.js';
 import { formatTimeOfDay, isValidTimezone, parseTimeOfDay } from '../lib/time.js';
@@ -49,12 +57,22 @@ const botBody = z.object({
   extraInstructions: text(5000),
   aftercareHour: nonNull(z.number().int().min(0).max(23)),
   remindersEnabled: nonNull(z.boolean()),
-  reminderHoursBefore: nonNull(z.number().int().min(1).max(168)),
+  reminderOffsets: nonNull(
+    z
+      .array(z.number().int().min(REMINDER_OFFSET_MIN).max(REMINDER_OFFSET_MAX))
+      .min(1)
+      .max(MAX_REMINDER_OFFSETS)
+      .refine((list) => new Set(list).size === list.length, { message: 'напоминания не должны повторяться' }),
+  ),
+  /** Older builds: a single reminder N hours before. */
+  reminderHoursBefore: nonNull(z.number().int().min(1).max(LEGACY_REMINDER_HOURS_MAX)),
 });
 
 export function botSettingsOut(ctx: AppContext) {
+  const bot = getBotSettings(ctx.db);
   return {
-    ...getBotSettings(ctx.db),
+    ...bot,
+    reminderHoursBefore: legacyReminderHours(bot.reminderOffsets),
     botUsername: ctx.gateway.username(),
     staffChatBound: getStaffChatId(ctx.db) !== null,
     aiConfigured: ctx.ai !== null,
@@ -69,6 +87,15 @@ function merge<T extends object>(current: T, patch: Partial<Record<keyof T, unkn
     next[key] = value === null ? '' : value;
   }
   return next as T;
+}
+
+/**
+ * `reminderHoursBefore` from older builds: a single reminder N hours before. Those builds resend the value they
+ * read, so an unchanged value keeps the current (possibly several) reminders.
+ */
+function legacyOffsets(current: BotSettingsStored, hours: number | undefined): number[] | undefined {
+  if (hours === undefined || hours === legacyReminderHours(current.reminderOffsets)) return undefined;
+  return [hours * 60];
 }
 
 export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -89,10 +116,17 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/settings/bot', async () => botSettingsOut(ctx));
 
   app.put('/settings/bot', async (request) => {
-    const input = parse(botBody, request.body);
+    const { reminderHoursBefore, reminderOffsets, ...input } = parse(botBody, request.body);
     const before = getBotSettings(db);
-    const after = saveBotSettings(db, merge(before, input));
+    const offsets = reminderOffsets ?? legacyOffsets(before, reminderHoursBefore);
+    const after = saveBotSettings(db, {
+      ...merge(before, input),
+      reminderOffsets: offsets ? normalizeReminderOffsets(offsets) : before.reminderOffsets,
+    });
     if (before.enabled !== after.enabled) ctx.onBotSettingsChanged();
+    const remindersChanged =
+      before.remindersEnabled !== after.remindersEnabled || before.reminderOffsets.join() !== after.reminderOffsets.join();
+    if (remindersChanged) resyncUpcomingReminders(db);
     return botSettingsOut(ctx);
   });
 }

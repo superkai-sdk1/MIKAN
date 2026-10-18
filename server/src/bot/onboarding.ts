@@ -1,9 +1,12 @@
+import { eq } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
-import { storeMessage, upsertChat } from '../domain/bot-chats.js';
+import type { DbOrTx } from '../db/client.js';
+import { employees } from '../db/schema.js';
+import { chatEmployee, findChat, setChatEmployee, storeMessage, upsertChat } from '../domain/bot-chats.js';
 import { createClient, findClientByChat, findClientByLinkToken, findClientByPhone, linkTelegram } from '../domain/clients.js';
 import { getBotSettings, getStudioSettings } from '../domain/settings.js';
 import { isPlausiblePhone, normalizePhone } from '../lib/phone.js';
-import { clientFullName } from '../lib/serialize.js';
+import { clientFullName, type EmployeeRow } from '../lib/serialize.js';
 import type { IncomingFrom } from './pipeline.js';
 import { bindStaffChat, notifyStaff } from './staff.js';
 
@@ -11,7 +14,26 @@ export interface OnboardingReply {
   text: string;
   /** Whether the chat is linked to a client (controls the "share phone" button). */
   linked: boolean;
+  /** The chat belongs to a recognised employee: the staff keyboard is shown. */
+  staff?: boolean;
 }
+
+/** An active employee whose phone (normalized) is `phone`. */
+export function findActiveEmployeeByPhone(db: DbOrTx, phone: string): EmployeeRow | null {
+  return (
+    db
+      .select()
+      .from(employees)
+      .where(eq(employees.active, true))
+      .all()
+      .find((e) => e.phone != null && normalizePhone(e.phone) === phone) ?? null
+  );
+}
+
+export const staffGreeting = (studioName: string, employee: EmployeeRow): string =>
+  `Здравствуйте, ${employee.name}! Узнал вас — вы сотрудник ${studioName} ✅\n` +
+  'Здесь я помогаю команде: записи (ваши и коллег), карточки клиентов, выручка и аналитика, остатки на складе. ' +
+  'Спросите, например: «Что у нас сегодня?», «Выручка за неделю» или «Сколько осталось лабретов 8 мм?».';
 
 export interface SharedContact {
   userId: number | undefined;
@@ -39,11 +61,17 @@ export function handleStart(ctx: AppContext, from: IncomingFrom, payload: string
       text = `Ссылка для подключения устарела или уже использована — попросите администратора прислать новую.\n\n${greeting}`;
     }
   }
+  const employee = chatEmployee(db, findChat(db, from.chatId));
+  if (employee && !(token.startsWith('c') && token.length > 1)) text = staffGreeting(getStudioSettings(db).name, employee);
   storeMessage(db, from.chatId, 'system', text);
-  return { text, linked: findClientByChat(db, from.chatId) !== null };
+  return { text, linked: findClientByChat(db, from.chatId) !== null, ...(employee ? { staff: true } : {}) };
 }
 
-/** A contact shared via the keyboard button: link to an existing client by phone or create one. */
+/**
+ * A contact shared via the keyboard button. Only the sender's own contact counts (a forwarded card has another
+ * `user_id`). The phone of an active employee turns the chat into a staff chat; any other phone links the chat to the
+ * client with that phone, or creates one.
+ */
 export async function handleContact(
   ctx: AppContext,
   from: IncomingFrom & { userId: number },
@@ -60,6 +88,19 @@ export async function handleContact(
     return { text: 'Не получилось распознать номер. Напишите его, пожалуйста, сообщением.', linked: linkedNow() };
   }
   storeMessage(db, from.chatId, 'user', `[Контакт] ${phone}`);
+  const employee = findActiveEmployeeByPhone(db, phone);
+  if (employee) {
+    const wasStaff = findChat(db, from.chatId)?.employeeId === employee.id;
+    setChatEmployee(db, from.chatId, employee.id);
+    const text = staffGreeting(getStudioSettings(db).name, employee);
+    storeMessage(db, from.chatId, 'system', text);
+    if (!wasStaff) {
+      await notifyStaff(ctx, `🔑 ${employee.name} подключил(а) Telegram к боту как сотрудник${from.username ? ` (@${from.username})` : ''}`);
+    }
+    return { text, linked: linkedNow(), staff: true };
+  }
+  // Another phone: the chat is a client's now (an employee who shares a client's number loses staff mode).
+  if (findChat(db, from.chatId)?.employeeId != null) setChatEmployee(db, from.chatId, null);
   const existing = findClientByPhone(db, phone);
   let text: string;
   if (existing) {

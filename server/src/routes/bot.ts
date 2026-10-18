@@ -16,6 +16,7 @@ import {
   serializeChat,
   serializeMessages,
   serializeScheduled,
+  setChatEmployee,
   storeMessage,
   updateChatFlags,
 } from '../domain/bot-chats.js';
@@ -86,6 +87,13 @@ export function botRoutes(app: FastifyInstance, ctx: AppContext): void {
     getChat(db, chatId);
     const row = input.aiPaused === undefined ? getChat(db, chatId) : updateChatFlags(db, chatId, { aiPaused: input.aiPaused });
     return serializeChat(db, row);
+  });
+
+  // Staff chat → ordinary client chat (the employee can share their phone again to get staff mode back).
+  app.delete('/bot/chats/:chatId/employee', async (request, reply) => {
+    const { chatId } = parse(chatParams, request.params);
+    setChatEmployee(db, chatId, null);
+    return reply.code(204).send();
   });
 
   app.get('/bot/scheduled', async (request) => {

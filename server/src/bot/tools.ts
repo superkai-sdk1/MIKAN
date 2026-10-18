@@ -8,6 +8,8 @@ import { hasSizeInStock } from '../domain/products.js';
 import { normalizePhone, isPlausiblePhone } from '../lib/phone.js';
 import type { ProductRow, ServiceRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
+import type { JewelryList } from './callback-data.js';
+import { buildClientToolHandlers } from './client-tools.js';
 import { photoMessageText, servicePhotoSource } from './media.js';
 import { HISTORY_LIMIT } from './prompt.js';
 import { clientLabel, notifyStaff } from './staff.js';
@@ -46,8 +48,9 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'show_products',
     description:
-      'Отправляет клиенту фото украшений из списка «Украшения в наличии» (с названием, материалом, толщиной, ценой и размерами в наличии). ' +
-      'Вызывай, когда клиент хочет посмотреть варианты. Фото придут сразу после твоего текстового ответа.',
+      'Отправляет клиенту фото украшений (и товаров) в наличии — из списка «Украшения в наличии» или найденных через ' +
+      'find_jewelry — с названием, материалом, толщиной, ценой и размерами в наличии. Вызывай, когда клиент хочет ' +
+      'посмотреть конкретные позиции. Фото придут сразу после твоего текстового ответа.',
     input_schema: {
       type: 'object',
       properties: {
@@ -72,6 +75,72 @@ export const TOOLS: Anthropic.Tool[] = [
       type: 'object',
       properties: { serviceId: { type: 'integer', description: 'id услуги из раздела «Услуги и цены»' } },
       required: ['serviceId'],
+    },
+  },
+  {
+    name: 'show_jewelry_for_service',
+    description:
+      'Отправляет клиенту интерактивный каталог украшений, подходящих для услуги (зоны прокола): карусель с фото, ' +
+      'материалом, толщиной, размерами в наличии и ценами, кнопками «◀︎ ▶︎», «Хочу это украшение» и «Все украшения». ' +
+      'Вызывай, когда клиент спрашивает, какие украшения есть или подходят для прокола (например «украшения для хеликса»). ' +
+      'Клиенты часто пишут зону с ошибкой или по-русски на слух («Феликс», «трагус», «септум») — сопоставь её с услугой ' +
+      'из раздела «Услуги и цены» и передай её id. Каталог придёт после твоего ответа: не перечисляй все позиции текстом.',
+    input_schema: {
+      type: 'object',
+      properties: { serviceId: { type: 'integer', description: 'id услуги (зоны прокола) из раздела «Услуги и цены»' } },
+      required: ['serviceId'],
+    },
+  },
+  {
+    name: 'find_jewelry',
+    description:
+      'Ищет конкретное украшение или товар по названию, типу, материалу, размеру или толщине и сверяется со складом: ' +
+      'возвращает id, характеристики, размеры в наличии с ценами или «нет в наличии» (количество не раскрывается). ' +
+      'Вызывай, когда клиент спрашивает про конкретную позицию («есть ли титановый лабрет 8 мм?», «сколько стоит кликер»). ' +
+      'Чтобы показать фото найденного — вызови show_products с его id.',
+    input_schema: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'Ключевые слова: тип, материал, размер, например «лабрет титан 8 мм»' } },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'my_appointments',
+    description:
+      'Возвращает предстоящие записи этого клиента (номер, дата и время, услуги, мастер, статус). Вызывай, когда клиент ' +
+      'спрашивает о своей записи, хочет её перенести или подтвердить. Работает, только если клиент идентифицирован.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'free_slots',
+    description:
+      'Возвращает свободное время мастеров на дату в часы работы студии (шаг 30 минут). Для переноса записи передай ' +
+      'appointmentId — тогда учитываются её длительность и мастер. Для новой записи можно передать serviceId (длительность ' +
+      'услуги) и masterId. Предлагай клиенту 2–4 удобных варианта, а не весь список.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'Дата в формате ГГГГ-ММ-ДД (по времени студии)' },
+        appointmentId: { type: 'integer', description: 'Номер записи клиента, которую переносим (из my_appointments)' },
+        serviceId: { type: 'integer', description: 'id услуги из прайса — для длительности' },
+        masterId: { type: 'integer', description: 'id мастера, если клиент хочет к конкретному мастеру' },
+      },
+      required: ['date'],
+    },
+  },
+  {
+    name: 'reschedule_appointment',
+    description:
+      'Переносит запись клиента на новое время (мастер и длительность сохраняются; время проверяется по расписанию). ' +
+      'Вызывай только после того, как клиент явно выбрал конкретное время из предложенных free_slots. Студия получит ' +
+      'уведомление, напоминания обновятся.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        appointmentId: { type: 'integer', description: 'Номер записи (из my_appointments)' },
+        startsAt: { type: 'string', description: 'Новое начало по времени студии: «ГГГГ-ММ-ДД ЧЧ:ММ», как в ответе free_slots' },
+      },
+      required: ['appointmentId', 'startsAt'],
     },
   },
 ];
@@ -106,10 +175,14 @@ export interface ToolScope {
 export interface ToolSink {
   products: ProductRow[];
   services: ServiceRow[];
+  /** Jewelry carousels to send after the reply. */
+  carousels: JewelryList[];
   notes: string[];
   /** Live actions that succeeded (used to confirm them if the model ends without text). */
-  done: Set<'booking' | 'handoff'>;
+  done: Set<'booking' | 'handoff' | 'reschedule'>;
 }
+
+export const emptySink = (): ToolSink => ({ products: [], services: [], carousels: [], notes: [], done: new Set() });
 
 const invalid = (what: string): ToolResult => ({ content: `Некорректные данные: ${what}. Уточни у клиента и попробуй снова.`, isError: true });
 
@@ -117,7 +190,7 @@ function availableJewelry(ctx: AppContext, ids: number[]): ProductRow[] {
   const rows = ctx.db
     .select()
     .from(products)
-    .where(and(inArray(products.id, ids), eq(products.kind, 'jewelry'), eq(products.active, true), hasSizeInStock))
+    .where(and(inArray(products.id, ids), inArray(products.kind, ['jewelry', 'goods']), eq(products.active, true), hasSizeInStock))
     .all();
   return ids.map((id) => rows.find((r) => r.id === id)).filter((r): r is ProductRow => r !== undefined);
 }
@@ -143,6 +216,7 @@ function serviceShownRecently(ctx: AppContext, chatId: number | null, service: S
 export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolSink): Record<string, ToolHandler> {
   const who = clientLabel(scope.telegramName, scope.username);
   return {
+    ...buildClientToolHandlers(ctx, scope, sink),
     create_booking_request: async (raw) => {
       const parsed = bookingInput.safeParse(raw);
       if (!parsed.success) {

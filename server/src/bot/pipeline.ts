@@ -1,19 +1,22 @@
 import { and, asc, count, eq, gt, gte } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { aiUsage, botMessages, clients } from '../db/schema.js';
-import { findChat, storeMessage, updateChatFlags, upsertChat } from '../domain/bot-chats.js';
+import { chatEmployee, findChat, storeMessage, updateChatFlags, upsertChat } from '../domain/bot-chats.js';
 import { getBotSettings, studioTimezone } from '../domain/settings.js';
 import { AppError, conflict, errorMessage } from '../lib/errors.js';
 import type { BotChatRow, BotMessageRow, ProductRow, ServiceRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
 import { HOUR_MS, localDayBounds } from '../lib/time.js';
-import { runAi, type AiRunResult } from './ai.js';
+import { runAi, type AiRunInput, type AiRunResult } from './ai.js';
+import { jewelryPage, sendPage } from './catalog.js';
 import type { PhotoSource } from './gateway.js';
 import { productCaption, sizesInStock } from './jewelry.js';
 import { photoMessageText, photoSourceFor, serviceCaption, servicePhotoSource } from './media.js';
 import { buildClientContext, buildHistory, buildStablePrompt, buildSystem, type PendingImage } from './prompt.js';
 import { clientLabel, notifyStaff } from './staff.js';
-import { buildToolHandlers, TOOLS, type ToolSink } from './tools.js';
+import { buildStaffContext, buildStaffStablePrompt } from './staff-prompt.js';
+import { buildStaffToolHandlers, STAFF_TOOLS } from './staff-tools.js';
+import { buildToolHandlers, emptySink, TOOLS } from './tools.js';
 
 export const REPLIES = {
   unavailable: 'Спасибо за сообщение! Администратор скоро ответит вам здесь 🙌',
@@ -23,6 +26,9 @@ export const REPLIES = {
   media: 'Голосовые и видео я пока не понимаю 🙏 Напишите, пожалуйста, вопрос текстом — или пришлите фото.',
   booked: 'Спасибо! Я передал заявку администратору — он свяжется с вами, чтобы подтвердить время 🙌',
   handedOff: 'Я передал ваш вопрос администратору — он скоро ответит здесь 🙏',
+  rescheduled: 'Готово! Запись перенесена — напоминание придёт заранее 🙌',
+  staffUnavailable: 'ИИ-помощник сейчас недоступен (выключен в настройках бота или исчерпан лимит ответов). Данные можно посмотреть в приложении MIKAN.',
+  staffError: 'Не получилось подготовить ответ — попробуйте переформулировать вопрос или посмотрите данные в приложении MIKAN.',
 };
 
 const TYPING_INTERVAL_MS = 4500;
@@ -67,7 +73,7 @@ export function aiLimitReached(ctx: AppContext, chatId: number | null, now = Dat
 export async function runTest(ctx: AppContext, text: string): Promise<string> {
   if (!ctx.ai) throw conflict('ИИ не настроен: укажите AI_API_KEY в настройках сервера');
   if (aiLimitReached(ctx, null)) throw conflict('Дневной лимит ИИ-ответов исчерпан — попробуйте завтра');
-  const sink: ToolSink = { products: [], services: [], notes: [], done: new Set() };
+  const sink = emptySink();
   const scope = { mode: 'test' as const, chatId: null, clientId: null, telegramName: null, username: null, lastUserText: text };
   const result = await runAi(
     ctx.ai,
@@ -111,6 +117,7 @@ export class BotPipeline {
 
   receive(from: IncomingFrom, text: string, image?: ImageInput): BotMessageRow {
     upsertChat(this.ctx.db, from.chatId, { telegramName: from.telegramName, username: from.username });
+    this.pinBaseline(from.chatId);
     const message = storeMessage(this.ctx.db, from.chatId, 'user', text, { bumpUnread: true });
     if (image) this.addImage(from.chatId, message.id, Promise.resolve(image));
     this.schedule(from.chatId);
@@ -119,12 +126,22 @@ export class BotPipeline {
 
   /** Voice / video: stored for staff, answered with a request to write text (no AI call). */
   async receiveUnsupported(from: IncomingFrom, label: string): Promise<void> {
+    await this.receiveHandled(from, label, REPLIES.media);
+  }
+
+  /**
+   * A message answered without the AI (catalog buttons, «✅ Приду», voice): stored for staff, then `answer` — a text
+   * reply, or a function that sends the answer itself (a catalog) — is delivered.
+   */
+  async receiveHandled(from: IncomingFrom, text: string, answer: string | (() => Promise<unknown>)): Promise<void> {
     upsertChat(this.ctx.db, from.chatId, { telegramName: from.telegramName, username: from.username });
+    this.pinBaseline(from.chatId);
     const nothingPending = this.unhandledUserMessages(from.chatId).length === 0;
-    const message = storeMessage(this.ctx.db, from.chatId, 'user', label, { bumpUnread: true });
+    const message = storeMessage(this.ctx.db, from.chatId, 'user', text, { bumpUnread: true });
     // Answered right here, so a later AI run must not treat it as a fresh question.
     if (nothingPending) this.handledUpTo.set(from.chatId, message.id);
-    await this.deliver(from.chatId, REPLIES.media);
+    if (typeof answer === 'string') await this.deliver(from.chatId, answer);
+    else await answer();
   }
 
   /** Resolves when all queued work has finished (tests, graceful shutdown). */
@@ -168,6 +185,14 @@ export class BotPipeline {
       if (value) resolved.set(id, value);
     }
     return resolved;
+  }
+
+  /**
+   * After a restart, fixes what counts as answered before a new message arrives: a catalog the client opens with a
+   * button while their text waits out the debounce must not make that text look answered.
+   */
+  private pinBaseline(chatId: number): void {
+    if (!this.handledUpTo.has(chatId)) this.handledUpTo.set(chatId, this.answeredInDb(chatId));
   }
 
   /** Newest user message already answered according to the DB (used after a restart). */
@@ -220,59 +245,78 @@ export class BotPipeline {
     this.handledUpTo.set(chatId, last.id);
     const images = await this.takeImages(chatId, last.id);
     const who = clientLabel(chat.telegramName, chat.username);
+    // Staff mode only while the recognised employee is active (checked on every message).
+    const employee = chatEmployee(ctx.db, chat);
 
     if (chat.aiPaused) {
-      await notifyStaff(ctx, `💬 ${who} (ИИ на паузе): «${truncate(last.text, 500)}»\nОтветьте в приложении MIKAN.`);
+      if (!employee) await notifyStaff(ctx, `💬 ${who} (ИИ на паузе): «${truncate(last.text, 500)}»\nОтветьте в приложении MIKAN.`);
       return;
     }
     if (!ctx.ai || !getBotSettings(ctx.db).aiEnabled) {
-      await this.fallback(chat, last, REPLIES.unavailable, 'ИИ-ответы отключены', true);
+      if (employee) await this.deliver(chatId, REPLIES.staffUnavailable);
+      else await this.fallback(chat, last, REPLIES.unavailable, 'ИИ-ответы отключены', true);
       return;
     }
     if (aiLimitReached(ctx, chatId)) {
-      await this.fallback(chat, last, REPLIES.limit, 'достигнут лимит ИИ-ответов', true);
+      if (employee) await this.deliver(chatId, REPLIES.staffUnavailable);
+      else await this.fallback(chat, last, REPLIES.limit, 'достигнут лимит ИИ-ответов', true);
       return;
     }
 
-    const client = chat.clientId != null ? (ctx.db.select().from(clients).where(eq(clients.id, chat.clientId)).get() ?? null) : null;
-    const sink: ToolSink = { products: [], services: [], notes: [], done: new Set() };
-    const scope = {
-      mode: 'live' as const,
-      chatId,
-      clientId: client?.id ?? null,
-      telegramName: chat.telegramName,
-      username: chat.username,
-      lastUserText: unseen.map((m) => m.text).join('\n'),
-    };
+    const now = Date.now();
+    const sink = emptySink();
+    let setup: Pick<AiRunInput, 'system' | 'tools' | 'handlers'>;
+    if (employee) {
+      setup = {
+        system: buildSystem(buildStaffStablePrompt(ctx.db), buildStaffContext(ctx.db, now, employee)),
+        tools: STAFF_TOOLS,
+        handlers: buildStaffToolHandlers(ctx),
+      };
+    } else {
+      const client = chat.clientId != null ? (ctx.db.select().from(clients).where(eq(clients.id, chat.clientId)).get() ?? null) : null;
+      const scope = {
+        mode: 'live' as const,
+        chatId,
+        clientId: client?.id ?? null,
+        telegramName: chat.telegramName,
+        username: chat.username,
+        lastUserText: unseen.map((m) => m.text).join('\n'),
+      };
+      setup = {
+        system: buildSystem(buildStablePrompt(ctx.db), buildClientContext(ctx.db, now, client, chat.telegramName)),
+        tools: TOOLS,
+        handlers: buildToolHandlers(ctx, scope, sink),
+      };
+    }
     const stopTyping = this.keepTyping(chatId);
     let result: AiRunResult;
     try {
-      result = await runAi(
-        ctx.ai,
-        {
-          system: buildSystem(buildStablePrompt(ctx.db), buildClientContext(ctx.db, Date.now(), client, chat.telegramName)),
-          messages: buildHistory(ctx.db, chatId, images, seenUpTo),
-          tools: TOOLS,
-          handlers: buildToolHandlers(ctx, scope, sink),
-        },
-        ctx.log,
-      );
+      result = await runAi(ctx.ai, { ...setup, messages: buildHistory(ctx.db, chatId, images, seenUpTo) }, ctx.log);
     } finally {
       stopTyping();
     }
     recordUsage(ctx, chatId, result);
 
     // The model may finish with no text after a successful action — confirm the action instead of an error.
-    const text = result.text || (result.outcome === 'ok' && sink.done.has('booking') ? REPLIES.booked : '') ||
-      (result.outcome === 'ok' && sink.done.has('handoff') ? REPLIES.handedOff : '');
-    if (result.outcome === 'ok' && (text || sink.products.length || sink.services.length)) {
+    const confirmation = result.outcome !== 'ok' ? '' :
+      sink.done.has('booking') ? REPLIES.booked : sink.done.has('handoff') ? REPLIES.handedOff : sink.done.has('reschedule') ? REPLIES.rescheduled : '';
+    const text = result.text || confirmation;
+    if (result.outcome === 'ok' && (text || sink.products.length || sink.services.length || sink.carousels.length)) {
       if (text && !(await this.deliver(chatId, text))) {
-        await this.escalate(chatId, 'не удалось доставить ответ бота в Telegram', last);
+        if (!employee) await this.escalate(chatId, 'не удалось доставить ответ бота в Telegram', last);
         return;
       }
       for (const service of sink.services) await this.sendService(chatId, service);
       for (const product of sink.products) await this.sendProduct(chatId, product);
-      if (result.loopCapped) await this.escalate(chatId, 'бот не завершил обработку запроса (слишком много шагов)', last);
+      for (const list of sink.carousels) {
+        const page = jewelryPage(ctx.db, ctx.config.dataDir, list, 0);
+        if (page) await sendPage(ctx, chatId, page);
+      }
+      if (result.loopCapped && !employee) await this.escalate(chatId, 'бот не завершил обработку запроса (слишком много шагов)', last);
+      return;
+    }
+    if (employee) {
+      await this.deliver(chatId, REPLIES.staffError);
       return;
     }
     const reason =
@@ -293,7 +337,7 @@ export class BotPipeline {
   /** Flags the chat for staff and sends an alert to the staff chat. */
   private async escalate(chatId: number, reason: string, last?: BotMessageRow): Promise<void> {
     const chat = findChat(this.ctx.db, chatId);
-    if (!chat) return;
+    if (!chat || chatEmployee(this.ctx.db, chat)) return; // staff chats are not handed to staff
     updateChatFlags(this.ctx.db, chatId, { needsAttention: true });
     await notifyStaff(
       this.ctx,

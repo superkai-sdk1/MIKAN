@@ -6,6 +6,7 @@ import { ACTIVE_APPOINTMENT_STATUSES } from '../domain/scheduling.js';
 import { errorMessage } from '../lib/errors.js';
 import type { ScheduledRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
+import { reminderKeyboard } from './callbacks.js';
 import { BotSendError } from './gateway.js';
 
 export const SENDER_INTERVAL_MS = 30_000;
@@ -60,7 +61,8 @@ export async function processDueMessages(ctx: AppContext, now = Date.now()): Pro
     const client = ctx.db.select().from(clients).where(eq(clients.id, msg.clientId)).get();
     const chatId = client?.telegramChatId ?? msg.chatId;
     try {
-      await ctx.gateway.sendText(chatId, msg.text);
+      const keyboard = msg.kind === 'reminder' && msg.appointmentId != null ? reminderKeyboard(msg.appointmentId) : undefined;
+      await ctx.gateway.sendText(chatId, msg.text, keyboard ? { keyboard } : {});
       mark(ctx, msg.id, { status: 'sent', sentAt: Date.now(), error: null, chatId });
       upsertChat(ctx.db, chatId, { clientId: msg.clientId });
       storeMessage(ctx.db, chatId, 'system', msg.text);

@@ -48,7 +48,7 @@ describe('settings, catalog, knowledge and uploads', () => {
     });
     expect(res.json()).toEqual({
       enabled: false, aiEnabled: false, greeting: 'Привет!', extraInstructions: 'Не обещай скидок', aftercareHour: 10,
-      remindersEnabled: false, reminderHoursBefore: 48, botUsername: 'mikan_test_bot', staffChatBound: false, aiConfigured: false,
+      remindersEnabled: false, reminderOffsets: [2880], reminderHoursBefore: 48, botUsername: 'mikan_test_bot', staffChatBound: false, aiConfigured: false,
     });
     expect(refresh).toHaveBeenCalledTimes(1);
     await t.api('PUT', '/api/settings/bot', { greeting: 'Снова привет' });

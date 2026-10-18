@@ -336,11 +336,17 @@ sale dated at the end of the visit (note «Перенесено из YCLIENTS»,
 
 ### BotChat
 ```json
-{ "chatId": 123456789, "client": { ClientRef } | null, "telegramName": "Иван", "username": "ivanp",
+{ "chatId": 123456789, "client": { ClientRef } | null, "employee": { EmployeeRef } | null,
+  "telegramName": "Иван", "username": "ivanp",
   "aiPaused": false, "needsAttention": false, "unreadCount": 2,
   "lastMessage": { BotMessage } | null, "updatedAt": "..." }
 ```
-`needsAttention` — the bot handed the conversation to staff (cleared when staff replies or marks read).
+- `needsAttention` — the bot handed the conversation to staff (cleared when staff replies or marks read).
+- `employee` — the studio employee recognised in this chat by the phone number they shared with the bot (see «Staff
+  chats» in the Bot section): the bot answers this chat in staff mode. Only an **active** employee is shown — a
+  deactivated one is `null` and loses staff mode at once (it comes back if the employee is reactivated, until staff
+  unlink it). `null` for client chats. Apps mark such chats «Сотрудник: Анна»; `DELETE /bot/chats/:chatId/employee`
+  unlinks (`204`).
 
 ### BotMessage
 ```json
@@ -356,6 +362,9 @@ sale dated at the end of the visit (note «Перенесено из YCLIENTS»,
   "status": "pending", "sentAt": null, "error": null }
 ```
 `kind`: `aftercare` | `reminder`. `status`: `pending` | `sent` | `failed` | `cancelled`.
+An appointment has one `reminder` per `BotSettings.reminderOffsets` entry whose moment is still in the future. A
+reminder sent on the day of the visit is headed «⏰ Сегодня ждём вас…», an earlier one «🗓 Напоминаем о записи…»; both
+carry the inline buttons «✅ Приду» and «🔁 Перенести» (see «Reminder buttons» in the Bot section).
 
 ### BookingRequest (created by the bot)
 ```json
@@ -386,10 +395,19 @@ sale dated at the end of the visit (note «Перенесено из YCLIENTS»,
 ### BotSettings
 ```json
 { "enabled": true, "aiEnabled": true, "greeting": "...", "extraInstructions": "",
-  "aftercareHour": 12, "remindersEnabled": true, "reminderHoursBefore": 24,
+  "aftercareHour": 12, "remindersEnabled": true, "reminderOffsets": [1440, 120], "reminderHoursBefore": 24,
   "botUsername": "mikan_studio_bot", "staffChatBound": false, "aiConfigured": true }
 ```
-`botUsername`, `staffChatBound`, `aiConfigured` are read-only (ignored on PUT).
+- `botUsername`, `staffChatBound`, `aiConfigured` are read-only (ignored on PUT).
+- `reminderOffsets` — when the bot reminds clients of an appointment: minutes before its start, e.g. `[1440, 120]` =
+  «за 1 день» and «за 2 часа». 1–6 distinct integers, each 15…20160 (15 minutes … 14 days); the server returns them
+  sorted descending (earliest reminder first). Default `[1440]`. Invalid lists → `400` («Напоминания»: …).
+- `reminderHoursBefore` — kept for older builds: output = the first (largest) offset in whole hours, within 1…168. On
+  PUT it is used only when `reminderOffsets` is absent and its value differs from the current output (older builds
+  resend what they read), and then means a single reminder that many hours before (1–168). Settings saved before
+  `reminderOffsets` existed read as `[reminderHoursBefore × 60]`.
+- Changing `reminderOffsets` or `remindersEnabled` rebuilds the pending reminders of every upcoming scheduled /
+  confirmed appointment (moments already in the past are skipped; reminders already sent stay sent).
 
 ## Endpoints
 
@@ -588,9 +606,10 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
   template of the first such service that has one). An appointment without a fresh procedure (only a jewelry change,
   say, or no catalog services) gets no memo whatever the app sends: `scheduledMessages: 0`. Cancels pending reminders
   of this appointment.
-- Creating/rescheduling an appointment for a Telegram-linked client schedules a reminder
-  `reminderHoursBefore` hours before `startsAt` (if `remindersEnabled` and that moment is in the future).
-  Cancelling / no-show / rescheduling cancels or replaces pending reminders.
+- Creating/rescheduling an appointment for a Telegram-linked client schedules one reminder per
+  `BotSettings.reminderOffsets` entry (minutes before `startsAt`; if `remindersEnabled` and that moment is in the
+  future). Cancelling / no-show / rescheduling (from the app or by the client through the bot) cancels or replaces
+  pending reminders.
 
 ### Prepayments (deposits)
 Every prepayment movement is a `DepositOperation`; the appointment's `deposit` (held amount) and `depositStatus` are
@@ -865,6 +884,7 @@ Fields:
 | POST | `/bot/chats/:chatId/messages` | `{ text }` | `BotMessage` (role `staff`, delivered to Telegram immediately; clears `needsAttention`) |
 | POST | `/bot/chats/:chatId/read` | — | `204` (unreadCount → 0, needsAttention → false) |
 | PATCH | `/bot/chats/:chatId` | `{ aiPaused }` | `BotChat` |
+| DELETE | `/bot/chats/:chatId/employee` | — | `204` — unlinks the employee: the staff chat becomes an ordinary client chat (`employee: null`; the employee may share the phone again) · `404` for an unknown chat |
 | GET | `/bot/scheduled?status=pending` | — | `{ items: [ScheduledMessage] }` sorted by `sendAt` |
 | POST | `/bot/scheduled/:id/cancel` | — | `ScheduledMessage` |
 | POST | `/bot/staff-code` | — | `{ "code": "482913", "expiresAt": "...", "instruction": "Добавьте бота в рабочий чат и отправьте: /staff 482913" }` |
@@ -879,7 +899,104 @@ Fields:
 Jewelry in the bot: the AI context lists active jewelry that has at least one size in stock, with its category,
 material, thread, thickness, colour, stone, suitable services, price (per size when sizes differ in price) and the
 names of the sizes in stock — never quantities. `show_products` sends the cover photo with the name, material,
-thickness, price and the sizes in stock.
+thickness, price and the sizes in stock (jewelry and goods in stock).
+
+#### Client conversation (AI tools)
+The AI answers clients warmly and briefly in Russian, only from the studio data (studio info, price list, jewelry in
+stock, aftercare memos, knowledge base) and tool results — it never invents prices, availability, free time or
+discounts. It consults on every service of the price list (procedure, duration, price and variants, prepayment,
+preparation, contraindications, healing, aftercare); when the data has no answer, on medical red flags, complaints or a
+request for a human it calls `handoff_to_staff`: the chat gets `needsAttention`, the staff chat is notified, and staff
+answer from the app (`POST /bot/chats/:chatId/messages`). Client tools:
+- `create_booking_request { contactName, phone, serviceName, preferredTime, comment? }` — a `BookingRequest`; staff confirm the time.
+- `handoff_to_staff { reason }`.
+- `show_service { serviceId }` — the service picture with price and variants after the reply (once per conversation).
+- `show_products { productIds ≤ 5 }` — photos of pieces in stock.
+- `show_jewelry_for_service { serviceId }` — a jewelry carousel of the pieces compatible with the service (see
+  Catalogs). The model maps misspelled zones («Феликс» → Хеликс) onto the price list.
+- `find_jewelry { query }` — searches active jewelry and goods (name, SKU, category, material, colour, stone, size
+  names, thickness, thread, suitable services, description; Russian word forms tolerated), up to 8 matches: sizes in
+  stock with prices or «нет в наличии» — never quantities.
+- `my_appointments {}` — the upcoming scheduled / confirmed appointments of the client card **linked** to this chat
+  (deep link or shared phone; a chat merely attributed to a client, e.g. an old account after re-linking, gets
+  nothing): number, time, services, master, status. Unidentified chats are asked to share the phone.
+- `free_slots { date, appointmentId?, serviceId?, masterId? }` — free starts on a studio-local date: inside
+  `StudioSettings.workdayStart`–`workdayEnd` (studio timezone), every 30 minutes, at least 1 hour from now, at most 90
+  days ahead, not overlapping the master's non-cancelled, non-no-show appointments. With `appointmentId` (the client's
+  own) its duration and master are used and its own time does not count as busy; else `serviceId` gives the duration
+  (default 60 min) and `masterId` one master (default: every active master — employees with `isMaster`, all active
+  employees when none is).
+- `reschedule_appointment { appointmentId, startsAt }` — `startsAt` is studio-local «YYYY-MM-DD HH:MM» (an ISO instant
+  with an offset is accepted). Only the linked client's own future `scheduled` / `confirmed` appointments; the new time
+  must be ≥ 1 hour from now, ≤ 90 days ahead and inside the working hours; duration and master are kept, the regular
+  overlap check applies (`schedule_conflict` → the model offers another time), pending reminders are rebuilt and the
+  staff chat gets «🔁 Клиент … перенёс запись №…» (before → after). The model calls it only after the client chose a
+  time. Cancellations are handed to staff.
+- `/bot/test` runs these tools without writing anything (no booking, no reschedule, no messages) and lists what would
+  have happened.
+
+#### Catalogs (inline buttons)
+- The keyboard buttons «💎 Украшения» / «💉 Услуги и цены» and the `/catalog` command (jewelry) open a menu with
+  inline buttons without an AI call (the button text is stored as the client's message, the menu as `[Каталог] …`).
+  When there is nothing to show, the message goes to the AI as usual.
+- Jewelry menu: the jewelry `CatalogCategory`s (staff order) that have active pieces in stock, plus «Другие» for
+  pieces without a registered category, and «💉 Услуги и цены». Service menu: per service category its catalog
+  categories in staff order («Пирсинг · Ухо»), then services without a group («Тату», or «Пирсинг · прочее» when the
+  category has groups), and «💎 Украшения».
+- A category opens a **carousel**: one message (photo + caption, or text when the item has no sendable picture) with
+  «◀︎ 2 / 7 ▶︎» (wrapping around), and for jewelry «💍 Хочу это украшение» and «📂 Все украшения»; for services
+  «📅 Записаться», «💎 Подходящие украшения» (when compatible pieces are in stock) and «📂 Все услуги». Paging edits
+  the same message (photo, caption and buttons); between an item with a photo and one without, the message is
+  replaced. The carousel is recomputed from the database on every press (a stale position is clamped).
+- Jewelry caption (≤ 1024 chars): heading («💎 Украшения для «Хеликс»» / «💎 Лабрет»), name, material · thread ·
+  thickness · colour · stone, «Подходит для: …», a short description and «В наличии:» with each size in stock and its
+  price — never quantities. Compatible pieces of a service = active `jewelry` products linked to it
+  (`Product.serviceIds` / `Service.jewelryIds`) that have a size in stock.
+- «Хочу это украшение»: with two or more sizes in stock the buttons turn into size buttons («8 мм — 1 700 ₽», «◀︎
+  Назад»); the choice is stored as the client's message «[Выбрано] Лабрет — 8 мм · 1 700 ₽ (украшение id 12, для
+  «Хеликс»)» and the AI continues (offers to book, `create_booking_request` with the piece in the comment). «Записаться»
+  stores «[Выбрано] Записаться: Хеликс · 3 000 ₽ (услуга id 5)» the same way. A size sold out meanwhile is refused.
+- Button payloads (`callback_data`) carry everything they need (≤ 64 bytes), so buttons keep working after a restart;
+  unknown or malformed ones answer «Эта кнопка устарела».
+
+#### Reminder buttons
+Every reminder carries «✅ Приду» and «🔁 Перенести». Only the client of the appointment, in the chat linked to their
+card, can use them, and only while it is a future `scheduled` / `confirmed` appointment (otherwise the buttons are
+removed: «Эта запись уже неактуальна»). A button under a message Telegram no longer shows to the bot (older than about
+48 hours) answers with a new message instead of editing the old one.
+- «✅ Приду» — `scheduled` → `confirmed` (pending reminders are rebuilt), the bot thanks the client, the staff chat
+  gets «✅ … подтвердил(а) запись №…», and only «🔁 Перенести» stays under the reminder. Stored as «[Кнопка] ✅ Приду» +
+  the bot's reply (no AI call).
+- «🔁 Перенести» — stored as the client's message «[Кнопка] 🔁 Хочу перенести запись №…: <when> — <services>»; the AI
+  continues with `my_appointments` / `free_slots` / `reschedule_appointment`.
+
+#### Staff chats
+- An employee is recognised when they share **their own** contact with the bot (the «📱 Поделиться номером» button):
+  the contact's `user_id` must equal the sender's Telegram id (a forwarded contact card is refused, as Telegram sets
+  `user_id` to the owner of the number) and the normalized phone must equal the phone of an **active** employee. The
+  chat gets `employee`, is greeted as staff with a staff keyboard («📋 Что сегодня», «📊 Выручка за неделю», «📦 Что
+  заканчивается», «💎 Украшения») and the staff chat is notified («🔑 … подключил(а) Telegram к боту как сотрудник»).
+  No client card is created. Sharing any other phone later makes the chat a client chat again. The `/staff` group
+  binding is never affected.
+- Staff mode is checked on every message: only while the employee is active (deactivation removes it at once).
+  The AI then uses a staff system prompt (studio info and price list, the employee's name, the masters) and staff tools
+  only — client tools are not offered, and client chats never get the staff tools (a client chat calling one gets
+  «Неизвестный инструмент»):
+  - `today {}` — today's appointments of all masters, sales today with the payment split, refunds, the cash shift and
+    expected cash, new booking requests, chats waiting for staff, low stock count.
+  - `appointments { from, to?, masterId?, clientQuery?, status? }` — studio-local dates (`to` inclusive, ≤ 62 days),
+    every master: client and phone, master, service lines with prices, total, status, prepayment, payment, title, notes
+    (`status`: an appointment status or `active`); up to 60 rows plus totals.
+  - `client_info { query }` — up to 3 matching client cards (name, last name, phone, nick): contacts, Telegram, notes,
+    visits, total spent, last visit, upcoming appointments, the last 10 services and purchases.
+  - `analytics { from, to }` — `GET /reports/summary` for the studio-local days (≤ 400 days): revenue, sales,
+    average check, refunds, payment split, services vs products, prepayments, top 10 services and products (with sizes),
+    by master, new clients, completed appointments, no-shows, revenue by day (≤ 31 days).
+  - `stock { query?, lowOnly? }` — active products of every kind with the stock of each size in units, minimums,
+    prices; presence consumables by status; `lowOnly` — sizes at or below the minimum and presence status not `ok`.
+  Staff answers may name quantities, money and any client's data. Staff chats are never escalated (`needsAttention`
+  stays false); when the AI is off or the limit is reached they get «ИИ-помощник сейчас недоступен…».
+- AI cost guards (daily and per-chat hourly limits) apply to staff chats too.
 
 ### Settings
 | Method | Path | Body | Response |
@@ -887,4 +1004,4 @@ thickness, price and the sizes in stock.
 | GET | `/settings/studio` | — | `StudioSettings` |
 | PUT | `/settings/studio` | `StudioSettings` (any subset; omitted fields are kept) | `StudioSettings` · `400` for a malformed time or `workdayEnd` not after `workdayStart` |
 | GET | `/settings/bot` | — | `BotSettings` |
-| PUT | `/settings/bot` | `BotSettings` (read-only fields ignored) | `BotSettings` |
+| PUT | `/settings/bot` | `BotSettings` (any subset; read-only fields ignored) | `BotSettings` · `400` for invalid `reminderOffsets` (see BotSettings) |

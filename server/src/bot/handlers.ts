@@ -1,6 +1,8 @@
 import { Keyboard, type Bot, type Context } from 'grammy';
 import type { AppContext } from '../context.js';
 import { errorMessage } from '../lib/errors.js';
+import { handleCallback } from './callbacks.js';
+import { jewelryCategoriesMenu, sendMenu, serviceSectionsMenu } from './catalog.js';
 import { handleContact, handleStaffCommand, handleStart } from './onboarding.js';
 import type { BotPipeline, IncomingFrom } from './pipeline.js';
 import type { PendingImage } from './prompt.js';
@@ -14,6 +16,26 @@ export const BUTTONS = {
   aftercare: '🩹 Уход после процедуры',
   contact: '📱 Поделиться номером',
 } as const;
+
+/** Keyboard of a staff chat: quick questions to the staff-mode AI and the catalog. */
+export const STAFF_BUTTONS = {
+  today: '📋 Что сегодня',
+  revenue: '📊 Выручка за неделю',
+  low: '📦 Что заканчивается',
+} as const;
+
+export function staffKeyboard(): Keyboard {
+  return new Keyboard()
+    .text(STAFF_BUTTONS.today)
+    .text(STAFF_BUTTONS.revenue)
+    .row()
+    .text(STAFF_BUTTONS.low)
+    .text(BUTTONS.jewelry)
+    .resized()
+    .persistent();
+}
+
+const keyboardFor = (reply: { linked: boolean; staff?: boolean }): Keyboard => (reply.staff ? staffKeyboard() : mainKeyboard(reply.linked));
 
 export function mainKeyboard(linked: boolean): Keyboard {
   const keyboard = new Keyboard()
@@ -54,6 +76,16 @@ async function fetchImage(deps: HandlerDeps, fileId: string, mediaType: PendingI
   }
 }
 
+/** Opens a catalog menu; when there is nothing to show, the message goes to the AI like any other. */
+async function openCatalog(deps: HandlerDeps, from: IncomingFrom, text: string, which: 'jewelry' | 'services'): Promise<void> {
+  const menu = which === 'jewelry' ? jewelryCategoriesMenu(deps.ctx.db) : serviceSectionsMenu(deps.ctx.db);
+  if (!menu) {
+    deps.pipeline.receive(from, text);
+    return;
+  }
+  await deps.pipeline.receiveHandled(from, text, () => sendMenu(deps.ctx, from.chatId, menu));
+}
+
 export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
   const { ctx, pipeline } = deps;
 
@@ -66,7 +98,7 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
 
   pm.command('start', async (c) => {
     const reply = handleStart(ctx, sender(c), String(c.match ?? ''));
-    await c.reply(reply.text, { reply_markup: mainKeyboard(reply.linked) });
+    await c.reply(reply.text, { reply_markup: keyboardFor(reply) });
   });
 
   pm.on('message:contact', async (c) => {
@@ -76,7 +108,35 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
       { ...sender(c), userId: c.from.id },
       { userId: contact.user_id, phone: contact.phone_number, firstName: contact.first_name, lastName: contact.last_name },
     );
-    await c.reply(reply.text, { reply_markup: mainKeyboard(reply.linked) });
+    await c.reply(reply.text, { reply_markup: keyboardFor(reply) });
+  });
+
+  // Interactive catalogs: the keyboard buttons and /catalog open menus with inline buttons (no AI call).
+  pm.command('catalog', async (c) => {
+    await openCatalog(deps, sender(c), c.message.text, 'jewelry');
+  });
+  pm.hears(BUTTONS.jewelry, async (c) => {
+    await openCatalog(deps, sender(c), BUTTONS.jewelry, 'jewelry');
+  });
+  pm.hears(BUTTONS.services, async (c) => {
+    await openCatalog(deps, sender(c), BUTTONS.services, 'services');
+  });
+
+  pm.on('callback_query:data', async (c) => {
+    const message = c.callbackQuery.message;
+    const answer = await handleCallback(
+      { ctx, pipeline },
+      {
+        from: sender(c),
+        data: c.callbackQuery.data,
+        // An old message Telegram no longer shows to the bot comes as «inaccessible» (date 0): answer with new messages.
+        message:
+          message && message.date !== 0
+            ? { messageId: message.message_id, isPhoto: 'photo' in message && Array.isArray(message.photo) }
+            : null,
+      },
+    );
+    await c.answerCallbackQuery(answer.text ? { text: answer.text } : undefined).catch(() => undefined);
   });
 
   pm.on('message:photo', async (c) => {
