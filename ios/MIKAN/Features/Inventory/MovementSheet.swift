@@ -187,7 +187,8 @@ private struct StockSizeAmountRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            NumberField.optionalInteger(size.title, value: $amount, unit: unit)
+            // «0» shows where to type: a several-size sheet starts with every field empty.
+            NumberField(title: size.title, value: $amount, suffix: unit, groupsDigits: false, placeholder: "0")
             HStack(spacing: 4) {
                 Text("Сейчас \(InventoryText.quantity(size.quantity, unit: unit))")
                 if let resulting {

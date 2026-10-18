@@ -92,7 +92,7 @@ final class ProductVariantsTests: XCTestCase {
 
     func testDetailLineShowsTheSizeOnlyForASingleSize() throws {
         let product = try Fixtures.decode(Product.self, Fixtures.productWithSizes)
-        XCTAssertEqual(product.detailLine, "Титан ASTM F136 · 1.2 мм (16G)")
+        XCTAssertEqual(product.detailLine, "Титан ASTM F136 · 1.2\u{00A0}мм\u{00A0}(16G)")
         XCTAssertEqual(product.sizesSummary, "6 мм · 8 мм")
     }
 
@@ -101,9 +101,9 @@ final class ProductVariantsTests: XCTestCase {
         XCTAssertEqual(Gauge.label(forMillimeters: 1.6), "14G")
         XCTAssertEqual(Gauge.label(forMillimeters: 8), "0G")
         XCTAssertNil(Gauge.label(forMillimeters: 1.3))
-        XCTAssertEqual(Gauge.thicknessText(1.2), "1.2 мм (16G)")
-        XCTAssertEqual(Gauge.thicknessText(1), "1 мм (18G)")
-        XCTAssertEqual(Gauge.thicknessText(1.25), "1.25 мм")
+        XCTAssertEqual(Gauge.thicknessText(1.2), "1.2\u{00A0}мм\u{00A0}(16G)")
+        XCTAssertEqual(Gauge.thicknessText(1), "1\u{00A0}мм\u{00A0}(18G)")
+        XCTAssertEqual(Gauge.thicknessText(1.25), "1.25\u{00A0}мм")
         XCTAssertEqual(Gauge.parse("1,2"), 1.2)
         XCTAssertEqual(Gauge.parse("1.6 мм"), 1.6)
         XCTAssertNil(Gauge.parse(""))

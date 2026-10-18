@@ -341,11 +341,11 @@ nonisolated enum Gauge {
         return text
     }
 
-    /// «1.2 мм (16G)», «1.3 мм».
+    /// «1.2 мм (16G)», «1.3 мм» — with no-break spaces, so a wrapped line never splits the thickness.
     static func thicknessText(_ mm: Double) -> String {
-        let base = "\(millimeters(mm)) мм"
+        let base = "\(millimeters(mm))\u{00A0}мм"
         guard let gauge = label(forMillimeters: mm) else { return base }
-        return "\(base) (\(gauge))"
+        return "\(base)\u{00A0}(\(gauge))"
     }
 
     /// Parses "1,2" / "1.2" / "1.2 мм" → 1.2; `nil` when there is no positive number.

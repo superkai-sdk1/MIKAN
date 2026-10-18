@@ -113,7 +113,7 @@ final class ProductDraftTests: XCTestCase {
 
         draft.thicknessText = "1,6"
         XCTAssertNil(draft.thicknessMessage)
-        XCTAssertEqual(draft.thicknessHint, "1.6 мм (14G)")
+        XCTAssertEqual(draft.thicknessHint, "1.6\u{00A0}мм\u{00A0}(14G)")
         XCTAssertEqual(draft.body.thicknessMm, Nullable(1.6))
 
         draft.thicknessText = "толстая"
