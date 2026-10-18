@@ -59,7 +59,7 @@ struct AnalyticsContent: View {
     }
 }
 
-/// Period chips over the analytics: Liquid Glass capsules, the selected one tinted with the brand color.
+/// Period chips at the top of the analytics: Liquid Glass capsules, the selected one tinted with the brand color.
 struct AnalyticsPeriodBar: View {
     @Binding var period: ReportPeriod
     @Namespace private var glass
@@ -73,10 +73,13 @@ struct AnalyticsPeriodBar: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.vertical, 4)
             }
         }
         .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+        // Only as tall as the chips: a horizontal scroll view otherwise grows to whatever height it is offered.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func chip(_ option: ReportPeriod) -> some View {

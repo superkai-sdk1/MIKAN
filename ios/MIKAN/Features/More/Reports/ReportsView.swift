@@ -20,6 +20,9 @@ struct ReportsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                // In the content, not a top bar: a horizontal scroll view gets no height of its own in a safe area bar.
+                AnalyticsPeriodBar(period: $period)
+                    .padding(.horizontal, -16)
                 header
                 if let value = analytics.value {
                     AnalyticsContent(analytics: value, comparison: ReportPeriod.rangeText(previousInterval(value)))
@@ -32,9 +35,7 @@ struct ReportsView: View {
             .padding(16)
         }
         .background { AuraBackground() }
-        .safeAreaBar(edge: .top) {
-            AnalyticsPeriodBar(period: $period)
-        }
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .refreshable { await load() }
         .task(id: loadKey) {
             analytics.reset()
