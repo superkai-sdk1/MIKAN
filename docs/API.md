@@ -234,8 +234,10 @@ or `null` for a mixed count.
 `status`: `scheduled` | `confirmed` | `completed` | `cancelled` | `no_show`. `saleId` — the sale that paid for it.
 `receiptId` — its open receipt in the POS (`OpenReceipt`, the visit has started), `null` when none.
 Visits carried over from YCLIENTS were paid in cash at the studio: the server maintenance script
-`pay-imported-appointments` (dry run by default; `--apply`) records each past unpaid imported visit as a completed cash
-sale dated at the end of the visit (note «Перенесено из YCLIENTS», no cash shift) and completes the visit.
+`pay-imported-appointments --before=<the day MIKAN started>` (dry run by default; `--apply`) records each unpaid
+scheduled / confirmed / completed visit that started before that day as a completed cash sale dated at the end of the
+visit (note «Перенесено из YCLIENTS», no cash shift) — one item per booked service line, or one item at the visit
+price — and completes the visit. Cancelled visits and no-shows are left as they are.
 - Prepayment (see «Prepayments» below):
   - `depositRequired` — prepayment the studio asks for (defaults to the services' `depositAmount`; editable).
   - `deposit` — prepayment **held** for this appointment right now: received − applied in sales + returned by sale

@@ -1,23 +1,28 @@
 /**
  * Records the past visits carried over from YCLIENTS as paid sales: the studio was paid for them in cash, only the
- * bookkeeping lived in YCLIENTS. One sale per visit, dated at the end of the visit, with its client, the master as the
- * seller and one service item (the visit title, else «Процедура») at the visit price, paid in cash.
+ * bookkeeping lived in YCLIENTS. One sale per visit, dated at the end of the visit, with its client and the master as
+ * the seller, paid in cash: one service item per booked service line (catalog service, name and price as booked; when
+ * the lines add up to more than the visit price the difference is the discount), or — without lines, or when they add
+ * up to less — one item at the visit price named after the lines, else the visit title, else «Процедура».
  *
- *   node dist/scripts/pay-imported-appointments.js [--before=2026-10-15] [--apply]
+ *   node dist/scripts/pay-imported-appointments.js --before=2026-10-15 [--apply]
  *
- * A visit qualifies when it started before `--before` (default: now), has no sale, is `scheduled`, `confirmed` or
- * `completed`, and has the shape the YCLIENTS import gives (no catalog service, no service lines). It becomes
- * `completed` (completedAt = its end unless already set) and gets the sale; its pending reminders and prepayment QR
- * codes are cancelled. Visits that hold a prepayment are left for staff and listed. The sales belong to no cash shift
- * (there were none then), so shift balances do not change. Without --apply it is a dry run; re-running is safe.
+ * `--before` is required: the day the studio started working in MIKAN, so visits made in the app are never touched.
+ * A visit qualifies when it started before it, has no sale and is `scheduled`, `confirmed` or `completed` (cancelled
+ * ones and no-shows stay as they are). It becomes `completed` (completedAt = its end unless already set) and gets the
+ * sale; its pending reminders and prepayment QR codes are cancelled. Visits that hold a prepayment are left for staff
+ * and listed. The sales belong to no cash shift (there were none then), so shift balances do not change. Without
+ * --apply it is a dry run; re-running is safe.
  */
 import path from 'node:path';
-import { and, eq, inArray, isNull, lt, max, notExists } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, max } from 'drizzle-orm';
 import { openDatabase, type Db } from '../db/client.js';
-import { appointments, appointmentServices, saleItems, sales } from '../db/schema.js';
+import { appointments, saleItems, sales } from '../db/schema.js';
 import { depositLedgerByAppointment, heldAmount } from '../domain/deposit-ledger.js';
 import { cancelPendingDepositCodes } from '../domain/deposits.js';
+import { serviceLinesByAppointment } from '../domain/refs.js';
 import { cancelPendingForAppointment } from '../domain/scheduling.js';
+import type { AppointmentRow, AppointmentServiceRow } from '../lib/serialize.js';
 import { parseInstant, toIso } from '../lib/time.js';
 import { isEntryPoint } from './cli.js';
 
@@ -48,9 +53,7 @@ export function payImportedAppointments(db: Db, opts: { before: number; apply: b
       and(
         lt(appointments.startsAt, opts.before),
         isNull(appointments.saleId),
-        isNull(appointments.serviceId),
         inArray(appointments.status, OPEN_STATUSES),
-        notExists(db.select({ id: appointmentServices.id }).from(appointmentServices).where(eq(appointmentServices.appointmentId, appointments.id))),
       ),
     )
     .orderBy(appointments.startsAt, appointments.id)
@@ -71,11 +74,13 @@ export function payImportedAppointments(db: Db, opts: { before: number; apply: b
     skippedWithDeposit: [...holding],
   };
   if (!opts.apply) return summary;
+  const lines = serviceLinesByAppointment(db, paying.map((r) => r.id));
   db.transaction((tx) => {
     let number = tx.select({ n: max(sales.number) }).from(sales).get()?.n ?? 0;
     for (const row of paying) {
       const paidAt = row.completedAt ?? row.endsAt;
       number += 1;
+      const { items, subtotal } = saleItemsOf(row, lines.get(row.id) ?? []);
       const sale = tx
         .insert(sales)
         .values({
@@ -84,8 +89,8 @@ export function payImportedAppointments(db: Db, opts: { before: number; apply: b
           employeeId: row.masterId,
           appointmentId: row.id,
           shiftId: null,
-          subtotal: row.price,
-          discount: 0,
+          subtotal,
+          discount: subtotal - row.price,
           total: row.price,
           payCash: row.price,
           status: 'completed',
@@ -95,7 +100,7 @@ export function payImportedAppointments(db: Db, opts: { before: number; apply: b
         .returning()
         .get();
       tx.insert(saleItems)
-        .values({ saleId: sale.id, type: 'service', name: row.title?.trim() || ITEM_FALLBACK, quantity: 1, price: row.price, total: row.price })
+        .values(items.map((item) => ({ ...item, saleId: sale.id })))
         .run();
       tx.update(appointments)
         .set({ status: 'completed', completedAt: paidAt, saleId: sale.id, updatedAt: now })
@@ -109,12 +114,33 @@ export function payImportedAppointments(db: Db, opts: { before: number; apply: b
   return summary;
 }
 
+interface ServiceItem {
+  type: 'service';
+  serviceId: number | null;
+  name: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+/** The sold items of a visit and their sum before the discount (see the header). */
+function saleItemsOf(row: AppointmentRow, lines: AppointmentServiceRow[]): { items: ServiceItem[]; subtotal: number } {
+  const linesTotal = lines.reduce((sum, l) => sum + l.price, 0);
+  if (lines.length > 0 && linesTotal >= row.price) {
+    const items = lines.map((l) => ({ type: 'service' as const, serviceId: l.serviceId, name: l.name, quantity: 1, price: l.price, total: l.price }));
+    return { items, subtotal: linesTotal };
+  }
+  const name = lines.map((l) => l.name).join(', ') || row.title?.trim() || ITEM_FALLBACK;
+  const serviceId = lines.length === 1 ? lines[0]!.serviceId : row.serviceId;
+  return { items: [{ type: 'service', serviceId, name, quantity: 1, price: row.price, total: row.price }], subtotal: row.price };
+}
+
 if (isEntryPoint(import.meta.url)) {
   const args = process.argv.slice(2);
   const beforeArg = args.find((a) => a.startsWith('--before='))?.slice('--before='.length);
-  const before = beforeArg ? parseInstant(beforeArg.length === 10 ? `${beforeArg}T00:00:00Z` : beforeArg) : Date.now();
+  const before = beforeArg ? parseInstant(beforeArg.length === 10 ? `${beforeArg}T00:00:00Z` : beforeArg) : null;
   if (before === null) {
-    process.stderr.write('Usage: node dist/scripts/pay-imported-appointments.js [--before=YYYY-MM-DD] [--apply]\n');
+    process.stderr.write('Usage: node dist/scripts/pay-imported-appointments.js --before=YYYY-MM-DD[THH:MM:SSZ] [--apply]\n');
     process.exit(2);
   }
   const apply = args.includes('--apply');
