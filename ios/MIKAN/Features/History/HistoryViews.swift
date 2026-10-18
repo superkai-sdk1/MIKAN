@@ -39,8 +39,11 @@ struct HistoryEntryRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// «Лабрет — 8 мм × 2»: the server names product entries with their size; an entry whose name lacks it
+    /// still gets it from `variantName`.
     private var itemName: String {
-        entry.quantity > 1 ? "\(entry.name) × \(entry.quantity)" : entry.name
+        let name = SizeLabel.fullName(name: entry.name, size: entry.variantName)
+        return entry.quantity > 1 ? "\(name) × \(entry.quantity)" : name
     }
 
     private var title: String {

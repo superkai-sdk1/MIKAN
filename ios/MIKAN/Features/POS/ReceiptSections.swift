@@ -120,7 +120,11 @@ struct ReceiptLinesSection: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach($cart.lines) { $line in
-                    ReceiptLineRow(line: $line)
+                    ReceiptLineRow(
+                        line: $line,
+                        stockLimit: cart.stockLimit(for: line),
+                        stockWarning: cart.stockWarning(for: line)
+                    )
                 }
                 .onDelete { offsets in
                     withAnimation(.snappy) { cart.remove(at: offsets) }
@@ -138,13 +142,17 @@ struct ReceiptLinesSection: View {
 
 private struct ReceiptLineRow: View {
     @Binding var line: CartLine
+    /// How many of the line's size the stock still allows (other lines of that size count); `nil` for services.
+    let stockLimit: Int?
+    /// Set when all lines of the size together exceed its stock.
+    let stockWarning: String?
 
     private static let serviceQuantityLimit = 99
 
-    /// Products cannot be sold beyond stock (the server answers `insufficient_stock`).
+    /// Products cannot be sold beyond the stock of their size (the server answers `insufficient_stock`).
     private var quantityRange: ClosedRange<Int> {
-        guard let stock = line.stock else { return 1...Self.serviceQuantityLimit }
-        return 1...max(1, stock, line.quantity)
+        guard let stockLimit else { return 1...Self.serviceQuantityLimit }
+        return 1...max(1, stockLimit, line.quantity)
     }
 
     var body: some View {
@@ -153,9 +161,8 @@ private struct ReceiptLineRow: View {
                 Image(systemName: line.productId == nil ? "hands.and.sparkles" : "sparkles")
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
-                Text(line.name)
+                SizedItemTitle(name: line.name, size: line.sizeName)
                     .font(.body.weight(.medium))
-                    .lineLimit(2)
                 Spacer(minLength: 8)
                 MoneyText(line.total)
                     .font(.body.weight(.semibold))
@@ -169,12 +176,40 @@ private struct ReceiptLineRow: View {
                     .font(.subheadline)
                     .monospacedDigit()
             }
-            if line.exceedsStock, let stock = line.stock {
-                Label("На складе только \(stock) шт", systemImage: "exclamationmark.triangle.fill")
+            if let stockWarning {
+                Label(stockWarning, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.orange)
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// Item name with its size as a small badge — «Лабрет» [8 мм] — in receipt, checkout and sale lines;
+/// read out as «Лабрет, размер 8 мм».
+struct SizedItemTitle: View {
+    let name: String
+    let size: String?
+
+    var body: some View {
+        let parts = SizeLabel.split(name: name, size: size)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(parts.name)
+                .lineLimit(2)
+            if let size = parts.size {
+                Text(size)
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .foregroundStyle(Color.accentColor)
+                    .background(Color.accentColor.opacity(0.15), in: .capsule)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(parts.size.map { "\(parts.name), размер \($0)" } ?? parts.name)
     }
 }

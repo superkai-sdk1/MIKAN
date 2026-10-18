@@ -129,7 +129,7 @@ private struct RefundSheet: View {
                     Section {
                         Toggle("Вернуть украшения на склад", isOn: $restock)
                     } footer: {
-                        Text("Выключите, если украшение использовано или повреждено.")
+                        Text(SaleRefundText.restockNote(sale.items))
                     }
                 }
             }
@@ -217,6 +217,20 @@ nonisolated enum SaleRefundText {
     static func depositNote(_ payments: Payments) -> String? {
         guard payments.deposit > 0 else { return nil }
         return "Предоплата \(Money.format(payments.deposit)) вернётся на запись — её можно будет вернуть клиенту или зачесть в новом чеке."
+    }
+
+    static let restockHint = "Выключите, если украшение использовано или повреждено."
+
+    /// Footer of «Вернуть украшения на склад»: stock goes back to the sizes that were sold
+    /// («… в проданные размеры: Лабрет — 8 мм × 2. Выключите, …»).
+    static func restockNote(_ items: [SaleItem]) -> String {
+        let sized = items.filter { $0.type == .product && $0.variantName.nonEmpty != nil }
+        guard !sized.isEmpty else { return restockHint }
+        let names = sized.map { item in
+            let name = SizeLabel.fullName(name: item.name, size: item.variantName)
+            return item.quantity > 1 ? "\(name) × \(item.quantity)" : name
+        }
+        return "Украшения вернутся на склад в проданные размеры: \(names.joined(separator: ", ")). \(restockHint)"
     }
 }
 

@@ -88,6 +88,7 @@
 		788AD97BF4F6E78828A6AD60 /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A106DB88A93BF6DCF2ACF6 /* Money.swift */; };
 		7B151E4FE0BE2737575C8EFA /* AppointmentBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771DB5AAEC2B9B7823B0A230 /* AppointmentBlock.swift */; };
 		7C6560E8F96DD979FBB13837 /* ProductEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E20ED5AE95C6274F0749731 /* ProductEditorView.swift */; };
+		7DECCF3BC890294C7883B22A /* ProductSizeText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CBF35469CB5703B211A82FF /* ProductSizeText.swift */; };
 		7E2A691237E329C755EEC3F1 /* PaymentSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFDAC1D8C8216ADACBC8ACE8 /* PaymentSplit.swift */; };
 		7E30153BB65D2B1402A3039E /* EmployeesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 976991F0D257EC4A66890425 /* EmployeesListView.swift */; };
 		801F219E7D899A81B723DC45 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91CFD7B8EBAA56A8795503A7 /* APIClient.swift */; };
@@ -113,6 +114,7 @@
 		A447B7435E512065F9CEC6FB /* ShiftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7434591F5D261CAEDF661C4F /* ShiftStore.swift */; };
 		A52CF46FCA16285A07445565 /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBA6F8FECBCA06371ED372D2 /* MoreView.swift */; };
 		A5E6A4223B774E31BF2B5815 /* RemoteState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C59F908F5744097D294D25C /* RemoteState.swift */; };
+		A6B41B9E086569C6EBBB7CBA /* SizePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B5CC4A7928002CFBF8DCA7F /* SizePickerSheet.swift */; };
 		A817F5DA3A64FF71AA7795E8 /* QrPayment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B5D97E811139747860E958 /* QrPayment.swift */; };
 		A842B0F8E7EFE482DB5B0BBC /* ProductPurchasesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDA6E13A68FAD651B86E53F8 /* ProductPurchasesView.swift */; };
 		AA4DB916F895FC770FB43A32 /* CatalogViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43E3C0F2C02FC23320C7B7E /* CatalogViews.swift */; };
@@ -128,6 +130,7 @@
 		B59327C8E50E3C6694FB4011 /* ClientDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = E176EC637EC1DBB2DEB9EEA7 /* ClientDraft.swift */; };
 		B6DEC14B7006EAA808E4B89F /* PaymentQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88F5C329F8B0389C57B58A8 /* PaymentQueue.swift */; };
 		B89FBC808B6198890CB239AC /* ServicePhotoViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDD239CAB5F2222E9594DDB /* ServicePhotoViewer.swift */; };
+		B9713C72CACAEA8A9A0AFBB9 /* POSProductSizesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A913C12ADC71D88CFD27AF8 /* POSProductSizesTests.swift */; };
 		B9793F91B29E19D1B4D68A9C /* DepositCollectSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75DBB9381AA6BA30BB312650 /* DepositCollectSections.swift */; };
 		B9A4337BAC62B2D48687EB8D /* AppointmentDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D30A036B706354BDFAD5556 /* AppointmentDraftTests.swift */; };
 		B9C52D4E479E4EF3CEED5322 /* Bot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51ECA162A390E784B7685FF /* Bot.swift */; };
@@ -210,6 +213,7 @@
 		32834C088CCE6B6B10C61F34 /* AppointmentEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentEditorView.swift; sourceTree = "<group>"; };
 		336EF8CFCE5EA5946F07010C /* TimeGridLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeGridLayout.swift; sourceTree = "<group>"; };
 		33AF0ACC9932851C7726897D /* CalendarPeriod.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarPeriod.swift; sourceTree = "<group>"; };
+		3A913C12ADC71D88CFD27AF8 /* POSProductSizesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = POSProductSizesTests.swift; sourceTree = "<group>"; };
 		3A9DFE6A44B722148ECE85BE /* ClientDetailSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientDetailSections.swift; sourceTree = "<group>"; };
 		3C03942C5C2E9585A2FA0805 /* POSReceiptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = POSReceiptTests.swift; sourceTree = "<group>"; };
 		3C0C4860197175CF45FF6911 /* ServicePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServicePickerView.swift; sourceTree = "<group>"; };
@@ -264,6 +268,7 @@
 		8547BDA4B0CE1E5574BA81CE /* MIKAN.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MIKAN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		85AE9E0B9D1E4C1F94223B6D /* ServiceVariantsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceVariantsEditor.swift; sourceTree = "<group>"; };
 		8BCBB93C09D6C60A78BA28E6 /* ProductVariantsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductVariantsTests.swift; sourceTree = "<group>"; };
+		8CBF35469CB5703B211A82FF /* ProductSizeText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductSizeText.swift; sourceTree = "<group>"; };
 		8D4036D5DC76AA0A3BDB2121 /* ClientDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientDetailView.swift; sourceTree = "<group>"; };
 		8D6466EA57DACAC151D703B2 /* AppointmentDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentDetailView.swift; sourceTree = "<group>"; };
 		8EF3329D7F4E46E0179BE4D5 /* ModelDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDecodingTests.swift; sourceTree = "<group>"; };
@@ -275,6 +280,7 @@
 		976991F0D257EC4A66890425 /* EmployeesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeesListView.swift; sourceTree = "<group>"; };
 		982A2AC33D35C05CE3052EEB /* POSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = POSView.swift; sourceTree = "<group>"; };
 		985B4C4D7F9681DC9553F708 /* DepositQRStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositQRStep.swift; sourceTree = "<group>"; };
+		9B5CC4A7928002CFBF8DCA7F /* SizePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SizePickerSheet.swift; sourceTree = "<group>"; };
 		9E3D26C91CEB9CA01D99F220 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		A13AA12514182D4BC3E64672 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 		A30477A752EB8EFC0AD92C66 /* EmployeeEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeeEditorView.swift; sourceTree = "<group>"; };
@@ -486,6 +492,7 @@
 				836825577E80C15BA76F849E /* ImagePreparerTests.swift */,
 				8EF3329D7F4E46E0179BE4D5 /* ModelDecodingTests.swift */,
 				9609329DD2C1DFAED71C56E8 /* PaymentSplitTests.swift */,
+				3A913C12ADC71D88CFD27AF8 /* POSProductSizesTests.swift */,
 				3C03942C5C2E9585A2FA0805 /* POSReceiptTests.swift */,
 				8BCBB93C09D6C60A78BA28E6 /* ProductVariantsTests.swift */,
 				640DCF9373A3B925897F1920 /* ServiceCardTests.swift */,
@@ -682,6 +689,7 @@
 				DFDAC1D8C8216ADACBC8ACE8 /* PaymentSplit.swift */,
 				FD95B65A438B170A097431DD /* POSHubViews.swift */,
 				982A2AC33D35C05CE3052EEB /* POSView.swift */,
+				8CBF35469CB5703B211A82FF /* ProductSizeText.swift */,
 				6EC3A48EF031946312B2CD9A /* QRPaymentView.swift */,
 				B64DCC2C0B3204B305023435 /* ReceiptDraft.swift */,
 				A54927AFEDBC899FA87058CC /* ReceiptSections.swift */,
@@ -695,6 +703,7 @@
 				BBE68F36D8C894307F1321DD /* ShiftSheets.swift */,
 				B8F652F63A3AC1E0C72CC751 /* ShiftsHistoryView.swift */,
 				7434591F5D261CAEDF661C4F /* ShiftStore.swift */,
+				9B5CC4A7928002CFBF8DCA7F /* SizePickerSheet.swift */,
 			);
 			path = POS;
 			sourceTree = "<group>";
@@ -943,6 +952,7 @@
 				1C4D3506BBE40E0FB04A612B /* ProductDetailView.swift in Sources */,
 				7C6560E8F96DD979FBB13837 /* ProductEditorView.swift in Sources */,
 				A842B0F8E7EFE482DB5B0BBC /* ProductPurchasesView.swift in Sources */,
+				7DECCF3BC890294C7883B22A /* ProductSizeText.swift in Sources */,
 				E6810314076C85F1550FA1B7 /* QRCodeImage.swift in Sources */,
 				BF0F4BEB45657CEBD30355AE /* QRPaymentView.swift in Sources */,
 				A817F5DA3A64FF71AA7795E8 /* QrPayment.swift in Sources */,
@@ -984,6 +994,7 @@
 				19371F1B4F9859BE4C19660A /* ShiftSheets.swift in Sources */,
 				A447B7435E512065F9CEC6FB /* ShiftStore.swift in Sources */,
 				BE4C5679F576E5F304CC0A30 /* ShiftsHistoryView.swift in Sources */,
+				A6B41B9E086569C6EBBB7CBA /* SizePickerSheet.swift in Sources */,
 				ADD6E38047565B7A46E7A5AF /* StudioSettingsView.swift in Sources */,
 				0405B1EB3DEB77B5B3B17040 /* TelegramLinkSheet.swift in Sources */,
 				E8CFF858316F773950EB99EA /* TextFormatting.swift in Sources */,
@@ -1013,6 +1024,7 @@
 				9079E2544302ACD60787C47A /* IdempotencyTests.swift in Sources */,
 				AE6DC2EB506F3B90E50C6AB4 /* ImagePreparerTests.swift in Sources */,
 				2FADEA35FCA2247E6BF02A80 /* ModelDecodingTests.swift in Sources */,
+				B9713C72CACAEA8A9A0AFBB9 /* POSProductSizesTests.swift in Sources */,
 				17A8C3854DD054EF9A89058C /* POSReceiptTests.swift in Sources */,
 				B093AFBDD6C9987914D5D4A8 /* PaymentSplitTests.swift in Sources */,
 				4BDC72B1F099571DC1CA2E64 /* ProductVariantsTests.swift in Sources */,

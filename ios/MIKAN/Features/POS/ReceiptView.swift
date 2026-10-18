@@ -17,6 +17,8 @@ struct ReceiptView: View {
     @State private var search = ""
     @State private var category: String?
     @State private var showsServiceSheet = false
+    /// Jewelry with several sizes whose size is being picked.
+    @State private var sizePickerProduct: Product?
     @State private var addCount = 0
 
     private static let gridColumns = 2
@@ -55,6 +57,11 @@ struct ReceiptView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showsServiceSheet) {
             AddServiceSheet { text in showHint(text) }
+        }
+        .sheet(item: $sizePickerProduct) { picked in
+            // The latest copy after a catalog refresh, so the stock of every size is current.
+            let product = products.first { $0.id == picked.id } ?? picked
+            SizePickerSheet(product: product) { variant in add(product, variant: variant) }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: addCount)
     }
@@ -130,8 +137,7 @@ struct ReceiptView: View {
         HStack(alignment: .top, spacing: Self.tileSpacing) {
             ForEach(row) { product in
                 ProductTile(product: product, inCart: cart.quantity(ofProduct: product.id)) {
-                    cart.add(product: product)
-                    addCount += 1
+                    select(product)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -164,6 +170,21 @@ struct ReceiptView: View {
         await serviceCatalog.load { try await reference.ensureServices(force: force) }
     }
 
+    /// One size goes straight to the receipt; several sizes ask which one first.
+    private func select(_ product: Product) {
+        if product.hasSeveralSizes {
+            sizePickerProduct = product
+        } else if cart.add(product: product) {
+            addCount += 1
+        }
+    }
+
+    private func add(_ product: Product, variant: ProductVariant) {
+        guard cart.add(product: product, variant: variant) else { return }
+        addCount += 1
+        showHint(SizePicking.addedHint(product: product, variant: variant))
+    }
+
     private func showHint(_ text: String?) {
         guard let text else { return }
         hint = CatalogHint(text: text)
@@ -174,7 +195,8 @@ struct ReceiptView: View {
 #Preview("По записи") {
     let state = PreviewData.appState()
     state.cart.prefill(from: PreviewData.appointments[0])
-    state.cart.add(product: PreviewData.labret)
+    state.cart.add(product: PreviewData.labret, variant: PreviewData.labret.variants[1])
+    state.cart.add(product: PreviewData.ring)
     return NavigationStack {
         ReceiptView(catalog: Remote(PreviewData.products.filter { $0.kind == .jewelry }))
     }
