@@ -66,6 +66,9 @@ const botBody = z.object({
   ),
   /** Older builds: a single reminder N hours before. */
   reminderHoursBefore: nonNull(z.number().int().min(1).max(LEGACY_REMINDER_HOURS_MAX)),
+  /** Omitted = unchanged, `null` = that digest is off. */
+  morningDigestAt: timeOfDay.nullish(),
+  eveningDigestAt: timeOfDay.nullish(),
 });
 
 export function botSettingsOut(ctx: AppContext) {
@@ -116,12 +119,15 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/settings/bot', async () => botSettingsOut(ctx));
 
   app.put('/settings/bot', async (request) => {
-    const { reminderHoursBefore, reminderOffsets, ...input } = parse(botBody, request.body);
+    const { reminderHoursBefore, reminderOffsets, morningDigestAt, eveningDigestAt, ...input } = parse(botBody, request.body);
     const before = getBotSettings(db);
     const offsets = reminderOffsets ?? legacyOffsets(before, reminderHoursBefore);
     const after = saveBotSettings(db, {
       ...merge(before, input),
       reminderOffsets: offsets ? normalizeReminderOffsets(offsets) : before.reminderOffsets,
+      // `merge` turns null into '' (text fields); here null means «off».
+      morningDigestAt: morningDigestAt === undefined ? before.morningDigestAt : morningDigestAt,
+      eveningDigestAt: eveningDigestAt === undefined ? before.eveningDigestAt : eveningDigestAt,
     });
     if (before.enabled !== after.enabled) ctx.onBotSettingsChanged();
     const remindersChanged =

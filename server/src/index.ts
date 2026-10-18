@@ -9,6 +9,7 @@ import { loadConfig } from './config.js';
 import type { AppContext } from './context.js';
 import { openDatabase } from './db/client.js';
 import { seedDatabase } from './db/seed.js';
+import { DIGEST_CHECK_INTERVAL_MS, sendDueDigests } from './bot/digest.js';
 import { runBackupIfDue } from './domain/backup.js';
 import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
 import { studioTimezone } from './domain/settings.js';
@@ -79,6 +80,18 @@ async function main(): Promise<void> {
       });
   }, QR_SWEEP_INTERVAL_MS);
 
+  let digesting = false;
+  const digestTimer = setInterval(() => {
+    if (digesting) return;
+    digesting = true;
+    sendDueDigests(ctx)
+      .then((sent) => sent && log.info({ sent }, 'staff digests sent'))
+      .catch((err) => log.error({ err: errorMessage(err) }, 'staff digests failed'))
+      .finally(() => {
+        digesting = false;
+      });
+  }, DIGEST_CHECK_INTERVAL_MS);
+
   const backupDir = path.join(config.dataDir, 'backups');
   const backupTick = () =>
     runBackupIfDue(sqlite, backupDir, studioTimezone(db))
@@ -94,6 +107,7 @@ async function main(): Promise<void> {
     log.info({ signal }, 'shutting down');
     clearInterval(senderTimer);
     clearInterval(qrTimer);
+    clearInterval(digestTimer);
     clearInterval(backupTimer);
     const force = setTimeout(() => process.exit(1), 15_000);
     force.unref();

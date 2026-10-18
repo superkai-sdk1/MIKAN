@@ -27,6 +27,9 @@ export interface BotSettingsStored {
   remindersEnabled: boolean;
   /** Minutes before the appointment start at which reminders are sent, distinct, latest-first (largest first). */
   reminderOffsets: number[];
+  /** Staff digests: "HH:MM" studio time, `null` = off (see bot/digest.ts). */
+  morningDigestAt: string | null;
+  eveningDigestAt: string | null;
 }
 
 /** Reminder offsets: 1–6 distinct values, 15 minutes … 14 days. */
@@ -80,6 +83,8 @@ export const DEFAULT_BOT: BotSettingsStored = {
   aftercareHour: 12,
   remindersEnabled: true,
   reminderOffsets: [24 * 60],
+  morningDigestAt: '09:30',
+  eveningDigestAt: '21:30',
 };
 
 const KEY_STUDIO = 'studio';
@@ -87,6 +92,7 @@ const KEY_BOT = 'bot';
 const KEY_STAFF_CHAT = 'staffChatId';
 const KEY_STAFF_CODE = 'staffCode';
 const KEY_BOT_USERNAME = 'botUsername';
+const KEY_DIGESTS_SENT = 'digestsSent';
 
 function readKey<T>(db: DbOrTx, key: string): T | null {
   const row = db.select().from(settings).where(eq(settings.key, key)).get();
@@ -157,6 +163,20 @@ export function getBotSettings(db: DbOrTx): BotSettingsStored {
 export function saveBotSettings(db: DbOrTx, value: BotSettingsStored): BotSettingsStored {
   writeKey(db, KEY_BOT, value);
   return value;
+}
+
+/** The studio day (`YYYY-MM-DD`) each staff digest was last sent for. */
+export interface DigestsSent {
+  morning?: string;
+  evening?: string;
+}
+
+export function getDigestsSent(db: DbOrTx): DigestsSent {
+  return readKey<DigestsSent>(db, KEY_DIGESTS_SENT) ?? {};
+}
+
+export function setDigestsSent(db: DbOrTx, value: DigestsSent): void {
+  writeKey(db, KEY_DIGESTS_SENT, value);
 }
 
 export function studioTimezone(db: DbOrTx): string {
