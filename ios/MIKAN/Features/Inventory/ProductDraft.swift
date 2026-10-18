@@ -1,6 +1,6 @@
 import Foundation
 
-// Pure editor logic of the product card: sizes, jewelry attributes, limits and the API body.
+// Pure editor logic of the product card: kinds, sizes, jewelry attributes, stock modes, limits and the API body.
 
 /// Limits of the product card from the API contract.
 nonisolated enum ProductLimits {
@@ -109,6 +109,10 @@ nonisolated struct ProductDraft: Hashable, Sendable {
     /// Upload paths; the first is the cover.
     var photos: [String]
     var serviceIds: [Int]
+    /// Consumables: counted in units, or only «есть / заканчивается / нет».
+    var stockMode: StockMode
+    /// The marked availability in `presence` mode.
+    var presenceStatus: PresenceStatus
     var active: Bool
     /// In the order staff arranged them; a product without sizes has one unnamed row.
     var sizes: [SizeDraft]
@@ -131,12 +135,22 @@ nonisolated struct ProductDraft: Hashable, Sendable {
         unit = product?.unitLabel ?? ProductLimits.defaultUnit
         photos = product?.photos ?? []
         serviceIds = product?.serviceIds ?? []
+        stockMode = product?.stockMode ?? .quantity
+        // Switching a counted consumable to «есть / нет» starts like the server does: «есть» when it had stock.
+        presenceStatus = product?.presenceStatus ?? (product.map { $0.quantity > 0 ? PresenceStatus.ok : .out } ?? .ok)
         active = product?.active ?? true
         sizes = product?.variants.map(SizeDraft.init) ?? [SizeDraft()]
     }
 
     var isNew: Bool { productId == nil }
     var isJewelry: Bool { kind == .jewelry }
+    var isConsumable: Bool { kind == .consumable }
+    /// Sold at the POS: jewelry and goods have prices and may have sizes.
+    var isSold: Bool { kind.isSold }
+    /// A consumable tracked only as «есть / нет»: no sizes, stock or minimum.
+    var isPresenceTracked: Bool { isConsumable && stockMode == .presence }
+    /// Material is a jewelry attribute that consumables keep too («Нитрил», «Сталь»); goods have none.
+    var hasMaterial: Bool { kind != .goods }
     var unitLabel: String { unit.nonEmpty ?? ProductLimits.defaultUnit }
 
     /// Parsed thickness; `nil` when the field is empty or not a number.
@@ -157,8 +171,8 @@ nonisolated struct ProductDraft: Hashable, Sendable {
     /// Two or more sizes: every one needs a name.
     var hasSeveralSizes: Bool { sizes.count > 1 }
 
-    /// The sizes editor is for jewelry; a consumable shows it only to fix extra sizes left after a kind switch.
-    var showsSizesEditor: Bool { isJewelry || hasSeveralSizes }
+    /// The sizes editor is for jewelry and goods; a consumable shows it only to fix extra sizes left after a kind switch.
+    var showsSizesEditor: Bool { isSold || hasSeveralSizes }
 
     // MARK: Validation
 
@@ -188,7 +202,7 @@ nonisolated struct ProductDraft: Hashable, Sendable {
 
     var sizesMessage: String? {
         if sizes.isEmpty { return "Добавьте хотя бы один размер." }
-        if !isJewelry && hasSeveralSizes {
+        if isConsumable && hasSeveralSizes {
             return "У расходника только один размер — удалите лишние или выберите тип «Украшение»."
         }
         if sizes.count > ProductLimits.maxSizes { return "Не больше \(ProductLimits.maxSizes) размеров." }
@@ -230,14 +244,21 @@ nonisolated struct ProductDraft: Hashable, Sendable {
     // MARK: Body
 
     /// `POST /products` / `PATCH /products/:id`. Sizes keep the list order; removed ones are simply left out
-    /// (the server deletes them, or archives those with history). Jewelry-only fields are cleared for a consumable.
+    /// (the server deletes them, or archives those with history). Jewelry-only fields are cleared for other kinds
+    /// (consumables keep the material). `stockMode` goes only with a consumable, `presenceStatus` only in presence mode,
+    /// where the only size carries no initial stock.
     var body: ProductBody {
-        ProductBody(
+        let variants = sizes.map(\.body).map { variant in
+            var copy = variant
+            if isPresenceTracked { copy.initialQuantity = nil }
+            return copy
+        }
+        return ProductBody(
             kind: kind,
             name: name.trimmed,
             sku: Nullable(sku.nonEmpty),
             category: Nullable(category.nonEmpty),
-            material: Nullable(material.nonEmpty),
+            material: Nullable(hasMaterial ? material.nonEmpty : nil),
             threadType: Nullable(isJewelry ? threadType : nil),
             thicknessMm: Nullable(isJewelry ? thicknessMm : nil),
             color: Nullable(isJewelry ? color.nonEmpty : nil),
@@ -249,125 +270,10 @@ nonisolated struct ProductDraft: Hashable, Sendable {
             unit: unit.trimmed,
             photos: photos,
             serviceIds: isJewelry ? serviceIds : [],
+            stockMode: isConsumable ? stockMode : nil,
+            presenceStatus: isPresenceTracked ? presenceStatus : nil,
             active: active,
-            variants: sizes.map(\.body)
+            variants: variants
         )
-    }
-}
-
-// MARK: - Size operations
-
-nonisolated extension ProductDraft {
-    /// Why the size cannot be removed, or `nil` when it can.
-    func removalBlock(for id: UUID) -> String? {
-        guard let size = sizes.first(where: { $0.id == id }) else { return nil }
-        if size.quantity > 0 {
-            return "На складе \(size.quantity) \(unitLabel) — сначала спишите остаток."
-        }
-        return sizes.count <= 1 ? "Должен остаться хотя бы один размер." : nil
-    }
-
-    /// A new empty size after the others; it starts with the last size's minimum.
-    func addingSize() -> ProductDraft {
-        var copy = self
-        copy.sizes = sizes + [SizeDraft(minQuantity: sizes.last?.minQuantity ?? 0)]
-        return copy
-    }
-
-    /// Adds sizes by name, skipping the ones the product already has. The only unnamed size of a product
-    /// without sizes takes the first name (keeping its stock), so «6, 8, 10 мм» gives exactly three sizes.
-    func addingSizes(named names: [String]) -> ProductDraft {
-        var known = Set(sizes.map { InventoryFilter.normalized($0.name) })
-        var fresh: [String] = []
-        for name in names.compactMap(\.nonEmpty) {
-            let key = InventoryFilter.normalized(name)
-            guard !known.contains(key) else { continue }
-            known.insert(key)
-            fresh.append(name)
-        }
-        guard !fresh.isEmpty else { return self }
-        var copy = self
-        if sizes.count == 1, sizes[0].name.trimmed.isEmpty {
-            copy.sizes[0].name = fresh.removeFirst()
-        }
-        let minimum = copy.sizes.last?.minQuantity ?? 0
-        copy.sizes = copy.sizes + fresh.map { SizeDraft(name: $0, minQuantity: minimum) }
-        return copy
-    }
-
-    /// Leaves the size out of the body; a size with stock (or the last one) stays.
-    func removingSize(_ id: UUID) -> ProductDraft {
-        guard removalBlock(for: id) == nil else { return self }
-        var copy = self
-        copy.sizes = sizes.filter { $0.id != id }
-        return copy
-    }
-
-    /// Moves the size by `offset` positions (−1 = up), clamped to the list bounds.
-    func movingSize(_ id: UUID, by offset: Int) -> ProductDraft {
-        guard let index = sizes.firstIndex(where: { $0.id == id }) else { return self }
-        let target = min(max(0, index + offset), sizes.count - 1)
-        guard target != index else { return self }
-        var copy = self
-        let row = copy.sizes.remove(at: index)
-        copy.sizes.insert(row, at: target)
-        return copy
-    }
-
-    /// Reorders like `List.onMove`.
-    func movingSizes(fromOffsets source: IndexSet, toOffset destination: Int) -> ProductDraft {
-        var copy = self
-        let moving = source.sorted().map { sizes[$0] }
-        var rest = sizes.enumerated().filter { !source.contains($0.offset) }.map(\.element)
-        let insertAt = destination - source.filter { $0 < destination }.count
-        rest.insert(contentsOf: moving, at: min(max(0, insertAt), rest.count))
-        copy.sizes = rest
-        return copy
-    }
-}
-
-// MARK: - Photo operations
-
-nonisolated extension ProductDraft {
-    /// How many more photos may be added.
-    var remainingPhotos: Int { max(0, ProductLimits.maxPhotos - photos.count) }
-
-    func addingPhotos(_ paths: [String]) -> ProductDraft {
-        var copy = self
-        let fresh = paths.filter { !photos.contains($0) }
-        copy.photos = photos + fresh.prefix(remainingPhotos)
-        return copy
-    }
-
-    func removingPhoto(_ path: String) -> ProductDraft {
-        var copy = self
-        copy.photos = photos.filter { $0 != path }
-        return copy
-    }
-
-    /// Moves the photo to the front: the first photo is the cover in the list, the POS and the bot.
-    func makingCover(_ path: String) -> ProductDraft {
-        guard photos.contains(path) else { return self }
-        var copy = self
-        copy.photos = [path] + photos.filter { $0 != path }
-        return copy
-    }
-
-    func movingPhoto(_ path: String, by offset: Int) -> ProductDraft {
-        guard let index = photos.firstIndex(of: path) else { return self }
-        let target = min(max(0, index + offset), photos.count - 1)
-        guard target != index else { return self }
-        var copy = self
-        copy.photos.remove(at: index)
-        copy.photos.insert(path, at: target)
-        return copy
-    }
-
-    // MARK: Services
-
-    func togglingService(_ id: Int) -> ProductDraft {
-        var copy = self
-        copy.serviceIds = serviceIds.contains(id) ? serviceIds.filter { $0 != id } : serviceIds + [id]
-        return copy
     }
 }

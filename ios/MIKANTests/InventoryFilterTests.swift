@@ -115,4 +115,55 @@ final class InventoryFilterTests: XCTestCase {
     func testNormalization() {
         XCTAssertEqual(InventoryFilter.normalized("  Ёлка  "), "елка")
     }
+
+    // MARK: - Goods and «есть / нет» consumables
+
+    private var warehouse: [Product] {
+        let spray = F.product(
+            id: 20, kind: .goods, name: "Спрей H2Ocean", category: "Уход", supplier: "H2Ocean",
+            variants: [F.size(30, "50 мл", quantity: 5, min: 1), F.size(31, "100 мл", quantity: 0, min: 1)]
+        )
+        let card = F.product(id: 21, kind: .goods, name: "Подарочный сертификат", category: "Сертификаты", variants: [F.size(32, "", quantity: 9, min: 0)])
+        let antiseptic = F.presence(id: 22, name: "Антисептик", status: .low, category: "Дезинфекция")
+        let soap = F.presence(id: 23, name: "Мыло", status: .out)
+        let wipes = F.presence(id: 24, name: "Салфетки", status: .ok, quantity: 40)
+        return all + [spray, card, antiseptic, soap, wipes]
+    }
+
+    private func warehouseIds(_ filter: InventoryFilter) -> [Int] {
+        filter.apply(warehouse).map(\.id)
+    }
+
+    func testGoodsAreTheirOwnKind() {
+        XCTAssertEqual(warehouseIds(InventoryFilter(kind: .goods)), [20, 21])
+        XCTAssertEqual(warehouseIds(InventoryFilter(kind: .goods, search: "h2ocean")), [20], "supplier")
+        XCTAssertEqual(warehouseIds(InventoryFilter(kind: .goods, size: "100 МЛ")), [20], "volumes are sizes")
+        XCTAssertEqual(warehouseIds(InventoryFilter(kind: .goods, lowOnly: true)), [20], "100 мл is out")
+    }
+
+    func testLowOnlyKeepsPresenceConsumablesNotMarkedOk() {
+        XCTAssertEqual(
+            warehouseIds(InventoryFilter(kind: .consumable, lowOnly: true)), [4, 22, 23],
+            "gloves below the minimum, «заканчивается» and «нет»; «есть» with stock aside is fine"
+        )
+    }
+
+    func testAvailabilityFacet() {
+        XCTAssertEqual(warehouseIds(InventoryFilter(kind: .consumable, presence: .low)), [22])
+        XCTAssertEqual(warehouseIds(InventoryFilter(kind: .consumable, presence: .ok)), [24], "counted consumables never match")
+        XCTAssertEqual(warehouseIds(InventoryFilter(presence: .out)), [23])
+
+        let filter = InventoryFilter(kind: .consumable, search: "а", lowOnly: true, category: "Дезинфекция", presence: .low)
+        XCTAssertEqual(filter.facetCount, 2)
+        XCTAssertEqual(filter.withoutFacets, InventoryFilter(kind: .consumable, search: "а", lowOnly: true))
+        XCTAssertEqual(filter.switching(to: .goods), InventoryFilter(kind: .goods, search: "а", lowOnly: true))
+        XCTAssertEqual(filter.cleared, InventoryFilter(kind: .consumable))
+    }
+
+    func testFacetOptionsForPresenceConsumables() {
+        let consumables = warehouse.filter { $0.kind == .consumable }
+        XCTAssertEqual(InventoryFilter.sizes(in: consumables), ["M"], "«есть / нет» items have no sizes to offer")
+        XCTAssertTrue(InventoryFilter.hasPresence(in: consumables))
+        XCTAssertFalse(InventoryFilter.hasPresence(in: all))
+    }
 }

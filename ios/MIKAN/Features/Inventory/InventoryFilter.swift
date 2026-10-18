@@ -1,17 +1,19 @@
 import Foundation
 
-/// What the stock list shows: search text, «Мало» and the category / material / size facets.
+/// What the stock list shows: search text, «Мало» and the category / material / size / availability facets.
 /// The list loads every product of a kind once and filters on the client, so all of this is pure.
 nonisolated struct InventoryFilter: Hashable, Sendable {
-    /// `nil` — both kinds (the screen always sets one).
+    /// `nil` — every kind (the screen always sets one).
     var kind: ProductKind?
     var search = ""
-    /// Products with at least one size at or below its minimum.
+    /// Products with at least one size at or below its minimum, and presence consumables not marked «есть».
     var lowOnly = false
     var category: String?
     var material: String?
     /// A size name: products that have a size with this name.
     var size: String?
+    /// Presence consumables marked with this status (counted products never match).
+    var presence: PresenceStatus?
 
     init(
         kind: ProductKind? = nil,
@@ -19,7 +21,8 @@ nonisolated struct InventoryFilter: Hashable, Sendable {
         lowOnly: Bool = false,
         category: String? = nil,
         material: String? = nil,
-        size: String? = nil
+        size: String? = nil,
+        presence: PresenceStatus? = nil
     ) {
         self.kind = kind
         self.search = search
@@ -27,12 +30,13 @@ nonisolated struct InventoryFilter: Hashable, Sendable {
         self.category = category
         self.material = material
         self.size = size
+        self.presence = presence
     }
 
     // MARK: State
 
-    /// Number of chosen facets (category, material, size) — the badge on the filter button.
-    var facetCount: Int { [category, material, size].compactMap(\.nonEmpty).count }
+    /// Number of chosen facets (category, material, size, availability) — the badge on the filter button.
+    var facetCount: Int { [category, material, size].compactMap(\.nonEmpty).count + (presence == nil ? 0 : 1) }
 
     /// Something narrows the list besides the kind.
     var isActive: Bool { facetCount > 0 || lowOnly || !search.trimmed.isEmpty }
@@ -67,6 +71,7 @@ nonisolated struct InventoryFilter: Hashable, Sendable {
         if let size = size.nonEmpty, !product.variants.contains(where: { Self.key($0.name) == Self.key(size) }) {
             return false
         }
+        if let presence, !product.isPresenceTracked || product.presenceStatus != presence { return false }
         guard !words.isEmpty else { return true }
         let haystack = Self.searchFields(of: product).map(Self.normalized)
         return words.allSatisfy { word in haystack.contains { $0.contains(word) } }
@@ -94,8 +99,14 @@ nonisolated struct InventoryFilter: Hashable, Sendable {
     }
 
     /// Size names of the loaded products: «6 мм», «8 мм», «10 мм» (numbers compare as numbers).
+    /// Presence consumables have no sizes to count, so theirs are not offered.
     static func sizes(in products: [Product]) -> [String] {
-        uniqueSorted(products.flatMap { $0.variants.map(\.name) })
+        uniqueSorted(products.filter { !$0.isPresenceTracked }.flatMap { $0.variants.map(\.name) })
+    }
+
+    /// Whether the availability facet makes sense: some loaded product is tracked as «есть / нет».
+    static func hasPresence(in products: [Product]) -> Bool {
+        products.contains(where: \.isPresenceTracked)
     }
 
     // MARK: Text
