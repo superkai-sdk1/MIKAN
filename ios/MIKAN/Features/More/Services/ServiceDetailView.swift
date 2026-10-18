@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The service card: cover, price, variants, work photos and who got the service.
+/// The service card: cover, price, variants, compatible jewelry, the consumption norm, work photos and who got
+/// the service.
 struct ServiceDetailView: View {
     @Environment(APIClient.self) private var api
     @Environment(ReferenceStore.self) private var reference
@@ -16,6 +17,9 @@ struct ServiceDetailView: View {
     @State private var showsEditor = false
     @State private var showsGenerator = false
     @State private var viewer: ServicePhotoViewerItem?
+    /// Jewelry and consumables the service links to; loaded only when it has links.
+    @State private var stock = Remote<[Product]>()
+    @State private var openedProduct: Product?
 
     private static let historyPageSize = 50
 
@@ -32,6 +36,10 @@ struct ServiceDetailView: View {
             if !service.variants.isEmpty {
                 ServiceVariantsSummarySection(service: service)
             }
+            ServiceJewelryCardSection(jewelryIds: service.jewelryIds, stock: stock, retry: loadStock) { product in
+                openedProduct = product
+            }
+            ServiceNormsCardSection(consumables: service.consumables, stock: stock, retry: loadStock)
             photosSection
             if let description = service.description.nonEmpty {
                 Section("Описание") {
@@ -53,6 +61,12 @@ struct ServiceDetailView: View {
         .refreshable { await refresh() }
         .task {
             if history.value == nil { await loadHistory() }
+        }
+        .task(id: linkedIds) { await loadStockIfNeeded() }
+        .navigationDestination(item: $openedProduct) { product in
+            ProductDetailView(product: product, categories: jewelryCategories) { updated in
+                applyProduct(updated)
+            }
         }
         // Only names the aftercare template; on failure the row shows «—» instead of an alert.
         .task { try? await reference.ensureTemplates() }
@@ -181,6 +195,14 @@ struct ServiceDetailView: View {
 
     // MARK: - Data
 
+    /// Products the card shows: linked jewelry and the consumables of the norm.
+    private var linkedIds: [Int] { service.jewelryIds + service.consumables.map(\.productId) }
+
+    /// Suggestions for the jewelry editor opened from a linked piece.
+    private var jewelryCategories: Set<String> {
+        Set(reference.categories.orderedNames(.jewelry, including: (stock.value ?? []).compactMap(\.category)))
+    }
+
     private func refresh() async {
         do {
             let all = try await api.services(includeInactive: true)
@@ -190,7 +212,30 @@ struct ServiceDetailView: View {
         } catch {
             history.transientError = error.userMessage
         }
+        if !linkedIds.isEmpty { await loadStock() }
         await loadHistory()
+    }
+
+    private func loadStock() async {
+        await stock.load { try await api.serviceLinkProducts() }
+    }
+
+    /// Loads the warehouse once the service has links, and again when it links a product not loaded yet.
+    private func loadStockIfNeeded() async {
+        guard !linkedIds.isEmpty else { return }
+        let known = Set((stock.value ?? []).map(\.id))
+        guard stock.value == nil || linkedIds.contains(where: { !known.contains($0) }) else { return }
+        await loadStock()
+    }
+
+    /// A piece edited from the card. Its suitable services are the same link as the service's jewelry,
+    /// so a changed link reloads the service.
+    private func applyProduct(_ product: Product) {
+        stock.upsert(product)
+        let linkedHere = service.jewelryIds.contains(product.id)
+        if product.kind == .jewelry, product.serviceIds.contains(service.id) != linkedHere {
+            Task { await refresh() }
+        }
     }
 
     private func loadHistory() async {
@@ -379,8 +424,11 @@ private struct ServicePhotoStrip: View {
 
 #if DEBUG
 #Preview {
-    NavigationStack {
-        ServiceDetailView(service: PreviewData.nipple)
+    var nipple = PreviewData.nipple
+    nipple.jewelryIds = [1, 2]
+    nipple.consumables = [ServiceConsumable(productId: 3, quantity: 2)]
+    return NavigationStack {
+        ServiceDetailView(service: nipple)
     }
     .previewEnvironment()
 }

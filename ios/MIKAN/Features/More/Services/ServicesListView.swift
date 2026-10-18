@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// The services of the warehouse: by category, then by group in the warehouse categories' order, «Без группы» last.
+/// Works as a tab root or pushed inside another `NavigationStack` (the warehouse).
 struct ServicesListView: View {
     @Environment(APIClient.self) private var api
     @Environment(ReferenceStore.self) private var reference
@@ -12,7 +14,7 @@ struct ServicesListView: View {
 
     private var allServices: [Service] { services.value ?? [] }
     private var sections: [ServiceCatalogSection] {
-        ServiceCatalog.sections(ServiceCatalog.filter(allServices, query: search))
+        ServiceCatalog.sections(ServiceCatalog.filter(allServices, query: search), categories: reference.categories)
     }
 
     var body: some View {
@@ -40,8 +42,12 @@ struct ServicesListView: View {
                 emptyState
             }
         }
-        .refreshable { await load() }
+        .refreshable {
+            await load()
+            await loadCategories(force: true)
+        }
         .task { await load() }
+        .task { await loadCategories(force: false) }
         .remoteErrorAlert(services)
         .navigationTitle("Услуги")
         .toolbar {
@@ -90,6 +96,11 @@ struct ServicesListView: View {
     private func load() async {
         await services.load { ServiceCatalog.sorted(try await api.services(includeInactive: true)) }
         if let value = services.value { reference.replaceServices(value) }
+    }
+
+    /// Only orders the groups; without the registry they follow alphabetically, so a failure is not shown.
+    private func loadCategories(force: Bool) async {
+        try? await reference.ensureCategories(force: force)
     }
 
     /// Merges a created or edited service into the loaded catalog. Never publishes a partial catalog:
@@ -172,6 +183,9 @@ private struct ServiceRow: View {
         }
         if service.requiresDeposit {
             parts.append("предоплата \(Money.format(service.depositAmount))")
+        }
+        if !service.jewelryIds.isEmpty {
+            parts.append(Plural.count(service.jewelryIds.count, one: "украшение", few: "украшения", many: "украшений"))
         }
         return parts.joined(separator: " · ")
     }
