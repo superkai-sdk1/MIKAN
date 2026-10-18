@@ -76,4 +76,12 @@ extension APIClient {
             "to": ISO8601.string(from: to),
         ]))
     }
+
+    /// The analytics of `[from, to)` with the headline numbers of the previous period of the same length.
+    func reportAnalytics(from: Date, to: Date) async throws -> ReportAnalytics {
+        try await request(.get, "reports/analytics", query: queryItems([
+            "from": ISO8601.string(from: from),
+            "to": ISO8601.string(from: to),
+        ]))
+    }
 }

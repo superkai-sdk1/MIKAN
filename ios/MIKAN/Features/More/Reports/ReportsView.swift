@@ -1,11 +1,13 @@
 import SwiftUI
 
+/// «Аналитика» (Ещё → Отчёты): the financial picture of the chosen period with deltas against the previous period
+/// of the same length, shareable as a CSV table.
 struct ReportsView: View {
     @Environment(APIClient.self) private var api
-    @State private var period: ReportPeriod = .today
+    @State private var period: ReportPeriod = .month
     @State private var customFrom = Calendar.app.date(byAdding: .day, value: -6, to: .now) ?? .now
     @State private var customTo = Date.now
-    @State private var report = Remote<ReportSummary>()
+    @State private var analytics = Remote<ReportAnalytics>()
 
     private var interval: DateInterval {
         period.interval(customFrom: customFrom, customTo: customTo)
@@ -18,12 +20,10 @@ struct ReportsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if period == .custom {
-                    customRange
-                }
-                if let summary = report.value {
-                    ReportContent(summary: summary)
-                } else if let failure = report.failure {
+                header
+                if let value = analytics.value {
+                    AnalyticsContent(analytics: value, comparison: ReportPeriod.rangeText(previousInterval(value)))
+                } else if let failure = analytics.failure {
                     ErrorStateView(message: failure, retry: load)
                 } else {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 240)
@@ -33,36 +33,56 @@ struct ReportsView: View {
         }
         .background { AuraBackground() }
         .safeAreaBar(edge: .top) {
-            Picker("Период", selection: $period) {
-                ForEach(ReportPeriod.allCases) { period in
-                    Text(period.title).tag(period)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            AnalyticsPeriodBar(period: $period)
         }
         .refreshable { await load() }
         .task(id: loadKey) {
-            report.reset()
+            analytics.reset()
             await load()
         }
-        .remoteErrorAlert(report)
-        .navigationTitle("Отчёты")
+        .remoteErrorAlert(analytics)
+        .toolbar {
+            if let value = analytics.value {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(
+                        item: AnalyticsExport(value, interval: interval),
+                        preview: SharePreview("Аналитика \(ReportPeriod.rangeText(interval))", image: Image(systemName: "tablecells"))
+                    ) {
+                        Label("Поделиться", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
+        }
+        .navigationTitle("Аналитика")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var customRange: some View {
-        VStack(spacing: 8) {
-            DatePicker("С", selection: $customFrom, in: ...Date.now, displayedComponents: .date)
-            DatePicker("По", selection: $customTo, in: ...Date.now, displayedComponents: .date)
+    @ViewBuilder
+    private var header: some View {
+        if period == .custom {
+            VStack(spacing: 8) {
+                DatePicker("С", selection: $customFrom, in: ...Date.now, displayedComponents: .date)
+                DatePicker("По", selection: $customTo, in: ...Date.now, displayedComponents: .date)
+                Text("Не больше \(Plural.days(ReportPeriod.maxDays)).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .cardStyle()
         }
-        .cardStyle()
+        Text(ReportPeriod.rangeText(interval))
+            .font(.title2.weight(.bold))
+            .contentTransition(.opacity)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func previousInterval(_ value: ReportAnalytics) -> DateInterval {
+        DateInterval(start: value.previousFrom, end: max(value.previousFrom, value.previousTo))
     }
 
     private func load() async {
         let range = interval
-        await report.load { try await api.reportSummary(from: range.start, to: range.end) }
+        await analytics.load { try await api.reportAnalytics(from: range.start, to: range.end) }
     }
 }
 

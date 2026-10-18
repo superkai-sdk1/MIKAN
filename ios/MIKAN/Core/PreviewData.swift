@@ -196,6 +196,82 @@ enum PreviewData {
         newClients: 14, appointmentsCompleted: 35, noShows: 2
     )
 
+    static let analytics = ReportAnalytics(
+        from: Calendar.app.date(byAdding: .day, value: -6, to: today) ?? today,
+        to: Calendar.app.date(byAdding: .day, value: 1, to: today) ?? now,
+        previousFrom: Calendar.app.date(byAdding: .day, value: -13, to: today) ?? today,
+        previousTo: Calendar.app.date(byAdding: .day, value: -6, to: today) ?? today,
+        timezone: "Europe/Moscow",
+        totals: AnalyticsTotals(
+            net: 118_000, gross: 120_500, refunds: 2500, salesCount: 40, averageCheck: 3013, discounts: 1800,
+            servicesRevenue: 88_000, productsRevenue: 30_000, cogs: 11_000, grossProfit: 17_500, marginPercent: 61.4,
+            stockExpenses: 2350, newClients: 14, appointmentsCompleted: 35, noShows: 2, noShowLoss: 8000, depositsReceived: 15_000
+        ),
+        previous: AnalyticsTotals(
+            net: 101_000, gross: 101_000, salesCount: 36, averageCheck: 2806, servicesRevenue: 80_000, productsRevenue: 21_000,
+            cogs: 8000, grossProfit: 13_000, marginPercent: 61.9, stockExpenses: 3100, newClients: 9, appointmentsCompleted: 31,
+            noShows: 3, noShowLoss: 12_000, depositsReceived: 9000
+        ),
+        revenue: AnalyticsRevenue(
+            gross: 120_500, refunds: 2500, refundsCount: 1, net: 118_000, salesCount: 40, averageCheck: 3013, discounts: 1800,
+            kept: 118_000, payments: Payments(cash: 30_500, card: 0, transfer: 20_000, qr: 60_000, deposit: 10_000)
+        ),
+        byDay: (0..<7).map { offset in
+            let day = Calendar.app.date(byAdding: .day, value: offset - 6, to: today) ?? today
+            let gross = [12_000, 18_500, 9000, 21_000, 25_000, 30_000, 5000][offset]
+            return AnalyticsDay(date: CalendarDay.string(from: day), gross: gross, refunds: offset == 3 ? 2500 : 0,
+                                net: gross - (offset == 3 ? 2500 : 0), salesCount: gross / 3000)
+        },
+        byWeekday: (1...7).map { AnalyticsWeekday(weekday: $0, revenue: [12_000, 18_500, 9000, 18_500, 25_000, 30_000, 5000][$0 - 1], salesCount: 6) },
+        byHour: (0..<24).map { hour in
+            AnalyticsHour(hour: hour, revenue: (11...20).contains(hour) ? 8000 + (hour % 4) * 3000 : 0, salesCount: (11...20).contains(hour) ? 4 : 0)
+        },
+        services: AnalyticsServices(
+            quantity: 30, revenue: 88_000,
+            byCategory: [AnalyticsServiceCategory(category: "piercing", quantity: 24, revenue: 58_000),
+                         AnalyticsServiceCategory(category: "tattoo", quantity: 6, revenue: 30_000)],
+            top: [AnalyticsService(serviceId: 3, name: "Прокол мочки", category: "piercing", quantity: 12, revenue: 30_000),
+                  AnalyticsService(serviceId: 2, name: "Тату мини", category: "tattoo", quantity: 6, revenue: 30_000)]
+        ),
+        products: AnalyticsProducts(
+            margin: AnalyticsMargin(quantity: 18, revenue: 30_000, revenueWithCost: 28_500, cogs: 11_000, grossProfit: 17_500,
+                                    marginPercent: 61.4, itemsWithoutCost: 1),
+            byKind: [AnalyticsProductKind(kind: "jewelry", margin: AnalyticsMargin(quantity: 18, revenue: 30_000, revenueWithCost: 28_500,
+                                                                                   cogs: 11_000, grossProfit: 17_500, marginPercent: 61.4, itemsWithoutCost: 1))],
+            top: [AnalyticsProduct(
+                productId: 1, name: "Лабрет", kind: "jewelry",
+                margin: AnalyticsMargin(quantity: 7, revenue: 10_500, revenueWithCost: 10_500, cogs: 4200, grossProfit: 6300, marginPercent: 60),
+                variants: [AnalyticsProductVariant(variantId: 4, name: "8 мм", margin: AnalyticsMargin(quantity: 4, revenue: 6000)),
+                           AnalyticsProductVariant(variantId: 1, name: "6 мм", margin: AnalyticsMargin(quantity: 3, revenue: 4500))]
+            )]
+        ),
+        stock: AnalyticsStock(
+            writeoffs: AnalyticsStockFlow(quantity: 2, value: 1200), usage: AnalyticsStockFlow(quantity: 115, value: 1150, unitsWithoutCost: 5),
+            expenses: 2350,
+            top: [AnalyticsStockExpense(productId: 1, name: "Лабрет", kind: "jewelry", type: "writeoff", quantity: 2, value: 1200),
+                  AnalyticsStockExpense(productId: 3, name: "Перчатки", kind: "consumable", type: "usage", quantity: 115, value: 1150)],
+            onHand: AnalyticsStockOnHand(units: 340, value: 96_000, unitsWithoutCost: 12,
+                                         byKind: [AnalyticsStockKind(kind: "jewelry", units: 140, value: 84_000, unitsWithoutCost: 12),
+                                                  AnalyticsStockKind(kind: "consumable", units: 200, value: 12_000)])
+        ),
+        deposits: ReportDeposits(received: 15_000, cash: 2000, transfer: 3000, qr: 10_000, applied: 10_000, refunded: 1000, retained: 2000, held: 7000),
+        cash: AnalyticsCash(
+            cashIn: 2000, cashOut: 15_000, operationsCount: 3, shiftsClosed: 6, closingDifference: -150, shortage: -200, surplus: 50,
+            openingDifference: 0,
+            shifts: [AnalyticsShift(id: 3, openedAt: at(hour: 10, dayOffset: -2), closedAt: at(hour: 21, dayOffset: -2), closedBy: anna.ref,
+                                    openingCash: 5000, closingCash: 7800, expectedCash: 8000, openingDifference: 0, difference: -200)]
+        ),
+        masters: [AnalyticsMaster(employee: anna.ref, revenue: 50_000, salesCount: 14, averageCheck: 3571, appointmentsCompleted: 20, noShows: 1, servicesCount: 26),
+                  AnalyticsMaster(employee: oleg.ref, revenue: 38_000, salesCount: 10, averageCheck: 3800, appointmentsCompleted: 15, noShows: 1, servicesCount: 15)],
+        clients: AnalyticsClients(
+            newClients: 14, buyers: 30, firstTime: AnalyticsClientGroup(count: 12, revenue: 40_000),
+            returning: AnalyticsClientGroup(count: 18, revenue: 70_000), anonymous: AnalyticsAnonymousSales(salesCount: 5, revenue: 8000),
+            top: [AnalyticsTopClient(client: ivanRef, revenue: 25_000, salesCount: 3, visits: 3),
+                  AnalyticsTopClient(client: mariaRef, revenue: 12_000, salesCount: 2, visits: 1)]
+        ),
+        appointments: AnalyticsAppointments(total: 45, open: 5, completed: 35, cancelled: 3, noShow: 2, noShowLoss: 8000, cancelledValue: 9000)
+    )
+
     static let messages = [
         BotMessage(id: 1, chatId: 123_456_789, role: .user, text: "Здравствуйте! Сколько стоит прокол хеликса?", employee: nil, createdAt: at(hour: 9, minute: 40)),
         BotMessage(id: 2, chatId: 123_456_789, role: .assistant, text: "Здравствуйте! Прокол хеликса — 3 000 ₽, украшение из титана подбирается отдельно.", employee: nil, createdAt: at(hour: 9, minute: 41)),
