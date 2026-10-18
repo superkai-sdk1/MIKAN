@@ -3,7 +3,7 @@ import type { DbOrTx } from '../db/client.js';
 import { appointments, botChats, bookingRequests, clients, depositOperations, products, saleItems, sales } from '../db/schema.js';
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
 import { localDate, localDatesInRange, toIso } from '../lib/time.js';
-import { hasLowSize } from './products.js';
+import { hasLowStock } from './products.js';
 import { employeeRefOrMissing, employeesByIds, productsByIds, variantsByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 
@@ -235,6 +235,6 @@ export function badges(db: DbOrTx) {
     unreadChats: n(db.select({ n: count() }).from(botChats).where(sql`${botChats.unreadCount} > 0`).get()),
     needsAttention: n(db.select({ n: count() }).from(botChats).where(eq(botChats.needsAttention, true)).get()),
     newBookingRequests: n(db.select({ n: count() }).from(bookingRequests).where(eq(bookingRequests.status, 'new')).get()),
-    lowStock: n(db.select({ n: count() }).from(products).where(and(eq(products.active, true), hasLowSize)).get()),
+    lowStock: n(db.select({ n: count() }).from(products).where(and(eq(products.active, true), hasLowStock)).get()),
   };
 }

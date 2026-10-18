@@ -143,7 +143,8 @@ service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` f
   `category`). Saving an item with a category name matching an existing one (case- and «ё»-insensitive) stores that
   category's spelling; a new name creates the category at the end. Older builds keep sending plain names.
 - `itemCount` — products / services (inactive included) in the category.
-- Lists of products and services follow the categories' order; items without a category come last («Без категории»).
+- Apps group products and services by category in the categories' order; items without a category come last
+  («Без категории»). (`GET /products` / `GET /services` keep their own sort order.)
 
 ### Product (jewelry, goods and consumables)
 ```json
@@ -438,7 +439,6 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | PATCH | `/services/:id` | any of the above | `Service` |
 | GET | `/services/:id/history?limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who got this service and when, newest first |
 
-- `GET /services` is sorted by `category`, then the group's position (no group last), then `sort`, then name.
 - `jewelryIds` (≤ 100) replaces the compatible jewelry (`kind: jewelry` products, `400` «Украшение не найдено»
   otherwise); `consumables` (≤ 50, `{ productId, quantity: 1…1000 }`, distinct products) replaces the norm (`kind:
   consumable` products, `400` «Расходник не найден» otherwise). Omitted — unchanged.
@@ -479,7 +479,6 @@ The token lives 90 days. On first start, if there are no employees, the server c
 
 - `search` matches the name, SKUs (product and sizes), category, material, colour, stone, supplier and size names.
   `lowStock=true` — products with at least one low size (presence consumables: status not `ok`).
-- `GET /products` is sorted by kind's category order (uncategorized last), then name.
 - `POST/PATCH /products` also take `stockMode` and `presenceStatus` (consumables only; `400` for other kinds).
   Switching a consumable to `presence` keeps its counted stock aside (shown nowhere) and starts `ok` when it had
   stock, `out` otherwise; switching back to `quantity` uses the counted stock again.

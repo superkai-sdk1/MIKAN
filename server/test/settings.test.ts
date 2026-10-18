@@ -62,7 +62,7 @@ describe('settings, catalog, knowledge and uploads', () => {
     const first = await make(t, '/api/services', { name: 'Я-первая', category: 'other', price: 0, durationMin: 15, sort: 0, description: 'Консультация' });
     expect(first).toEqual({
       id: first.id, name: 'Я-первая', category: 'other', group: null, price: 0, priceMax: null, priceFrom: false, durationMin: 15,
-      description: 'Консультация', imageUrl: null, imagePrompt: null, photos: [], variants: [], depositAmount: 0, aftercareTemplateId: null, freshProcedure: false, active: true, sort: 0,
+      description: 'Консультация', imageUrl: null, imagePrompt: null, photos: [], variants: [], depositAmount: 0, aftercareTemplateId: null, freshProcedure: false, jewelryIds: [], consumables: [], active: true, sort: 0,
     });
     const names = async (q = '') => (await t.api('GET', `/api/services${q}`)).json().items.map((s: { name: string }) => s.name);
     expect(await names()).toEqual(['Я-первая', 'А-услуга', 'Б-услуга']);

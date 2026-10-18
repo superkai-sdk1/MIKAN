@@ -9,7 +9,7 @@ import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { aftercareTemplates, services } from '../db/schema.js';
 import { badRequest, conflict, errorMessage, notFound, upstreamError } from '../lib/errors.js';
-import { serviceOut, templateOut, type ServiceRow, type ServiceVariant } from '../lib/serialize.js';
+import { templateOut, type ServiceRow, type ServiceVariant } from '../lib/serialize.js';
 import {
   defaultImageSubject,
   generateImage,
@@ -18,6 +18,8 @@ import {
   type GeneratedImage,
 } from '../lib/service-images.js';
 import { idParams, money, nonNull, nullableText, parse, queryBool, requiredText } from '../lib/validation.js';
+import { resolveCategory, serviceScope } from '../domain/categories.js';
+import { serializeService, serializeServices, setCompatibleJewelry, setConsumptionNorms } from '../domain/services.js';
 import { sniffImage } from './uploads.js';
 
 const MAX_PHOTOS = 12;
@@ -54,6 +56,10 @@ const optionalServiceFields = {
   depositAmount: nonNull(money),
   aftercareTemplateId: z.number().int().positive().nullish(),
   freshProcedure: nonNull(z.boolean()),
+  jewelryIds: nonNull(z.array(z.number().int().positive()).max(100)),
+  consumables: nonNull(
+    z.array(z.object({ productId: z.number().int().positive(), quantity: z.number().int().min(1).max(1000) })).max(50),
+  ),
   active: nonNull(z.boolean()),
   sort: nonNull(z.number().int().min(-100_000).max(100_000)),
 };
@@ -134,7 +140,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
       .where(q.includeInactive ? undefined : eq(services.active, true))
       .orderBy(asc(services.sort), asc(services.name), asc(services.id))
       .all();
-    return { items: rows.map(serviceOut) };
+    return { items: serializeServices(db, rows) };
   });
 
   app.post('/services', async (request) => {
@@ -142,31 +148,35 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
     assertTemplate(db, input.aftercareTemplateId);
     const pricing = resolvePricing(input.price, input.priceMax ?? null, input.priceFrom ?? false);
     const now = Date.now();
-    const row = db
-      .insert(services)
-      .values({
-        name: input.name,
-        category: input.category,
-        groupName: input.group ?? null,
-        ...pricing,
-        durationMin: input.durationMin,
-        description: input.description ?? null,
-        imageUrl: input.imageUrl ?? null,
-        imagePrompt: input.imagePrompt ?? null,
-        photosJson: JSON.stringify(input.photos ?? []),
-        variantsJson: variantsJson(input.variants ?? []),
-        depositAmount: input.depositAmount ?? 0,
-        aftercareTemplateId: input.aftercareTemplateId ?? null,
-        // Older builds do not send it: a service with its own memo template is taken as a fresh procedure.
-        freshProcedure: input.freshProcedure ?? input.aftercareTemplateId != null,
-        active: input.active ?? true,
-        sort: input.sort ?? 0,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning()
-      .get();
-    return serviceOut(row);
+    return db.transaction((tx) => {
+      const row = tx
+        .insert(services)
+        .values({
+          name: input.name,
+          category: input.category,
+          groupName: resolveCategory(tx, serviceScope(input.category), input.group),
+          ...pricing,
+          durationMin: input.durationMin,
+          description: input.description ?? null,
+          imageUrl: input.imageUrl ?? null,
+          imagePrompt: input.imagePrompt ?? null,
+          photosJson: JSON.stringify(input.photos ?? []),
+          variantsJson: variantsJson(input.variants ?? []),
+          depositAmount: input.depositAmount ?? 0,
+          aftercareTemplateId: input.aftercareTemplateId ?? null,
+          // Older builds do not send it: a service with its own memo template is taken as a fresh procedure.
+          freshProcedure: input.freshProcedure ?? input.aftercareTemplateId != null,
+          active: input.active ?? true,
+          sort: input.sort ?? 0,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning()
+        .get();
+      if (input.jewelryIds) setCompatibleJewelry(tx, row.id, input.jewelryIds);
+      if (input.consumables) setConsumptionNorms(tx, row.id, input.consumables);
+      return serializeService(tx, row);
+    });
   });
 
   app.patch('/services/:id', async (request) => {
@@ -179,30 +189,36 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
       keep(input.priceMax, current.priceMax),
       input.priceFrom ?? current.priceFrom,
     );
-    const row = db
-      .update(services)
-      .set({
-        name: input.name ?? current.name,
-        category: input.category ?? current.category,
-        groupName: keep(input.group, current.groupName),
-        ...pricing,
-        durationMin: input.durationMin ?? current.durationMin,
-        description: keep(input.description, current.description),
-        imageUrl: keep(input.imageUrl, current.imageUrl),
-        imagePrompt: keep(input.imagePrompt, current.imagePrompt),
-        photosJson: input.photos ? JSON.stringify(input.photos) : current.photosJson,
-        variantsJson: input.variants ? variantsJson(input.variants) : current.variantsJson,
-        depositAmount: input.depositAmount ?? current.depositAmount,
-        aftercareTemplateId: keep(input.aftercareTemplateId, current.aftercareTemplateId),
-        freshProcedure: input.freshProcedure ?? current.freshProcedure,
-        active: input.active ?? current.active,
-        sort: input.sort ?? current.sort,
-        updatedAt: Date.now(),
-      })
-      .where(eq(services.id, id))
-      .returning()
-      .get();
-    return serviceOut(row);
+    const category = input.category ?? current.category;
+    return db.transaction((tx) => {
+      const row = tx
+        .update(services)
+        .set({
+          name: input.name ?? current.name,
+          category,
+          // A service moved to another category takes its group name along.
+          groupName: resolveCategory(tx, serviceScope(category), keep(input.group, current.groupName)),
+          ...pricing,
+          durationMin: input.durationMin ?? current.durationMin,
+          description: keep(input.description, current.description),
+          imageUrl: keep(input.imageUrl, current.imageUrl),
+          imagePrompt: keep(input.imagePrompt, current.imagePrompt),
+          photosJson: input.photos ? JSON.stringify(input.photos) : current.photosJson,
+          variantsJson: input.variants ? variantsJson(input.variants) : current.variantsJson,
+          depositAmount: input.depositAmount ?? current.depositAmount,
+          aftercareTemplateId: keep(input.aftercareTemplateId, current.aftercareTemplateId),
+          freshProcedure: input.freshProcedure ?? current.freshProcedure,
+          active: input.active ?? current.active,
+          sort: input.sort ?? current.sort,
+          updatedAt: Date.now(),
+        })
+        .where(eq(services.id, id))
+        .returning()
+        .get();
+      if (input.jewelryIds) setCompatibleJewelry(tx, id, input.jewelryIds);
+      if (input.consumables) setConsumptionNorms(tx, id, input.consumables);
+      return serializeService(tx, row);
+    });
   });
 
   app.post('/services/:id/image/generate', async (request) => {
@@ -240,7 +256,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
       .returning()
       .get();
     if (!row) throw notFound('Услуга не найдена');
-    return serviceOut(row);
+    return serializeService(db, row);
   });
 
   app.get('/aftercare-templates', async () => {

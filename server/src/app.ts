@@ -17,6 +17,7 @@ import { authRoutes, publicAuthRoutes } from './routes/auth.js';
 import { botRoutes } from './routes/bot.js';
 import { cashRoutes } from './routes/cash.js';
 import { catalogRoutes } from './routes/catalog.js';
+import { categoryRoutes } from './routes/categories.js';
 import { clientRoutes } from './routes/clients.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { depositRoutes } from './routes/deposits.js';
@@ -157,6 +158,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         employeeRoutes(secured, ctx);
         clientRoutes(secured, ctx);
         catalogRoutes(secured, ctx);
+        categoryRoutes(secured, ctx);
         productRoutes(secured, ctx);
         historyRoutes(secured, ctx);
         uploadRoutes(secured, ctx);

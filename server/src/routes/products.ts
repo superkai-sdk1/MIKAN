@@ -3,8 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { products } from '../db/schema.js';
-import { createProduct, hasLowSize, serializeProduct, serializeProducts, updateProduct } from '../domain/products.js';
+import { createProduct, hasLowStock, serializeProduct, serializeProducts, updateProduct } from '../domain/products.js';
 import { getProductRow, listMovements, recordBatchMovement, recordManualMovement, serializeMovements } from '../domain/stock.js';
+import { createRevision, getRevision, listRevisions } from '../domain/revisions.js';
 import { idempotent } from '../lib/idempotency.js';
 import { THREAD_TYPES } from '../lib/jewelry.js';
 import { normalizeSearchTerm } from '../lib/text.js';
@@ -22,7 +23,7 @@ import {
 } from '../lib/validation.js';
 
 const id = z.number().int().positive();
-const kind = z.enum(['jewelry', 'consumable']);
+const kind = z.enum(['jewelry', 'goods', 'consumable']);
 const photoPath = z
   .string()
   .trim()
@@ -68,6 +69,8 @@ const fields = {
   photos: nonNull(z.array(photoPath).max(10)),
   photoUrl,
   serviceIds: nonNull(z.array(id).max(30)),
+  stockMode: nonNull(z.enum(['quantity', 'presence'])),
+  presenceStatus: z.enum(['ok', 'low', 'out']).nullish(),
   active: nonNull(z.boolean()),
   variants: nonNull(z.array(variant).min(1).max(50)),
   // Older builds describe the only size with these.
@@ -90,6 +93,12 @@ const listQuery = z.object({
   includeInactive: queryBool,
 });
 const movementTypes = z.enum(['receipt', 'sale', 'return', 'writeoff', 'usage', 'adjustment']);
+const revisionBody = z.object({
+  section: z.enum(['jewelry', 'goods', 'consumable']).nullish(),
+  note: nullableText(500),
+  counts: nonNull(z.array(z.object({ variantId: id, quantity })).max(2000)),
+  presence: nonNull(z.array(z.object({ productId: id, status: z.enum(['ok', 'low', 'out']) })).max(500)),
+});
 const sizeQuery = pagination.extend({ variantId: queryId });
 
 export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -100,7 +109,7 @@ export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
     const conditions = [];
     if (!q.includeInactive) conditions.push(eq(products.active, true));
     if (q.kind) conditions.push(eq(products.kind, q.kind));
-    if (q.lowStock) conditions.push(hasLowSize);
+    if (q.lowStock) conditions.push(hasLowStock);
     if (q.search) conditions.push(sql`${products.searchText} like ${likePattern(normalizeSearchTerm(q.search))} escape '\\'`);
     const rows = db
       .select()
@@ -150,6 +159,23 @@ export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
     const q = parse(sizeQuery, request.query);
     getProductRow(db, id);
     return listMovements(db, { productId: id, variantId: q.variantId, limit: q.limit, offset: q.offset });
+  });
+
+  app.post('/stock/revisions', async (request, reply) => {
+    const input = parse(revisionBody, request.body);
+    return idempotent(db, request, reply, (tx) =>
+      createRevision(tx, { section: input.section, note: input.note, counts: input.counts ?? [], presence: input.presence ?? [] }, request.employee.id),
+    );
+  });
+
+  app.get('/stock/revisions', async (request) => {
+    const q = parse(pagination, request.query);
+    return listRevisions(db, q);
+  });
+
+  app.get('/stock/revisions/:id', async (request) => {
+    const { id } = parse(idParams, request.params);
+    return getRevision(db, id);
   });
 
   app.get('/stock/movements', async (request) => {

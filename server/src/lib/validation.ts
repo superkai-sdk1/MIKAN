@@ -97,6 +97,15 @@ const FIELD_LABELS: Record<string, string> = {
   lines: 'Размеры',
   description: 'Описание',
   freshProcedure: 'Свежий прокол / свежее тату',
+  section: 'Раздел',
+  serviceCategory: 'Раздел услуг',
+  ids: 'Категории',
+  intoId: 'Категория',
+  jewelryIds: 'Совместимые украшения',
+  stockMode: 'Учёт',
+  presenceStatus: 'Наличие',
+  counts: 'Пересчёт',
+  presence: 'Наличие',
 };
 
 function fieldLabel(path: PropertyKey[]): string | null {

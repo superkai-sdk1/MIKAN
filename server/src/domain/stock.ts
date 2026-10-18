@@ -19,6 +19,7 @@ export interface MovementInput {
   note?: string | null;
   saleId?: number | null;
   appointmentId?: number | null;
+  revisionId?: number | null;
   employeeId?: number | null;
 }
 
@@ -59,6 +60,13 @@ export function resolveVariant(
   return sizes[0]!;
 }
 
+/** Presence consumables are marked «есть / заканчивается / нет», never counted in movements. */
+export function assertCounted(product: ProductRow): void {
+  if (product.stockMode === 'presence') {
+    throw badRequest(`«${product.name}» учитывается как «есть / нет» — отметьте наличие в карточке расходника`);
+  }
+}
+
 export const severalSizesForMovement = (product: ProductRow) => () =>
   conflict(`У «${product.name}» несколько размеров — обновите приложение MIKAN, чтобы провести операцию по размеру`);
 
@@ -97,6 +105,7 @@ export function applyMovement(db: DbOrTx, input: MovementInput): { product: Prod
       note: input.note ?? null,
       saleId: input.saleId ?? null,
       appointmentId: input.appointmentId ?? null,
+      revisionId: input.revisionId ?? null,
       employeeId: input.employeeId ?? null,
       createdAt: now,
     })
@@ -132,6 +141,7 @@ export interface ManualMovement {
 export function recordManualMovement(db: DbOrTx, productId: number, input: ManualMovement, employeeId: number) {
   return db.transaction((tx) => {
     const product = getProductRow(tx, productId);
+    assertCounted(product);
     const variant = resolveVariant(tx, product, input.variantId, severalSizesForMovement(product));
     const delta = deltaFor(input.type, input.quantity, variant.quantity);
     return applyMovement(tx, { productId, variantId: variant.id, delta, type: input.type, note: input.note, employeeId });
@@ -151,6 +161,7 @@ export interface BatchMovement {
 export function recordBatchMovement(db: DbOrTx, productId: number, input: BatchMovement, employeeId: number) {
   return db.transaction((tx) => {
     const product = getProductRow(tx, productId);
+    assertCounted(product);
     const ids = input.lines.map((l) => l.variantId);
     if (new Set(ids).size !== ids.length) throw badRequest('Размер указан дважды');
     const movements: MovementRow[] = [];

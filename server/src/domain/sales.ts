@@ -8,6 +8,7 @@ import { formatRub } from '../lib/text.js';
 import { getOpenShift } from './cash.js';
 import { applyDeposit, cancelPendingDepositCodes, heldDeposit, unapplyDeposit } from './deposits.js';
 import { getAppointmentRow, getSaleRow, serializeSales } from './refs.js';
+import { applyConsumptionNorms, usageRecorded } from './consumption.js';
 import { cancelPendingForAppointment } from './scheduling.js';
 import { applyMovement, getProductRow, insufficientMessage, resolveVariant, returnVariantId } from './stock.js';
 
@@ -62,7 +63,7 @@ function resolveItem(db: DbOrTx, item: SaleItemInput, position: number): Resolve
     if (item.productId == null) throw badRequest(`${label}: выберите товар`);
     const product = db.select().from(products).where(eq(products.id, item.productId)).get();
     if (!product) throw badRequest(`${label}: товар не найден`);
-    if (product.kind !== 'jewelry') throw badRequest(`«${product.name}» — расходник, его нельзя продать`);
+    if (product.kind === 'consumable') throw badRequest(`«${product.name}» — расходник, его нельзя продать`);
     const variant = resolveVariant(db, product, item.variantId, severalSizesForSale(product), `${label}: размер не найден`);
     const price = item.price ?? variant.price ?? product.price;
     return {
@@ -224,6 +225,8 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
         .where(eq(appointments.id, appointment.id))
         .run();
       if (completing) cancelPendingForAppointment(tx, appointment.id, 'reminder');
+      // A visit completed by its payment consumes its services' norms, unless staff already recorded usage.
+      if (completing && !usageRecorded(tx, appointment.id)) applyConsumptionNorms(tx, appointment, employeeId);
       cancelPendingDepositCodes(tx, appointment.id, now);
     }
     return sale;

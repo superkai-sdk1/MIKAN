@@ -7,7 +7,6 @@ import {
   clients,
   employees,
   services,
-  stockMovements,
 } from '../db/schema.js';
 import { badRequest, conflict, scheduleConflict } from '../lib/errors.js';
 import { clientFullName, parseSteps, type AppointmentRow, type AppointmentServiceRow, type ServiceRow } from '../lib/serialize.js';
@@ -16,7 +15,7 @@ import { cancelPendingDepositCodes } from './deposits.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
-import { applyMovement, getProductRow, resolveVariant, severalSizesForMovement } from './stock.js';
+import { applyConsumptionNorms, noConsumption, recordListedUsage, usageRecorded } from './consumption.js';
 
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
@@ -326,7 +325,8 @@ function freshServices(db: DbOrTx, appointment: AppointmentRow): ServiceRow[] {
 export interface CompleteInput {
   sendAftercare: boolean;
   aftercareTemplateId?: number | null;
-  consumables: Array<{ productId: number; variantId?: number | null; quantity: number }>;
+  /** `undefined` — deduct the norms of the appointment's services; a list — exactly these (strict). */
+  consumables?: Array<{ productId: number; variantId?: number | null; quantity: number }>;
 }
 
 export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput, employeeId: number) {
@@ -335,24 +335,11 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
     if (current.status === 'cancelled') throw conflict('Нельзя завершить отменённую запись');
     const now = Date.now();
     // Idempotent: a retried/double-tapped complete must not deduct consumables twice.
-    const consumablesRecorded =
-      tx
-        .select({ id: stockMovements.id })
-        .from(stockMovements)
-        .where(and(eq(stockMovements.appointmentId, id), eq(stockMovements.type, 'usage')))
-        .get() !== undefined;
-    for (const item of consumablesRecorded ? [] : input.consumables) {
-      const product = getProductRow(tx, item.productId);
-      const variant = resolveVariant(tx, product, item.variantId, severalSizesForMovement(product));
-      applyMovement(tx, {
-        productId: item.productId,
-        variantId: variant.id,
-        delta: -item.quantity,
-        type: 'usage',
-        appointmentId: id,
-        employeeId,
-        note: 'Расход на процедуру',
-      });
+    let consumption = noConsumption();
+    if (!usageRecorded(tx, id)) {
+      consumption = input.consumables === undefined
+        ? applyConsumptionNorms(tx, current, employeeId)
+        : recordListedUsage(tx, id, input.consumables, employeeId);
     }
     const completedAt = current.completedAt ?? now;
     const row = tx
@@ -375,6 +362,6 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
         scheduled = scheduleAftercare(tx, row, client, parseSteps(template.stepsJson), completedAt);
       }
     }
-    return { row, scheduled };
+    return { row, scheduled, consumption };
   });
 }

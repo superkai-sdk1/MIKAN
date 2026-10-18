@@ -108,10 +108,11 @@ export function appointmentRoutes(app: FastifyInstance, ctx: AppContext): void {
       {
         sendAftercare: input.sendAftercare ?? true,
         aftercareTemplateId: input.aftercareTemplateId,
-        consumables: input.consumables ?? [],
+        // Absent (or null): the server deducts the norms of the appointment's services.
+        consumables: input.consumables ?? undefined,
       },
       request.employee.id,
     );
-    return { appointment: serializeAppointment(db, result.row), scheduledMessages: result.scheduled };
+    return { appointment: serializeAppointment(db, result.row), scheduledMessages: result.scheduled, consumption: result.consumption };
   });
 }

@@ -5,12 +5,15 @@ import { badRequest, conflict } from '../lib/errors.js';
 import type { ThreadType } from '../lib/jewelry.js';
 import { parsePhotos, productOut, type ProductOut, type ProductRow, type VariantRow } from '../lib/serialize.js';
 import { normalizeSearchTerm } from '../lib/text.js';
+import { productScope, resolveCategory } from './categories.js';
 import { productSearchFields } from './product-search.js';
 import { applyMovement, currentVariants, getProductRow, variantsWithHistory } from './stock.js';
 
 export { productSearchFields } from './product-search.js';
 
-export type ProductKind = 'jewelry' | 'consumable';
+export type ProductKind = 'jewelry' | 'goods' | 'consumable';
+export type StockMode = 'quantity' | 'presence';
+export type PresenceStatus = 'ok' | 'low' | 'out';
 
 /** A size in `POST/PATCH /products` `variants`; on PATCH an omitted field of an existing size keeps its value. */
 export interface VariantInput {
@@ -44,6 +47,9 @@ export interface ProductFields {
   /** Older builds: the cover only. */
   photoUrl?: string | null;
   serviceIds?: number[];
+  /** Consumables only: `presence` tracks «есть / заканчивается / нет» instead of units. */
+  stockMode?: StockMode;
+  presenceStatus?: PresenceStatus | null;
   active?: boolean;
   variants?: VariantInput[];
   /** Older builds: the name and minimum of the only size, and (POST) its initial stock. */
@@ -61,8 +67,34 @@ const CONSUMABLE_ONE_SIZE = 'У расходника не может быть н
 
 /** SQL: the product has a current size in stock. */
 export const hasSizeInStock = sql`exists (select 1 from ${productVariants} where ${productVariants.productId} = ${products.id} and ${productVariants.archived} = 0 and ${productVariants.quantity} > 0)`;
-/** SQL: some current size of the product is at or below its minimum. */
-export const hasLowSize = sql`exists (select 1 from ${productVariants} where ${productVariants.productId} = ${products.id} and ${productVariants.archived} = 0 and ${productVariants.quantity} <= ${productVariants.minQuantity})`;
+/**
+ * SQL: the product needs restocking — a presence consumable not marked «есть», or some current size of a counted
+ * product at or below its minimum.
+ */
+export const hasLowStock = sql`(case when ${products.stockMode} = 'presence' then ${products.presenceStatus} <> 'ok' else exists (select 1 from ${productVariants} where ${productVariants.productId} = ${products.id} and ${productVariants.archived} = 0 and ${productVariants.quantity} <= ${productVariants.minQuantity}) end)`;
+
+const PRESENCE_ONLY_CONSUMABLES = 'Учёт «есть / нет» — только для расходников';
+const PRESENCE_STATUS_NEEDS_MODE = 'Статус наличия задаётся только для расходников с учётом «есть / нет»';
+
+/**
+ * Stock mode and presence status after an edit: presence is for consumables only (another kind falls back to
+ * counting); switching to presence starts at «есть» when the product has stock, «нет» otherwise.
+ */
+function stockModeFields(
+  kind: string,
+  input: Pick<ProductFields, 'stockMode' | 'presenceStatus'>,
+  current: { stockMode: string; presenceStatus: string; quantity: number } | null,
+): { stockMode: StockMode; presenceStatus: PresenceStatus } {
+  if (input.stockMode === 'presence' && kind !== 'consumable') throw badRequest(PRESENCE_ONLY_CONSUMABLES);
+  const mode: StockMode = kind !== 'consumable' ? 'quantity' : (input.stockMode ?? (current?.stockMode as StockMode | undefined) ?? 'quantity');
+  if (mode !== 'presence') {
+    if (input.presenceStatus != null) throw badRequest(PRESENCE_STATUS_NEEDS_MODE);
+    return { stockMode: mode, presenceStatus: (current?.presenceStatus as PresenceStatus | undefined) ?? 'ok' };
+  }
+  const switching = current?.stockMode !== 'presence';
+  const fallback: PresenceStatus = switching ? ((current?.quantity ?? 0) > 0 ? 'ok' : 'out') : (current!.presenceStatus as PresenceStatus);
+  return { stockMode: mode, presenceStatus: input.presenceStatus ?? fallback };
+}
 
 /** Current sizes of the given products in order (`inStockOnly` — only sizes with stock), grouped by product. */
 export function variantsByProduct(db: DbOrTx, productIds: number[], opts: { inStockOnly?: boolean } = {}): Map<number, VariantRow[]> {
@@ -187,10 +219,11 @@ export function createProduct(db: DbOrTx, input: NewProduct, employeeId: number 
   checkSizeList(input.kind, sizes);
   const serviceIds = checkServiceIds(db, input.serviceIds ?? []);
   const now = Date.now();
+  const initialStock = sizes.reduce((sum, v) => sum + v.initialQuantity, 0);
   const base = {
     name: input.name,
     sku: input.sku ?? null,
-    category: input.category ?? null,
+    category: resolveCategory(db, productScope(input.kind), input.category),
     material: input.material ?? null,
     color: input.color ?? null,
     stone: input.stone ?? null,
@@ -203,6 +236,7 @@ export function createProduct(db: DbOrTx, input: NewProduct, employeeId: number 
       ...productSearchFields(base, sizes),
       ...photoColumns(input.photos ?? (input.photoUrl ? [input.photoUrl] : [])),
       kind: input.kind,
+      ...stockModeFields(input.kind, input, { stockMode: 'quantity', presenceStatus: 'ok', quantity: initialStock }),
       threadType: input.threadType ?? null,
       thicknessMm: input.thicknessMm ?? null,
       description: input.description ?? null,
@@ -325,10 +359,13 @@ export function updateProduct(db: DbOrTx, id: number, input: ProductFields, empl
 
     const pick = <K extends keyof ProductFields & keyof ProductRow>(k: K) =>
       (input[k] === undefined ? current[k] : input[k]) as ProductRow[K];
+    // A product moved to another section takes its category name along.
+    const categoryName = input.category === undefined ? current.category : input.category;
+    const stock = sizes.reduce((sum, v) => sum + v.quantity, 0);
     const base = {
       name: input.name ?? current.name,
       sku: pick('sku'),
-      category: pick('category'),
+      category: resolveCategory(tx, productScope(kind), categoryName),
       material: pick('material'),
       color: pick('color'),
       stone: pick('stone'),
@@ -341,6 +378,7 @@ export function updateProduct(db: DbOrTx, id: number, input: ProductFields, empl
         ...productSearchFields(base, sizes),
         ...(photos ? photoColumns(photos) : {}),
         kind,
+        ...stockModeFields(kind, input, { stockMode: current.stockMode, presenceStatus: current.presenceStatus, quantity: stock }),
         threadType: pick('threadType'),
         thicknessMm: pick('thicknessMm'),
         description: pick('description'),
