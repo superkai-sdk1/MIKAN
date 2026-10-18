@@ -203,7 +203,8 @@ service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` f
 ```
 `type`: `receipt` (приход) | `sale` | `return` | `writeoff` (списание) | `usage` (расход на процедуру) | `adjustment` (инвентаризация)
 | `purchase` (покупка расходника «есть / нет»: `delta` 0, `quantityAfter` 0, `amount` — what it cost).
-`amount` — rubles paid; set only on `purchase`, `null` otherwise.
+`amount` — rubles paid: on `purchase`, and on a `receipt` recorded with `unitCost` (`unitCost × quantity`); `null`
+otherwise.
 `variantName` — the size's current name (`""` for a product without sizes); `quantityAfter` — the stock of that size
 after the movement. `revisionId` — the stock count (`StockRevision`) an `adjustment` came from, else `null`.
 
@@ -519,8 +520,9 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | GET | `/products/:id` | — | `Product` |
 | POST | `/products` | see below | `Product` |
 | PATCH | `/products/:id` | any of the POST fields | `Product` |
-| POST | `/products/:id/movements` | `{ type: "receipt"\|"writeoff"\|"usage"\|"adjustment", variantId?, quantity, note? }` | `{ product: Product, movement: StockMovement }` · accepts `Idempotency-Key` |
-| POST | `/products/:id/movements/batch` | `{ type, note?, lines: [{ variantId, quantity }] }` | `{ product: Product, movements: [StockMovement] }` · accepts `Idempotency-Key` |
+| DELETE | `/products/:id?writeOff=true` | — | `{ "deleted": true }` or `{ "archived": true, "writtenOff": 3 }` · `409` while stock is left without `writeOff` |
+| POST | `/products/:id/movements` | `{ type: "receipt"\|"writeoff"\|"usage"\|"adjustment", variantId?, quantity, unitCost?, note? }` | `{ product: Product, movement: StockMovement }` · accepts `Idempotency-Key` |
+| POST | `/products/:id/movements/batch` | `{ type, note?, unitCost?, lines: [{ variantId, quantity, unitCost? }] }` | `{ product: Product, movements: [StockMovement] }` · accepts `Idempotency-Key` |
 | POST | `/products/:id/purchases` | `{ amount, note?, presenceStatus? }` | `{ product: Product, movement: StockMovement }` · accepts `Idempotency-Key` |
 | GET | `/products/:id/movements?variantId=&limit=&offset=` | — | `{ items: [StockMovement], total }` |
 | GET | `/products/:id/history?variantId=&limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who bought this product (or this size) and when, newest first |
@@ -559,6 +561,14 @@ The token lives 90 days. On first start, if there are no employees, the server c
   and keeps the other photos.
 - `serviceIds` (≤ 30) replaces the linked services; an unknown id → `400`.
 - `quantity` is never set by PATCH.
+- `DELETE` removes a product from the warehouse. One with no stock movements and no sold items is deleted for good
+  (its sizes, links to services and consumption norms go with it): `{ "deleted": true }`. One with history is
+  **archived** — hidden from every list, the POS, the bot, stock counts and the low-stock badge, but sales, history
+  and movements still name it: `{ "archived": true, "writtenOff": 0 }`; its links to services and consumption norms are
+  removed, and it can no longer be sold or moved (`400` «Позиция удалена со склада»). Stock left on it → `409 conflict`
+  «На складе ещё 3 шт. — спишите остаток, чтобы удалить позицию» unless `?writeOff=true`, which first writes the
+  stock of every size off (`writeoff` movements, note «Позиция удалена со склада»; counted as a stock expense) and
+  returns `writtenOff` = the units written off. Deleting twice → `404`.
 
 Movements:
 - `quantity` semantics: `receipt` — positive amount added; `writeoff`/`usage` — positive amount removed;
@@ -567,6 +577,10 @@ Movements:
 - `variantId` must be a current size of the product (`400` otherwise). Without it (older builds) the only size is
   used; for a product with several sizes → `409 conflict` «У «Лабрет» несколько размеров — обновите приложение MIKAN,
   чтобы провести операцию по размеру».
+- `unitCost` (receipts only; ignored for other types) — what one unit cost on this delivery (0…100 000 000 ₽). The
+  movement keeps `amount = unitCost × quantity`, and the cost becomes the new cost of what was received: the size's
+  own `cost` when it has one, else the product's `cost` (so valuations and margins use the latest price). In `batch`
+  a line's `unitCost` wins over the body's. Without `unitCost` a receipt's `amount` is `null` and costs do not change.
 - `batch` records one operation for several sizes in one transaction (a delivery, a stock count of all sizes):
   1–50 lines with distinct `variantId`s. `receipt` / `writeoff` / `usage` lines need `quantity > 0`; `adjustment`
   lines whose count equals the current stock are skipped, and a count that changes nothing → `400` «Остатки не
