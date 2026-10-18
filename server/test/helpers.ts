@@ -4,7 +4,15 @@ import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import { buildApp } from '../src/app.js';
-import { BotSendError, type BotGateway, type InlineKeyboard, type PhotoSource, type SendOptions, type SentMessage } from '../src/bot/gateway.js';
+import {
+  BotSendError,
+  type BotGateway,
+  type InlineKeyboard,
+  type PhotoSource,
+  type ReplyKeyboard,
+  type SendOptions,
+  type SentMessage,
+} from '../src/bot/gateway.js';
 import { loadConfig, type Config } from '../src/config.js';
 import { silentLogger, type AiClient, type AppContext, type ImageGenerator } from '../src/context.js';
 import { openDatabase } from '../src/db/client.js';
@@ -25,7 +33,7 @@ export interface FakeEdit {
 export class FakeGateway implements BotGateway {
   running = true;
   usernameValue: string | null = 'mikan_test_bot';
-  sent: Array<{ chatId: number; text: string; keyboard?: InlineKeyboard; messageId: number }> = [];
+  sent: Array<{ chatId: number; text: string; keyboard?: InlineKeyboard; replyKeyboard?: ReplyKeyboard; messageId: number }> = [];
   photos: Array<{ chatId: number; photo: PhotoSource; caption: string; keyboard?: InlineKeyboard; messageId?: number }> = [];
   edits: FakeEdit[] = [];
   typing = 0;
@@ -43,7 +51,13 @@ export class FakeGateway implements BotGateway {
     const failure = this.failures.shift();
     if (failure) throw failure;
     const messageId = ++this.nextMessageId;
-    this.sent.push({ chatId, text, messageId, ...(options.keyboard ? { keyboard: options.keyboard } : {}) });
+    this.sent.push({
+      chatId,
+      text,
+      messageId,
+      ...(options.keyboard ? { keyboard: options.keyboard } : {}),
+      ...(options.replyKeyboard ? { replyKeyboard: options.replyKeyboard } : {}),
+    });
     return { messageId };
   }
   async sendPhoto(chatId: number, photo: PhotoSource, caption: string, options: SendOptions = {}): Promise<SentMessage> {

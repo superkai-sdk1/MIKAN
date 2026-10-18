@@ -1,5 +1,5 @@
 import { Bot, GrammyError, InputFile } from 'grammy';
-import type { InlineKeyboardMarkup, Message } from 'grammy/types';
+import type { InlineKeyboardMarkup, Message, ReplyKeyboardMarkup } from 'grammy/types';
 import type { AppContext } from '../context.js';
 import { getBotSettings, getCachedBotUsername, setCachedBotUsername } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
@@ -14,6 +14,7 @@ import {
   type SentMessage,
 } from './gateway.js';
 import { registerHandlers } from './handlers.js';
+import { toGrammyKeyboard } from './keyboards.js';
 import { BotPipeline } from './pipeline.js';
 
 const MIN_BACKOFF_MS = 5_000;
@@ -26,6 +27,13 @@ const MAX_CACHED_FILE_IDS = 500;
 function markup(keyboard: InlineKeyboard | null | undefined): InlineKeyboardMarkup | undefined {
   if (keyboard === undefined) return undefined;
   return { inline_keyboard: (keyboard ?? []).map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) };
+}
+
+/** Inline buttons win over a keyboard under the input field (a message carries one `reply_markup`). */
+function sendMarkup(options: SendOptions): { reply_markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup } {
+  if (options.keyboard) return { reply_markup: markup(options.keyboard) };
+  if (options.replyKeyboard) return { reply_markup: toGrammyKeyboard(options.replyKeyboard) };
+  return {};
 }
 
 /** Editing a message to exactly what it already shows is a harmless no-op for us. */
@@ -215,7 +223,7 @@ export class BotController implements BotGateway {
       try {
         const sent = await bot.api.sendMessage(chatId, chunk, {
           link_preview_options: { is_disabled: true },
-          ...(last && options.keyboard ? { reply_markup: markup(options.keyboard) } : {}),
+          ...(last ? sendMarkup(options) : {}),
         });
         messageId = sent.message_id;
       } catch (err) {

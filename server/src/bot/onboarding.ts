@@ -2,13 +2,24 @@ import { eq } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { employees } from '../db/schema.js';
-import { chatEmployee, findChat, setChatEmployee, storeMessage, upsertChat } from '../domain/bot-chats.js';
+import { chatEmployee, findChat, getChat, setChatEmployee, storeMessage, upsertChat } from '../domain/bot-chats.js';
 import { createClient, findClientByChat, findClientByLinkToken, findClientByPhone, linkTelegram } from '../domain/clients.js';
 import { getBotSettings, getStudioSettings } from '../domain/settings.js';
+import { errorMessage } from '../lib/errors.js';
 import { isPlausiblePhone, normalizePhone } from '../lib/phone.js';
-import { clientFullName, type EmployeeRow } from '../lib/serialize.js';
+import { clientFullName, type BotChatRow, type EmployeeRow } from '../lib/serialize.js';
+import { truncate } from '../lib/text.js';
+import { BUTTONS, STAFF_KEYBOARD } from './keyboards.js';
 import type { IncomingFrom } from './pipeline.js';
 import { bindStaffChat, notifyStaff } from './staff.js';
+
+/** Appended to the /start greeting of a chat that is neither a client's nor an employee's yet. */
+export const SHARE_PHONE_HINT =
+  `Нажмите кнопку «${BUTTONS.contact}» внизу — так я вас узнаю. ` +
+  'Если вы сотрудник студии, узнаю вас по номеру из вашего профиля в MIKAN.';
+
+/** Longest raw phone quoted in the note about an unreadable contact. */
+const MAX_NOTE_PHONE = 40;
 
 export interface OnboardingReply {
   text: string;
@@ -63,8 +74,11 @@ export function handleStart(ctx: AppContext, from: IncomingFrom, payload: string
   }
   const employee = chatEmployee(db, findChat(db, from.chatId));
   if (employee && !(token.startsWith('c') && token.length > 1)) text = staffGreeting(getStudioSettings(db).name, employee);
+  const linked = findClientByChat(db, from.chatId) !== null;
+  // Telegram never tells a bot the user's phone: ask for it, or employees go on chatting unrecognised, as clients.
+  if (!linked && !employee) text = `${text}\n\n${SHARE_PHONE_HINT}`;
   storeMessage(db, from.chatId, 'system', text);
-  return { text, linked: findClientByChat(db, from.chatId) !== null, ...(employee ? { staff: true } : {}) };
+  return { text, linked, ...(employee ? { staff: true } : {}) };
 }
 
 /**
@@ -80,11 +94,25 @@ export async function handleContact(
   const { db } = ctx;
   upsertChat(db, from.chatId, { telegramName: from.telegramName, username: from.username });
   const linkedNow = () => findClientByChat(db, from.chatId) !== null;
-  if (contact.userId !== from.userId) {
-    return { text: 'Пожалуйста, поделитесь своим номером с помощью кнопки «📱 Поделиться номером» ниже.', linked: linkedNow() };
-  }
   const phone = normalizePhone(contact.phone);
+  // Refusals leave a note in the chat history, so staff can see that the person tried.
+  if (contact.userId !== from.userId) {
+    storeMessage(
+      db,
+      from.chatId,
+      'system',
+      `Контакт не принят: прислана чужая карточка контакта${phone ? ` (${phone})` : ''}, а не свой номер. ` +
+        `Бот попросил поделиться своим номером кнопкой «${BUTTONS.contact}».`,
+    );
+    return { text: `Пожалуйста, поделитесь своим номером с помощью кнопки «${BUTTONS.contact}» ниже.`, linked: linkedNow() };
+  }
   if (!phone || !isPlausiblePhone(phone)) {
+    storeMessage(
+      db,
+      from.chatId,
+      'system',
+      `Контакт не принят: не удалось распознать номер «${truncate(contact.phone, MAX_NOTE_PHONE)}». Бот попросил написать номер сообщением.`,
+    );
     return { text: 'Не получилось распознать номер. Напишите его, пожалуйста, сообщением.', linked: linkedNow() };
   }
   storeMessage(db, from.chatId, 'user', `[Контакт] ${phone}`);
@@ -117,6 +145,28 @@ export async function handleContact(
   }
   storeMessage(db, from.chatId, 'system', text);
   return { text, linked: true };
+}
+
+/**
+ * Staff bind a chat to an employee from the app (`PUT /bot/chats/:chatId/employee`), e.g. when the employee never
+ * shared their phone with the bot. The employee gets the staff greeting with the staff keyboard and the staff chat is
+ * notified; a delivery failure is logged and the chat is bound anyway. Binding a chat to the employee it already
+ * belongs to changes and sends nothing.
+ */
+export async function bindChatToEmployee(ctx: AppContext, chatId: number, employee: EmployeeRow): Promise<BotChatRow> {
+  const { db } = ctx;
+  const chat = getChat(db, chatId);
+  if (chat.employeeId === employee.id) return chat;
+  const bound = setChatEmployee(db, chatId, employee.id);
+  const text = staffGreeting(getStudioSettings(db).name, employee);
+  try {
+    await ctx.gateway.sendText(chatId, text, { replyKeyboard: STAFF_KEYBOARD });
+    storeMessage(db, chatId, 'system', text);
+  } catch (err) {
+    ctx.log.warn({ chatId, employeeId: employee.id, err: errorMessage(err) }, 'staff greeting not delivered');
+  }
+  await notifyStaff(ctx, `🔑 ${employee.name} подключён(а) к боту как сотрудник (вручную${chat.username ? `, @${chat.username}` : ''})`);
+  return bound;
 }
 
 export function handleStaffCommand(ctx: AppContext, chatId: number, code: string): string {

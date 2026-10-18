@@ -2,10 +2,11 @@ import { asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { BotSendError, BotUnavailableError } from '../bot/gateway.js';
+import { bindChatToEmployee } from '../bot/onboarding.js';
 import { runTest } from '../bot/pipeline.js';
 import { issueStaffCode } from '../bot/staff.js';
 import type { AppContext } from '../context.js';
-import { bookingRequests, knowledgeEntries, scheduledMessages } from '../db/schema.js';
+import { bookingRequests, employees, knowledgeEntries, scheduledMessages } from '../db/schema.js';
 import {
   getChat,
   listBookings,
@@ -20,7 +21,7 @@ import {
   storeMessage,
   updateChatFlags,
 } from '../domain/bot-chats.js';
-import { AppError, conflict, notFound } from '../lib/errors.js';
+import { AppError, badRequest, conflict, notFound } from '../lib/errors.js';
 import { knowledgeOut } from '../lib/serialize.js';
 import { toIso } from '../lib/time.js';
 import { idParams, nonNull, parse, requiredText } from '../lib/validation.js';
@@ -87,6 +88,16 @@ export function botRoutes(app: FastifyInstance, ctx: AppContext): void {
     getChat(db, chatId);
     const row = input.aiPaused === undefined ? getChat(db, chatId) : updateChatFlags(db, chatId, { aiPaused: input.aiPaused });
     return serializeChat(db, row);
+  });
+
+  // Ordinary chat → staff chat of an active employee, for employees who never shared their phone with the bot.
+  app.put('/bot/chats/:chatId/employee', async (request) => {
+    const { chatId } = parse(chatParams, request.params);
+    const { employeeId } = parse(z.object({ employeeId: z.number().int().positive() }), request.body);
+    getChat(db, chatId);
+    const employee = db.select().from(employees).where(eq(employees.id, employeeId)).get();
+    if (!employee?.active) throw badRequest('Сотрудник не найден или отключён');
+    return serializeChat(db, await bindChatToEmployee(ctx, chatId, employee));
   });
 
   // Staff chat → ordinary client chat (the employee can share their phone again to get staff mode back).
