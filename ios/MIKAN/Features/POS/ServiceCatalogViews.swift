@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// What the POS catalog shows.
+/// What the POS catalog shows: the warehouse sections that are sold.
 enum POSCatalog: String, CaseIterable, Identifiable {
     case jewelry
     case services
+    case goods
 
     var id: String { rawValue }
 
@@ -11,6 +12,7 @@ enum POSCatalog: String, CaseIterable, Identifiable {
         switch self {
         case .jewelry: "Украшения"
         case .services: "Услуги"
+        case .goods: "Товары"
         }
     }
 
@@ -18,6 +20,7 @@ enum POSCatalog: String, CaseIterable, Identifiable {
         switch self {
         case .jewelry: "Поиск украшений"
         case .services: "Поиск услуг"
+        case .goods: "Поиск товаров"
         }
     }
 
@@ -25,6 +28,7 @@ enum POSCatalog: String, CaseIterable, Identifiable {
         switch self {
         case .jewelry: isSearching ? "Найдено в каталоге" : "Добавить украшение"
         case .services: isSearching ? "Найдено в услугах" : "Добавить услугу"
+        case .goods: isSearching ? "Найдено в товарах" : "Добавить товар"
         }
     }
 }

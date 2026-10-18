@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Jewelry tile in the POS catalog. Tap adds one to the receipt; a product with several sizes asks for the size
-/// first (the owner shows `SizePickerSheet`).
+/// Jewelry or goods tile in the POS catalog. Tap adds one to the receipt; a product with several sizes asks for
+/// the size first (the owner shows `SizePickerSheet`).
 struct ProductTile: View {
     let product: Product
     /// Units in the receipt over all sizes.
@@ -14,7 +14,7 @@ struct ProductTile: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .topTrailing) {
-                    ProductThumbnail(path: product.photoUrl, size: 140)
+                    ProductThumbnail(path: product.photoUrl, size: 140, placeholderSymbol: CatalogSection(kind: product.kind).symbol)
                         .frame(maxWidth: .infinity)
                     if inCart > 0 {
                         Text("\(inCart)")

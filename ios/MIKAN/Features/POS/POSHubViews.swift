@@ -34,7 +34,7 @@ struct ReceiptEntryCard: View {
                     Button(action: onNew) {
                         EntryLabel(
                             title: "Открыть чек без записи",
-                            subtitle: "Украшения и услуги, клиента можно добавить в чеке",
+                            subtitle: "Украшения, товары и услуги, клиента можно добавить в чеке",
                             systemImage: "receipt",
                             isProminent: true
                         )

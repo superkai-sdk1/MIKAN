@@ -16,14 +16,30 @@ struct CartLine: Identifiable, Hashable {
     let sizeName: String?
     var quantity: Int
     var unitPrice: Int
+    /// Jewelry or goods for a product line (drives its icon); `nil` for services.
+    let productKind: ProductKind?
 
-    init(kind: Kind, name: String, sizeName: String? = nil, quantity: Int = 1, unitPrice: Int) {
+    init(
+        kind: Kind,
+        name: String,
+        sizeName: String? = nil,
+        quantity: Int = 1,
+        unitPrice: Int,
+        productKind: ProductKind? = nil
+    ) {
         self.id = UUID()
         self.kind = kind
         self.name = name
         self.sizeName = sizeName.nonEmpty
         self.quantity = quantity
         self.unitPrice = unitPrice
+        self.productKind = productKind
+    }
+
+    /// Symbol of the line: a service, a piece of jewelry or other goods.
+    var symbol: String {
+        guard productId != nil else { return "hands.and.sparkles" }
+        return productKind == .goods ? CatalogSection.goods.symbol : CatalogSection.jewelry.symbol
     }
 
     var total: Int { quantity * unitPrice }
@@ -247,7 +263,8 @@ final class CartStore {
             kind: .product(id: product.id, variantId: size.id, stock: size.quantity),
             name: product.lineName(variant: size),
             sizeName: size.name,
-            unitPrice: product.price(of: size)
+            unitPrice: product.price(of: size),
+            productKind: product.kind
         )
         if let index = lines.firstIndex(where: { $0.isSameSize(as: line) && $0.unitPrice == line.unitPrice }) {
             lines[index].quantity += 1
