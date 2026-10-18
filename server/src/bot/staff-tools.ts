@@ -148,7 +148,7 @@ function staffAppointmentLine(a: AppointmentOut, tz: string): string {
     a.depositRequired > 0 || a.deposit > 0
       ? `предоплата ${formatRub(a.deposit)} из ${formatRub(a.depositRequired)} (${DEPOSIT_LABELS[a.depositStatus] ?? a.depositStatus})`
       : null;
-  const paid = a.saleId != null ? 'оплачена' : a.paidOutside ? 'оплачена до MIKAN' : a.status === 'completed' ? 'не оплачена' : null;
+  const paid = a.saleId != null ? 'оплачена' : a.status === 'completed' ? 'не оплачена' : null;
   return [
     `№${a.id} · ${start.toFormat('ccc dd.MM HH:mm')}–${end.toFormat('HH:mm')}`,
     `${refName(a.client)}${a.client.phone ? ` (${a.client.phone})` : ''}`,
