@@ -64,6 +64,13 @@
       "when": 1792340732668,
       "tag": "0008_service_fresh_procedure",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792342344364,
+      "tag": "0009_appointment_paid_outside",
+      "breakpoints": true
     }
   ]
 }

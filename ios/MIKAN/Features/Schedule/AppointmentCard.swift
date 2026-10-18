@@ -29,7 +29,7 @@ struct AppointmentCard: View {
                     MoneyText(appointment.price)
                         .font(.subheadline.weight(.medium))
                     Spacer(minLength: 0)
-                    if appointment.saleId != nil {
+                    if appointment.isPaid {
                         Label("Оплачено", systemImage: "checkmark.seal.fill")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.green)

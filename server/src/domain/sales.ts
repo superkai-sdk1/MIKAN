@@ -155,6 +155,7 @@ export function prepareSale(db: DbOrTx, input: SaleInput): PreparedSale {
   let clientId = input.clientId ?? null;
   const appointment = input.appointmentId != null ? getAppointmentRow(db, input.appointmentId) : null;
   if (appointment) {
+    if (appointment.paidOutside) throw conflict('Запись уже оплачена до перехода на MIKAN (перенесена из YCLIENTS)');
     if (appointment.saleId != null) {
       const linked = db.select().from(sales).where(eq(sales.id, appointment.saleId)).get();
       if (linked && linked.status === 'completed') throw conflict(`Запись уже оплачена (чек №${linked.number})`);

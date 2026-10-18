@@ -188,9 +188,13 @@ after the movement.
   "status": "scheduled", "price": 8000, "notes": "...",
   "deposit": 2000, "depositRequired": 2000, "depositStatus": "paid",
   "depositOperations": [ DepositOperation ], "depositLink": QrPayment | null,
-  "saleId": null, "completedAt": null, "createdAt": "...", "updatedAt": "..." }
+  "saleId": null, "paidOutside": false, "completedAt": null, "createdAt": "...", "updatedAt": "..." }
 ```
 `status`: `scheduled` | `confirmed` | `completed` | `cancelled` | `no_show`. `saleId` — the sale that paid for it.
+`paidOutside` — the visit was paid before MIKAN (carried over from YCLIENTS) and has no sale here: apps show it as
+paid and do not offer to take payment; `POST /sales` with its `appointmentId` → `409 conflict`. Set by the server
+maintenance script `close-imported-appointments` (dry run by default; `--apply` closes past unpaid imported visits as
+`completed` + `paidOutside`).
 - Prepayment (see «Prepayments» below):
   - `depositRequired` — prepayment the studio asks for (defaults to the services' `depositAmount`; editable).
   - `deposit` — prepayment **held** for this appointment right now: received − applied in sales + returned by sale

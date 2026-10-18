@@ -18,7 +18,7 @@ nonisolated enum PaymentQueue {
     /// Not paid yet, in a payable status, earliest first.
     static func unpaid(_ appointments: [Appointment]) -> [Appointment] {
         appointments
-            .filter { $0.saleId == nil && statuses.contains($0.status) }
+            .filter { !$0.isPaid && statuses.contains($0.status) }
             .sorted { ($0.startsAt, $0.id) < ($1.startsAt, $1.id) }
     }
 

@@ -265,7 +265,7 @@ private struct CompletionSuccessView: View {
             }
             Spacer()
             VStack(spacing: 12) {
-                if appointment.saleId == nil {
+                if !appointment.isPaid {
                     Button(action: onPay) {
                         Label("Принять оплату · \(Money.format(appointment.price))", systemImage: "creditcard.fill")
                             .font(.headline)
