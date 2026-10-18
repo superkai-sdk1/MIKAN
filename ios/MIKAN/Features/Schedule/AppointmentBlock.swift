@@ -63,7 +63,7 @@ struct AppointmentBlock: View {
         }
     }
 
-    /// Start time with the prepayment glyph and the completion check.
+    /// Start time with the prepayment glyph, the «в кассе» cart and the completion check.
     private var timeRow: some View {
         HStack(spacing: 3) {
             timeLabel
@@ -71,6 +71,11 @@ struct AppointmentBlock: View {
                 Image(systemName: depositMark.symbol)
                     .font(.caption2)
                     .foregroundStyle(depositMark.color)
+            }
+            if appointment.isInPOS {
+                Image(systemName: "cart.fill")
+                    .font(.caption2)
+                    .foregroundStyle(Color.accentColor)
             }
             if appointment.status == .completed {
                 Image(systemName: "checkmark.circle.fill")
@@ -107,6 +112,7 @@ struct AppointmentBlock: View {
         ]
         if appointment.status != .scheduled { parts.append(appointment.status.title) }
         if let depositMark { parts.append(depositMark.accessibilityText) }
+        if appointment.isInPOS { parts.append("в кассе") }
         return parts.joined(separator: ", ")
     }
 }

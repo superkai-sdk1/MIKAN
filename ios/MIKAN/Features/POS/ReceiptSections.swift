@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// Who the receipt is for: the appointment it pays (with «Отвязать»), the client, or «Добавить клиента».
+/// A failed save shows below it.
 struct ReceiptHeaderSection: View {
     @Environment(AppState.self) private var appState
     @Environment(CartStore.self) private var cart
+    @Environment(OpenReceiptsStore.self) private var receipts
 
     var body: some View {
         Section {
@@ -26,6 +28,12 @@ struct ReceiptHeaderSection: View {
                     }
                     .contentShape(.rect)
                 }
+            }
+        } footer: {
+            if receipts.saveFailed {
+                Label("Не сохранено — повторим при следующем изменении", systemImage: "exclamationmark.icloud")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
         }
     }
@@ -69,8 +77,8 @@ private struct ReceiptAppointmentBanner: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .accessibilityHint(deposit > 0
-                    ? "Чек останется, но не будет привязан к записи, предоплата останется за записью"
-                    : "Чек останется, но не будет привязан к записи")
+                    ? "Чек останется без записи, запись вернётся в «К оплате», предоплата останется за ней"
+                    : "Чек останется без записи, запись вернётся в «К оплате»")
         }
         .padding(.vertical, 2)
     }

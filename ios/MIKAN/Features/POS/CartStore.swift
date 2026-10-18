@@ -1,93 +1,16 @@
 import Foundation
 import Observation
 
-struct CartLine: Identifiable, Hashable {
-    enum Kind: Hashable {
-        /// One size of a product (a product without sizes has one unnamed size); `stock` — that size's quantity
-        /// when it was added.
-        case product(id: Int, variantId: Int, stock: Int)
-        case service(id: Int?)
-    }
-
-    let id: UUID
-    let kind: Kind
-    var name: String
-    /// Size of a product line («8 мм»); `nil` for services and a product without sizes.
-    let sizeName: String?
-    var quantity: Int
-    var unitPrice: Int
-    /// Jewelry or goods for a product line (drives its icon); `nil` for services.
-    let productKind: ProductKind?
-
-    init(
-        kind: Kind,
-        name: String,
-        sizeName: String? = nil,
-        quantity: Int = 1,
-        unitPrice: Int,
-        productKind: ProductKind? = nil
-    ) {
-        self.id = UUID()
-        self.kind = kind
-        self.name = name
-        self.sizeName = sizeName.nonEmpty
-        self.quantity = quantity
-        self.unitPrice = unitPrice
-        self.productKind = productKind
-    }
-
-    /// Symbol of the line: a service, a piece of jewelry or other goods.
-    var symbol: String {
-        guard productId != nil else { return "hands.and.sparkles" }
-        return productKind == .goods ? CatalogSection.goods.symbol : CatalogSection.jewelry.symbol
-    }
-
-    var total: Int { quantity * unitPrice }
-
-    var productId: Int? {
-        if case .product(let id, _, _) = kind { return id }
-        return nil
-    }
-
-    var variantId: Int? {
-        if case .product(_, let variantId, _) = kind { return variantId }
-        return nil
-    }
-
-    /// Stock of the line's size; `nil` for services.
-    var stock: Int? {
-        if case .product(_, _, let stock) = kind { return stock }
-        return nil
-    }
-
-    var isValid: Bool { quantity > 0 && unitPrice >= 0 && !name.trimmed.isEmpty }
-
-    /// Lines of one size share its stock (the same size at an edited price is a separate line).
-    func isSameSize(as other: CartLine) -> Bool {
-        guard let productId, let variantId else { return false }
-        return productId == other.productId && variantId == other.variantId
-    }
-
-    var body: SaleItemBody {
-        switch kind {
-        case .product(let id, let variantId, _):
-            SaleItemBody(
-                type: .product, productId: id, serviceId: nil, name: nil, quantity: quantity, price: unitPrice,
-                variantId: variantId
-            )
-        case .service(let id):
-            SaleItemBody(type: .service, productId: nil, serviceId: id, name: name.trimmed, quantity: quantity, price: unitPrice)
-        }
-    }
-}
-
-/// POS cart shared app-wide, so other screens (appointment, client card) can start a checkout.
+/// The open receipt being edited on this device, shared app-wide so other screens (appointment, client card) can
+/// open one. `OpenReceiptsStore` loads it from the server and saves it back after every change.
 @Observable
 final class CartStore {
     /// UserDefaults key of the single payment method used for the last sale.
     static let lastPaymentMethodKey = "pos.lastPaymentMethod"
     static let defaultPaymentMethod = PaymentMethod.cash
 
+    /// The open receipt (`/receipts/:id`) in the cart; `nil` before one is loaded and once it is paid.
+    private(set) var receiptId: Int?
     var lines: [CartLine] = []
     var client: ClientRef?
     /// Appointment this receipt pays for (kept whole: checkout may need to complete it first).
@@ -128,6 +51,9 @@ final class CartStore {
     var subtotal: Int { lines.reduce(0) { $0 + $1.total } }
     var total: Int { CheckoutRules.total(subtotal: subtotal, discount: discount) }
     var isDiscountValid: Bool { CheckoutRules.isDiscountValid(discount, subtotal: subtotal) }
+
+    /// Nothing worth keeping: no lines, no client, no appointment and no note.
+    var isBlank: Bool { lines.isEmpty && client == nil && appointment == nil && note.nonEmpty == nil }
 
     // MARK: Payment
 
@@ -356,6 +282,45 @@ final class CartStore {
         return booked.map { CartLine(kind: .service(id: $0.serviceId), name: $0.name, unitPrice: $0.price) }
     }
 
+    // MARK: Open receipt
+
+    /// Puts a saved open receipt into the cart: its lines, client, appointment with the held prepayment, discount
+    /// and note. Reloading the receipt already in the cart keeps the checkout choices (payment, completion, memo).
+    func load(_ receipt: OpenReceipt) {
+        let isSameReceipt = receipt.id == receiptId
+        let kept = (
+            paymentMode: paymentMode, manualSplit: manualSplit, cashReceived: cashReceived,
+            completesAppointment: completesAppointment, sendsAftercare: sendsAftercare
+        )
+        clear()
+        receiptId = receipt.id
+        lines = receipt.items.compactMap(CartLine.init(item:))
+        client = receipt.client
+        appointment = receipt.appointment
+        deposit = max(0, receipt.appointment?.deposit ?? 0)
+        discount = receipt.discount
+        note = receipt.note ?? ""
+        sendsAftercare = receipt.appointment?.client.telegramLinked ?? false
+        guard isSameReceipt else { return }
+        selectPaymentMode(kept.paymentMode)
+        manualSplit = kept.manualSplit
+        cashReceived = kept.cashReceived
+        completesAppointment = kept.completesAppointment
+        sendsAftercare = kept.sendsAftercare
+    }
+
+    /// The whole receipt for `PUT /receipts/:id`. A discount above the lines (being typed, or lines removed) is
+    /// saved capped, so the save still goes through; checkout keeps flagging it.
+    func makeReceiptBody() -> ReceiptBody {
+        ReceiptBody(
+            appointmentId: appointmentId,
+            clientId: client?.id,
+            items: lines.map(\.body),
+            discount: min(max(0, discount), subtotal),
+            note: note.nonEmpty
+        )
+    }
+
     // MARK: Sale
 
     func makeSaleBody() -> SaleBody {
@@ -365,7 +330,8 @@ final class CartStore {
             items: lines.map(\.body),
             discount: discount,
             payments: payments,
-            note: note.nonEmpty
+            note: note.nonEmpty,
+            receiptId: receiptId
         )
     }
 
@@ -373,8 +339,10 @@ final class CartStore {
         saleKey.key(for: body)
     }
 
-    /// Call once the sale succeeded: remembers the single payment method for the next receipts and notifies the hub.
+    /// Call once the sale succeeded: the server deleted the paid receipt, so the cart no longer points at it.
+    /// Remembers the single payment method for the next receipts and notifies the hub.
     func recordCompletedSale() {
+        receiptId = nil
         if let method = paymentMode.method {
             defaults.set(method.rawValue, forKey: Self.lastPaymentMethodKey)
         }
@@ -391,6 +359,7 @@ final class CartStore {
 
     func clear() {
         saleKey.reset()
+        receiptId = nil
         lines = []
         client = nil
         appointment = nil

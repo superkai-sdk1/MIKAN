@@ -112,6 +112,21 @@ enum Fixtures {
       "saleId": null, "completedAt": null, "createdAt": "<T>", "updatedAt": "<T>" }
     """#
 
+    /// The visit of `appointmentWithDeposit` has started: its receipt 7 is open in the POS.
+    static let appointmentInPOS = appointmentWithDeposit
+        .replacingOccurrences(of: #""saleId": null"#, with: #""saleId": null, "receiptId": 7"#)
+
+    /// docs/API.md «OpenReceipt»: a size of a labret and a service, for the started visit above.
+    static let openReceipt = #"""
+    { "id": 7, "appointment": \#(appointmentInPOS), "client": \#(clientRef),
+      "items": [ { "type": "product", "productId": 1, "variantId": 5, "variantName": "8 мм", "productKind": "jewelry",
+                   "serviceId": null, "name": "Лабрет — 8 мм", "quantity": 1, "price": 1500, "total": 1500, "stock": 3 },
+                 { "type": "service", "productId": null, "variantId": null, "variantName": null, "productKind": null,
+                   "serviceId": 3, "name": "Прокол мочки", "quantity": 1, "price": 2500, "total": 2500, "stock": null } ],
+      "subtotal": 4000, "discount": 0, "total": 4000, "itemCount": 2, "note": null,
+      "openedBy": \#(employeeRef), "createdAt": "<T>", "updatedAt": "<T>" }
+    """#
+
     static let sale = #"""
     { "id": 1, "number": 17, "client": \#(clientRef), "employee": \#(employeeRef),
       "appointmentId": null, "shiftId": 3,

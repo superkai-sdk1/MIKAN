@@ -181,23 +181,35 @@ final class CartStoreSizeTests: XCTestCase {
         XCTAssertNotEqual(cart.saleIdempotencyKey(for: cart.makeSaleBody()), key, "the same product in another size is another sale")
     }
 
-    func testReopenedAppointmentKeepsTheSizedLines() throws {
+    func testAReloadedVisitReceiptKeepsTheSizedLines() throws {
         let cart = try makeCart()
         let appointment = Appointment(
             id: 4, client: ClientRef(id: 1, name: "Иван Петров", phone: nil, telegramLinked: false),
             master: EmployeeRef(id: 2, name: "Анна", color: nil), service: ServiceRef(id: 3, name: "Хеликс", category: .piercing),
             title: nil, startsAt: Fixtures.referenceDate, endsAt: Fixtures.referenceDate.addingTimeInterval(1_800),
-            status: .confirmed, price: 3_000, deposit: 1_000, notes: nil, saleId: nil, completedAt: nil,
+            status: .confirmed, price: 3_000, deposit: 1_000, notes: nil, saleId: nil, receiptId: 7, completedAt: nil,
             createdAt: Fixtures.referenceDate, updatedAt: Fixtures.referenceDate
         )
-        cart.open(appointment)
-        cart.add(product: SizeFixtures.labret(), variant: SizeFixtures.eight)
-        XCTAssertTrue(ReceiptDraft.hasUnsavedWork(lines: cart.lines, appointment: cart.appointment))
+        let receipt = OpenReceipt(
+            id: 7, appointment: appointment, client: appointment.client,
+            items: [
+                OpenReceiptItem(type: .service, serviceId: 3, name: "Хеликс", quantity: 1, price: 3_000, total: 3_000),
+                OpenReceiptItem(
+                    type: .product, productId: 1, variantId: 12, variantName: "8 мм", productKind: .jewelry,
+                    name: "Лабрет — 8 мм", quantity: 1, price: 1_500, total: 1_500, stock: 1
+                ),
+            ],
+            subtotal: 4_500, discount: 0, total: 4_500, itemCount: 2, note: nil, openedBy: nil,
+            createdAt: Fixtures.referenceDate, updatedAt: Fixtures.referenceDate
+        )
 
-        cart.open(appointment)
+        cart.load(receipt)
+
         XCTAssertEqual(cart.lines.map(\.name), ["Хеликс", "Лабрет — 8 мм"])
+        XCTAssertEqual(cart.lines.map(\.sizeName), [nil, "8 мм"])
         XCTAssertEqual(cart.makeSaleBody().items.map(\.variantId), [nil, 12])
         XCTAssertEqual(cart.makeSaleBody().payments.deposit, 1_000, "the prepayment still counts")
+        XCTAssertEqual(cart.stockLimit(for: cart.lines[1]), 1, "the size's current stock")
     }
 }
 

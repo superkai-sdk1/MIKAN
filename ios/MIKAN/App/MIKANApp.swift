@@ -25,6 +25,7 @@ extension View {
             .environment(state.api)
             .environment(state.shift)
             .environment(state.cart)
+            .environment(state.receipts)
             .environment(state.schedule)
             .environment(state.reference)
             .environment(\.locale, .app)

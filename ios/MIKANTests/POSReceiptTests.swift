@@ -130,43 +130,8 @@ final class ProductCatalogFilterTests: XCTestCase {
 
 @MainActor
 final class ReceiptDraftTests: XCTestCase {
-    func testUntouchedAppointmentPrefillIsNotUnsavedWork() {
-        let appointment = POSFixtures.appointment(price: 3_000)
-        let cart = CartStore()
-        XCTAssertFalse(ReceiptDraft.hasUnsavedWork(lines: cart.lines, appointment: cart.appointment), "empty cart")
-
-        cart.prefill(from: appointment)
-        XCTAssertFalse(ReceiptDraft.hasUnsavedWork(lines: cart.lines, appointment: cart.appointment))
-
-        cart.lines[0].unitPrice = 3_500
-        XCTAssertTrue(ReceiptDraft.hasUnsavedWork(lines: cart.lines, appointment: cart.appointment), "edited price")
-
-        cart.prefill(from: appointment)
-        cart.addCustomService(name: "Замена украшения", price: 500)
-        XCTAssertTrue(ReceiptDraft.hasUnsavedWork(lines: cart.lines, appointment: cart.appointment), "added line")
-
-        cart.prefill(from: appointment)
-        cart.detachAppointment()
-        XCTAssertTrue(ReceiptDraft.hasUnsavedWork(lines: cart.lines, appointment: cart.appointment), "lines without appointment")
-    }
-
-    func testIsOpenWithLinesClientOrAppointment() {
-        XCTAssertFalse(ReceiptDraft.isOpen(lines: [], client: nil, appointment: nil))
-        XCTAssertTrue(ReceiptDraft.isOpen(lines: [], client: POSFixtures.ivan, appointment: nil))
-        XCTAssertTrue(ReceiptDraft.isOpen(lines: [], client: nil, appointment: POSFixtures.appointment()))
-        let line = CartLine(kind: .service(id: nil), name: "Прокол", unitPrice: 2_000)
-        XCTAssertTrue(ReceiptDraft.isOpen(lines: [line], client: nil, appointment: nil))
-    }
-
-    func testTexts() {
-        XCTAssertEqual(ReceiptDraft.continueTitle(lineCount: 0, total: 0), "Продолжить чек")
-        XCTAssertEqual(ReceiptDraft.continueTitle(lineCount: 2, total: 3_500), "Продолжить чек · 3\u{00A0}500\u{00A0}₽")
-
+    func testAppointmentBanner() {
         let appointment = POSFixtures.appointment()
-        XCTAssertEqual(ReceiptDraft.summary(itemCount: 1, client: POSFixtures.ivan, appointment: appointment), "По записи · Иван Петров · 1 позиция")
-        XCTAssertEqual(ReceiptDraft.summary(itemCount: 3, client: POSFixtures.maria, appointment: nil), "Мария Ким · 3 позиции")
-        XCTAssertEqual(ReceiptDraft.summary(itemCount: 0, client: nil, appointment: nil), "Без клиента · пусто")
-
         let time = DateText.timeRange(appointment.startsAt, appointment.endsAt)
         XCTAssertEqual(ReceiptDraft.appointmentBanner(appointment), "По записи · \(time) · Иван Петров · Хеликс")
     }
@@ -211,44 +176,6 @@ final class ReceiptDraftTests: XCTestCase {
         XCTAssertNil(ReceiptDraft.depositReceivedNote([POSFixtures.operation(id: 6, type: .unapply, amount: 500, method: nil, at: first)]))
     }
 
-    func testOpeningTheSameAppointmentKeepsEditsAndTakesTheFreshCopy() {
-        let cart = CartStore()
-        cart.open(POSFixtures.appointment(status: .confirmed, price: 3_000, deposit: 1_000))
-        cart.addCustomService(name: "Украшение", price: 1_500)
-        cart.discount = 200
-        cart.note = "Скидка постоянному клиенту"
-        cart.selectPaymentMode(.split)
-        cart.manualSplit = PaymentSplit(cash: 1_000, qr: 2_300)
-        cart.completesAppointment = false
-
-        let completed = POSFixtures.appointment(status: .completed, price: 3_000, deposit: 1_000)
-        cart.open(completed)
-
-        XCTAssertEqual(cart.appointment, completed)
-        XCTAssertEqual(cart.lines.map(\.name), ["Хеликс", "Украшение"])
-        XCTAssertEqual(cart.discount, 200)
-        XCTAssertEqual(cart.note, "Скидка постоянному клиенту")
-        XCTAssertEqual(cart.deposit, 1_000)
-        XCTAssertEqual(cart.amountDue, 3_300)
-        XCTAssertEqual(cart.paymentMode, .split)
-        XCTAssertEqual(cart.manualSplit, PaymentSplit(cash: 1_000, qr: 2_300))
-        XCTAssertTrue(cart.canSubmit, "the typed split still covers the amount due")
-        XCTAssertFalse(cart.completesAppointment)
-    }
-
-    func testOpeningAnotherAppointmentReplacesTheReceipt() {
-        let cart = CartStore()
-        cart.open(POSFixtures.appointment(id: 4))
-        cart.addCustomService(name: "Украшение", price: 1_500)
-        cart.discount = 200
-
-        cart.open(POSFixtures.appointment(id: 5, client: POSFixtures.maria, price: 2_000))
-
-        XCTAssertEqual(cart.appointmentId, 5)
-        XCTAssertEqual(cart.client, POSFixtures.maria)
-        XCTAssertEqual(cart.lines.map(\.unitPrice), [2_000])
-        XCTAssertEqual(cart.discount, 0)
-    }
 }
 
 @MainActor
@@ -258,64 +185,46 @@ final class POSRoutingTests: XCTestCase {
         return AppState(api: api, employee: nil, phase: .signedIn)
     }
 
-    func testStartCheckoutLandsOnPrefilledReceiptNotInCheckout() throws {
+    func testShowReceiptLandsOnTheReceiptNotInCheckout() throws {
         let state = try makeState()
+        state.selectedTab = .schedule
         state.posPath = [.salesHistory]
-        let appointment = POSFixtures.appointment(deposit: 500)
+        state.cart.isCheckoutPresented = true
 
-        state.startCheckout(for: appointment)
+        state.showReceipt()
 
         XCTAssertEqual(state.selectedTab, .pos)
         XCTAssertEqual(state.posPath, [.receipt])
         XCTAssertFalse(state.cart.isCheckoutPresented)
-        XCTAssertEqual(state.cart.appointmentId, appointment.id)
-        XCTAssertEqual(state.cart.client, POSFixtures.ivan)
-        XCTAssertEqual(state.cart.lines.count, 1)
     }
 
-    func testStartSaleKeepsLinesAndAttachesTheClient() throws {
+    func testCloseReceiptReturnsToTheHubAndKeepsTheCart() throws {
         let state = try makeState()
-        state.cart.addCustomService(name: "Прокол", price: 2_000)
-
-        state.startSale(for: POSFixtures.maria)
-
-        XCTAssertEqual(state.selectedTab, .pos)
-        XCTAssertEqual(state.posPath, [.receipt])
-        XCTAssertEqual(state.cart.client, POSFixtures.maria)
-        XCTAssertEqual(state.cart.lines.count, 1)
-    }
-
-    func testStartSaleReplacesAnotherClientsAppointmentReceipt() throws {
-        let state = try makeState()
-        state.cart.open(POSFixtures.appointment(client: POSFixtures.ivan))
-
-        state.startSale(for: POSFixtures.maria)
-
-        XCTAssertNil(state.cart.appointment)
-        XCTAssertTrue(state.cart.isEmpty)
-        XCTAssertEqual(state.cart.client, POSFixtures.maria)
-    }
-
-    func testStartSaleKeepsTheSameClientsAppointmentReceipt() throws {
-        let state = try makeState()
-        let appointment = POSFixtures.appointment(client: POSFixtures.ivan)
-        state.cart.open(appointment)
-
-        state.startSale(for: POSFixtures.ivan)
-
-        XCTAssertEqual(state.cart.appointment, appointment)
-        XCTAssertEqual(state.cart.lines.count, 1)
-    }
-
-    func testCloseReceiptReturnsToTheHub() throws {
-        let state = try makeState()
-        state.startSale(for: POSFixtures.ivan)
+        state.cart.client = POSFixtures.ivan
+        state.showReceipt()
         state.posPath.append(.clientPicker)
 
         state.closeReceipt()
 
         XCTAssertTrue(state.posPath.isEmpty)
         XCTAssertEqual(state.cart.client, POSFixtures.ivan, "closing the screen keeps the receipt")
+    }
+
+    func testCancellingTheCartsAppointmentLetsItsReceiptGo() throws {
+        let state = try makeState()
+        state.cart.prefill(from: POSFixtures.appointment(id: 4, status: .confirmed))
+        state.showReceipt()
+
+        state.appointmentClosed(POSFixtures.appointment(id: 5, status: .cancelled))
+        XCTAssertEqual(state.cart.appointmentId, 4, "another appointment")
+
+        state.appointmentClosed(POSFixtures.appointment(id: 4, status: .confirmed))
+        XCTAssertEqual(state.cart.appointmentId, 4, "still active")
+
+        state.appointmentClosed(POSFixtures.appointment(id: 4, status: .noShow))
+        XCTAssertNil(state.cart.appointmentId)
+        XCTAssertTrue(state.cart.isEmpty)
+        XCTAssertTrue(state.posPath.isEmpty)
     }
 }
 

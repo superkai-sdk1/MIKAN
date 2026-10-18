@@ -9,6 +9,7 @@ struct AppointmentDetailView: View {
 
     @State private var appointment: Appointment
     @State private var isWorking = false
+    @State private var isStartingCheckout = false
     @State private var errorMessage: String?
     @State private var editorDraft: AppointmentDraft?
     @State private var showsComplete = false
@@ -164,21 +165,26 @@ struct AppointmentDetailView: View {
                         .fontWeight(.semibold)
                 }
             }
-        } else if appointment.status == .completed {
+        } else if let checkout = VisitCheckout.of(appointment) {
             Section {
                 Button {
-                    appState.startCheckout(for: appointment)
+                    startCheckout(appointment)
                 } label: {
-                    Label("Принять оплату · \(Money.format(appointment.price))", systemImage: "creditcard.fill")
-                        .frame(maxWidth: .infinity)
-                        .fontWeight(.semibold)
+                    ZStack {
+                        Label(checkout.title, systemImage: checkout.systemImage)
+                            .monospacedDigit()
+                            .opacity(isStartingCheckout ? 0 : 1)
+                        if isStartingCheckout { ProgressView().tint(.white) }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .fontWeight(.semibold)
                 }
                 .buttonStyle(.glassProminent)
                 .controlSize(.large)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
             } footer: {
-                Text("Откроется касса с услугой, клиентом и предоплатой.")
+                Text(checkout.footer)
             }
         }
     }
@@ -243,6 +249,7 @@ struct AppointmentDetailView: View {
             do {
                 let updated = try await api.setAppointmentStatus(id: appointment.id, status)
                 apply(updated)
+                appState.appointmentClosed(updated)
                 successCount += 1
                 // Cancelled / no-show with money held: refund or retain is the staff's call.
                 if DepositFlow.needsDecision(updated) { depositFlow = .decide }
@@ -255,7 +262,24 @@ struct AppointmentDetailView: View {
     private func startPendingCheckout() {
         guard let completed = pendingCheckout else { return }
         pendingCheckout = nil
-        appState.startCheckout(for: completed)
+        startCheckout(completed)
+    }
+
+    /// Opens the visit's receipt in «Касса» (creating it with the services, client and prepayment if needed).
+    private func startCheckout(_ target: Appointment) {
+        isWorking = true
+        isStartingCheckout = true
+        Task {
+            defer {
+                isWorking = false
+                isStartingCheckout = false
+            }
+            do {
+                try await appState.startCheckout(for: target)
+            } catch {
+                errorMessage = error.userMessage
+            }
+        }
     }
 }
 

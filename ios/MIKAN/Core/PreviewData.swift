@@ -306,6 +306,31 @@ enum PreviewData {
         about: "Тату и пирсинг", timezone: "Europe/Moscow", workdayStart: "11:00", workdayEnd: "21:00"
     )
 
+    /// A started visit with a labret added, a receipt for a client, and an empty one.
+    static let openReceipts: [OpenReceipt] = {
+        var visit = appointments[0]
+        visit.receiptId = 7
+        let tattooLine = OpenReceiptItem(type: .service, serviceId: 4, name: "Мини тату до 5 см", quantity: 1, price: 8_000, total: 8_000)
+        let labretLine = OpenReceiptItem(
+            type: .product, productId: 1, variantId: 1, variantName: "8 мм", productKind: .jewelry,
+            name: "Лабрет — 8 мм", quantity: 1, price: 1_500, total: 1_500, stock: 3
+        )
+        return [
+            OpenReceipt(
+                id: 7, appointment: visit, client: ivanRef, items: [tattooLine, labretLine], subtotal: 9_500, discount: 0,
+                total: 9_500, itemCount: 2, note: nil, openedBy: anna.ref, createdAt: at(hour: 11, minute: 5), updatedAt: now
+            ),
+            OpenReceipt(
+                id: 8, client: mariaRef, items: [labretLine], subtotal: 1_500, discount: 0, total: 1_500, itemCount: 1,
+                openedBy: oleg.ref, createdAt: at(hour: 12, minute: 40), updatedAt: now
+            ),
+            OpenReceipt(
+                id: 9, subtotal: 0, discount: 0, total: 0, itemCount: 0, openedBy: oleg.ref,
+                createdAt: at(hour: 13, minute: 15), updatedAt: now
+            ),
+        ]
+    }()
+
     static func appState(signedIn: Bool = true) -> AppState {
         let api = APIClient(serverURL: URL(string: "http://localhost:3000")!)
         return AppState(api: api, employee: signedIn ? anna : nil, phase: signedIn ? .signedIn : .signedOut)

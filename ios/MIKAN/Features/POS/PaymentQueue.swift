@@ -22,6 +22,13 @@ nonisolated enum PaymentQueue {
             .sorted { ($0.startsAt, $0.id) < ($1.startsAt, $1.id) }
     }
 
+    /// Visits not started yet: no open receipt, neither by the appointment's `receiptId` nor in the receipts list
+    /// (which can be newer than the appointments).
+    static func notStarted(_ appointments: [Appointment], openReceipts: [OpenReceipt]) -> [Appointment] {
+        let started = Set(openReceipts.compactMap(\.appointment?.id))
+        return appointments.filter { $0.receiptId == nil && !started.contains($0.id) }
+    }
+
     /// Prepayment badge of a queue row: a held prepayment, or one still waited for; `nil` otherwise.
     static func depositBadge(for appointment: Appointment) -> QueueDepositBadge? {
         if appointment.deposit > 0 { return .held(appointment.deposit) }

@@ -2,10 +2,12 @@ import SwiftUI
 
 /// Checkout sheet: lines, client, appointment, discount, payment → «Провести продажу» → receipt.
 /// With a QR share the button shows the bank's QR code first; the server sells the cart once it is paid.
+/// The sale names the open receipt, which the server deletes with it.
 struct CheckoutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
     @Environment(CartStore.self) private var cart
+    @Environment(OpenReceiptsStore.self) private var receipts
     @Environment(ShiftStore.self) private var shift
     @Environment(ScheduleStore.self) private var schedule
     @Environment(ReferenceStore.self) private var reference
@@ -20,7 +22,6 @@ struct CheckoutView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var errorTitle = CheckoutView.saleFailedTitle
-    @State private var confirmsClear = false
     @State private var retryMessage: String?
 
     private static let saleFailedTitle = "Продажа не проведена"
@@ -59,16 +60,11 @@ struct CheckoutView: View {
             .toolbar { toolbarContent }
             .errorAlert($errorMessage, title: errorTitle)
             .retryAlert($retryMessage, title: "Продажа могла пройти", retry: submit)
-            .confirmationDialog("Очистить корзину?", isPresented: $confirmsClear, titleVisibility: .visible) {
-                Button("Очистить", role: .destructive) {
-                    cart.clear()
-                    dismiss()
-                }
-                Button("Отмена", role: .cancel) {}
-            }
             .sensoryFeedback(.success, trigger: completedSale != nil)
         }
         .interactiveDismissDisabled(isSubmitting || qrPayment != nil)
+        // A receipt already paid on another phone closes here instead of being paid twice.
+        .task { await receipts.syncCart() }
         .task {
             try? await reference.ensureQrPaymentsConfig()
             cart.dropQrIfUnavailable(qrEnabled: reference.qrPaymentsEnabled)
@@ -88,12 +84,9 @@ struct CheckoutView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         if completedSale == nil && qrPayment == nil {
+            // Deleting the receipt lives on the receipt screen and in the hub.
             ToolbarItem(placement: .cancellationAction) {
                 Button("Закрыть", role: .close) { dismiss() }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Очистить корзину", systemImage: "trash", role: .destructive) { confirmsClear = true }
-                    .disabled(cart.isEmpty)
             }
         }
     }
@@ -163,8 +156,14 @@ struct CheckoutView: View {
         let appointmentId = cart.appointmentId
         let cashChange = cart.cashChange
         isSubmitting = true
+        // The sale carries the whole cart and deletes the receipt: no saves of it meanwhile.
+        receipts.beginPayment()
         Task {
-            defer { isSubmitting = false }
+            defer {
+                isSubmitting = false
+                // Not sold (failed, or waiting for the QR code to be paid): edits are saved again.
+                if completedSale == nil { receipts.endPayment() }
+            }
             if let completeBody, let appointmentId {
                 guard await completeAppointment(id: appointmentId, completeBody) else { return }
             }
@@ -229,6 +228,8 @@ struct CheckoutView: View {
             completedSale = sale
             qrPayment = nil
         }
+        // The server deleted the paid receipt; the hub reloads its lists after the sale.
+        receipts.receiptPaid()
         cart.recordCompletedSale()
         await shift.refresh()
         if sale.appointmentId != nil {
