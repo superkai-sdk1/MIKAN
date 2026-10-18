@@ -21,6 +21,8 @@ export interface MovementInput {
   appointmentId?: number | null;
   revisionId?: number | null;
   employeeId?: number | null;
+  /** Rubles paid (a receipt with a unit cost). */
+  amount?: number | null;
 }
 
 export function getProductRow(db: DbOrTx, id: number): ProductRow {
@@ -60,6 +62,24 @@ export function resolveVariant(
   return sizes[0]!;
 }
 
+/** A product deleted by staff keeps its history but takes no new sales or movements. */
+export function assertInWarehouse(product: ProductRow): void {
+  if (product.archived) throw badRequest(`«${product.name}»: позиция удалена со склада`);
+}
+
+/**
+ * A receipt with what one unit cost: the cost becomes the new cost of what was received — the size's own cost when it
+ * has one, else the product's — and the movement keeps the total paid.
+ */
+function applyReceiptCost(db: DbOrTx, product: ProductRow, variant: VariantRow, unitCost: number): void {
+  const now = Date.now();
+  if (variant.cost != null) {
+    db.update(productVariants).set({ cost: unitCost, updatedAt: now }).where(eq(productVariants.id, variant.id)).run();
+  } else {
+    db.update(products).set({ cost: unitCost, updatedAt: now }).where(eq(products.id, product.id)).run();
+  }
+}
+
 /** Presence consumables are marked «есть / заканчивается / нет», never counted in movements. */
 export function assertCounted(product: ProductRow): void {
   if (product.stockMode === 'presence') {
@@ -81,6 +101,7 @@ export function insufficientMessage(product: Pick<ProductRow, 'name'>, variant: 
  */
 export function applyMovement(db: DbOrTx, input: MovementInput): { product: ProductRow; variant: VariantRow; movement: MovementRow } {
   const product = getProductRow(db, input.productId);
+  assertInWarehouse(product);
   const variant = db.select().from(productVariants).where(eq(productVariants.id, input.variantId)).get();
   if (!variant || variant.productId !== product.id) throw notFound('Размер не найден');
   const quantityAfter = variant.quantity + input.delta;
@@ -106,6 +127,7 @@ export function applyMovement(db: DbOrTx, input: MovementInput): { product: Prod
       saleId: input.saleId ?? null,
       appointmentId: input.appointmentId ?? null,
       revisionId: input.revisionId ?? null,
+      amount: input.amount ?? null,
       employeeId: input.employeeId ?? null,
       createdAt: now,
     })
@@ -135,6 +157,8 @@ export interface ManualMovement {
   quantity: number;
   variantId?: number | null;
   note?: string | null;
+  /** Receipts: what one unit cost (see `applyReceiptCost`). */
+  unitCost?: number | null;
 }
 
 export interface PurchaseInput {
@@ -152,6 +176,7 @@ export interface PurchaseInput {
 export function recordPurchase(db: DbOrTx, productId: number, input: PurchaseInput, employeeId: number) {
   return db.transaction((tx) => {
     const product = getProductRow(tx, productId);
+    assertInWarehouse(product);
     if (product.stockMode !== 'presence') {
       throw badRequest('Сумму покупки записывают для расходников «есть / нет». Для остальных — приход количеством.');
     }
@@ -190,14 +215,21 @@ export function recordManualMovement(db: DbOrTx, productId: number, input: Manua
     assertCounted(product);
     const variant = resolveVariant(tx, product, input.variantId, severalSizesForMovement(product));
     const delta = deltaFor(input.type, input.quantity, variant.quantity);
-    return applyMovement(tx, { productId, variantId: variant.id, delta, type: input.type, note: input.note, employeeId });
+    const unitCost = input.type === 'receipt' ? (input.unitCost ?? null) : null;
+    const amount = unitCost != null ? unitCost * delta : null;
+    const result = applyMovement(tx, { productId, variantId: variant.id, delta, type: input.type, note: input.note, employeeId, amount });
+    if (unitCost == null) return result;
+    applyReceiptCost(tx, product, variant, unitCost);
+    return { ...result, product: getProductRow(tx, productId) };
   });
 }
 
 export interface BatchMovement {
   type: ManualMovementType;
   note?: string | null;
-  lines: Array<{ variantId: number; quantity: number }>;
+  /** Receipts: what one unit cost, for every line without its own. */
+  unitCost?: number | null;
+  lines: Array<{ variantId: number; quantity: number; unitCost?: number | null }>;
 }
 
 /**
@@ -215,9 +247,12 @@ export function recordBatchMovement(db: DbOrTx, productId: number, input: BatchM
       const variant = resolveVariant(tx, product, line.variantId, severalSizesForMovement(product));
       const delta = deltaFor(input.type, line.quantity, variant.quantity);
       if (input.type === 'adjustment' && delta === 0) continue;
+      const unitCost = input.type === 'receipt' ? (line.unitCost ?? input.unitCost ?? null) : null;
+      const amount = unitCost != null ? unitCost * delta : null;
       movements.push(
-        applyMovement(tx, { productId, variantId: variant.id, delta, type: input.type, note: input.note, employeeId }).movement,
+        applyMovement(tx, { productId, variantId: variant.id, delta, type: input.type, note: input.note, employeeId, amount }).movement,
       );
+      if (unitCost != null) applyReceiptCost(tx, getProductRow(tx, productId), variant, unitCost);
     }
     if (movements.length === 0) throw badRequest('Остатки не изменились');
     return { product: getProductRow(tx, productId), movements };

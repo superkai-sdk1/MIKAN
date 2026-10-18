@@ -1,0 +1,1 @@
+ALTER TABLE `products` ADD `archived` integer DEFAULT false NOT NULL;

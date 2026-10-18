@@ -153,7 +153,7 @@ service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` f
   "color": "Серебристый", "stone": "Фианит", "supplier": "Industrial Strength",
   "description": "...", "price": 1500, "cost": 600, "unit": "шт",
   "photos": ["/uploads/3f1c….jpg", "/uploads/9a0b….jpg"], "photoUrl": "/uploads/3f1c….jpg",
-  "serviceIds": [3, 7], "stockMode": "quantity", "presenceStatus": null, "active": true,
+  "serviceIds": [3, 7], "stockMode": "quantity", "presenceStatus": null, "active": true, "archived": false,
   "variants": [
     { "id": 1, "name": "6 мм", "sku": null, "price": null, "cost": null,
       "quantity": 4, "minQuantity": 1, "lowStock": false },
@@ -169,6 +169,7 @@ service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` f
   `quantity` mode). Presence consumables take no quantity movements (`400`); staff mark the status in the card or during
   a stock count, and record each restock with what it cost (`POST /products/:id/purchases`), so the analytics counts
   their expense. `lowStock` of a presence consumable = `presenceStatus != "ok"`.
+- `archived` — deleted by staff but kept for its history (`DELETE /products/:id`): never listed, only fetched by id.
 - `variants` — the sizes of the product (always at least one), in the order staff arranged them. Stock lives on
   variants: every receipt, sale, write-off, usage, count and return moves one variant.
   - A product without sizes has a single variant with `name: ""`. With two or more variants every `name` is required

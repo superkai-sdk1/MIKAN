@@ -58,7 +58,15 @@ export function normsByService(db: DbOrTx, serviceIds: number[]): Map<number, Se
 
 function productKinds(db: DbOrTx, ids: number[]) {
   if (ids.length === 0) return new Map<number, string>();
-  return new Map(db.select({ id: products.id, kind: products.kind }).from(products).where(inArray(products.id, ids)).all().map((r) => [r.id, r.kind]));
+  // A deleted (archived) product cannot be linked again.
+  return new Map(
+    db
+      .select({ id: products.id, kind: products.kind })
+      .from(products)
+      .where(and(inArray(products.id, ids), eq(products.archived, false)))
+      .all()
+      .map((r) => [r.id, r.kind]),
+  );
 }
 
 /** Replaces the jewelry compatible with the service (links to other kinds stay). */

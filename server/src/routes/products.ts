@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { products } from '../db/schema.js';
-import { createProduct, hasLowStock, serializeProduct, serializeProducts, updateProduct } from '../domain/products.js';
+import { createProduct, deleteProduct, hasLowStock, serializeProduct, serializeProducts, updateProduct } from '../domain/products.js';
 import { getProductRow, listMovements, recordBatchMovement, recordManualMovement, recordPurchase, serializeMovements } from '../domain/stock.js';
 import { createRevision, getRevision, listRevisions } from '../domain/revisions.js';
 import { idempotent } from '../lib/idempotency.js';
@@ -80,12 +80,15 @@ const fields = {
 const createBody = z.object({ kind, name: requiredText(200), ...fields, initialQuantity: nonNull(quantity) });
 const patchBody = z.object({ kind: nonNull(kind), name: nonNull(requiredText(200)), ...fields });
 const manualType = z.enum(['receipt', 'writeoff', 'usage', 'adjustment']);
-const movementBody = z.object({ type: manualType, variantId: id.nullish(), quantity, note: nullableText(500) });
+const unitCost = money.nullish();
+const movementBody = z.object({ type: manualType, variantId: id.nullish(), quantity, note: nullableText(500), unitCost });
 const batchBody = z.object({
   type: manualType,
   note: nullableText(500),
-  lines: z.array(z.object({ variantId: id, quantity })).min(1).max(50),
+  unitCost,
+  lines: z.array(z.object({ variantId: id, quantity, unitCost })).min(1).max(50),
 });
+const deleteQuery = z.object({ writeOff: queryBool });
 const listQuery = z.object({
   kind: kind.optional(),
   search: z.string().trim().max(100).optional(),
@@ -112,6 +115,7 @@ export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/products', async (request) => {
     const q = parse(listQuery, request.query);
     const conditions = [];
+    conditions.push(eq(products.archived, false));
     if (!q.includeInactive) conditions.push(eq(products.active, true));
     if (q.kind) conditions.push(eq(products.kind, q.kind));
     if (q.lowStock) conditions.push(hasLowStock);
@@ -148,6 +152,12 @@ export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
       const { product, movement } = recordManualMovement(tx, id, input, request.employee.id);
       return { product: serializeProduct(tx, product), movement: serializeMovements(tx, [movement])[0] };
     });
+  });
+
+  app.delete('/products/:id', async (request) => {
+    const { id } = parse(idParams, request.params);
+    const { writeOff } = parse(deleteQuery, request.query);
+    return deleteProduct(db, id, { writeOff: writeOff ?? false }, request.employee.id);
   });
 
   app.post('/products/:id/purchases', async (request, reply) => {

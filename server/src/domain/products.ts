@@ -1,13 +1,13 @@
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { products, productServices, productVariants, services } from '../db/schema.js';
-import { badRequest, conflict } from '../lib/errors.js';
+import { products, productServices, productVariants, saleItems, serviceConsumables, services, stockMovements } from '../db/schema.js';
+import { badRequest, conflict, notFound } from '../lib/errors.js';
 import type { ThreadType } from '../lib/jewelry.js';
 import { parsePhotos, productOut, type ProductOut, type ProductRow, type VariantRow } from '../lib/serialize.js';
 import { normalizeSearchTerm } from '../lib/text.js';
 import { productScope, resolveCategory } from './categories.js';
 import { productSearchFields } from './product-search.js';
-import { applyMovement, currentVariants, getProductRow, variantsWithHistory } from './stock.js';
+import { applyMovement, assertInWarehouse, currentVariants, getProductRow, variantsWithHistory } from './stock.js';
 
 export { productSearchFields } from './product-search.js';
 
@@ -349,6 +349,7 @@ function applyLegacySize(db: DbOrTx, product: ProductRow, input: ProductFields):
 export function updateProduct(db: DbOrTx, id: number, input: ProductFields, employeeId: number): ProductRow {
   return db.transaction((tx) => {
     const current = getProductRow(tx, id);
+    assertInWarehouse(current);
     const kind = input.kind ?? current.kind;
     if (input.variants) syncSizes(tx, current, kind, input.variants, employeeId);
     else applyLegacySize(tx, current, input);
@@ -393,5 +394,42 @@ export function updateProduct(db: DbOrTx, id: number, input: ProductFields, empl
       .get();
     if (serviceIds) writeServiceLinks(tx, id, serviceIds);
     return row;
+  });
+}
+
+export const DELETED_NOTE = 'Позиция удалена со склада';
+
+export type DeleteResult = { deleted: true } | { archived: true; writtenOff: number };
+
+/**
+ * `DELETE /products/:id`: a product without stock movements and sold items is deleted for good; one with history is
+ * archived (hidden everywhere, still named by its sales and movements). Stock left on it is refused unless
+ * `writeOff`, which writes it off first. Links to services and consumption norms are removed either way.
+ */
+export function deleteProduct(db: DbOrTx, id: number, opts: { writeOff: boolean }, employeeId: number): DeleteResult {
+  return db.transaction((tx) => {
+    const product = getProductRow(tx, id);
+    if (product.archived) throw notFound('Товар не найден');
+    const sizes = tx.select().from(productVariants).where(eq(productVariants.productId, id)).all();
+    const stock = sizes.reduce((sum, v) => sum + v.quantity, 0);
+    if (stock > 0 && !opts.writeOff) {
+      throw conflict(`На складе ещё ${stock} шт. — спишите остаток, чтобы удалить позицию`);
+    }
+    for (const size of sizes) {
+      if (size.quantity > 0) {
+        applyMovement(tx, { productId: id, variantId: size.id, delta: -size.quantity, type: 'writeoff', note: DELETED_NOTE, employeeId });
+      }
+    }
+    tx.delete(productServices).where(eq(productServices.productId, id)).run();
+    tx.delete(serviceConsumables).where(eq(serviceConsumables.productId, id)).run();
+    const moved = tx.select({ id: stockMovements.id }).from(stockMovements).where(eq(stockMovements.productId, id)).limit(1).get();
+    const sold = tx.select({ id: saleItems.id }).from(saleItems).where(eq(saleItems.productId, id)).limit(1).get();
+    if (!moved && !sold) {
+      tx.delete(productVariants).where(eq(productVariants.productId, id)).run();
+      tx.delete(products).where(eq(products.id, id)).run();
+      return { deleted: true };
+    }
+    tx.update(products).set({ archived: true, active: false, updatedAt: Date.now() }).where(eq(products.id, id)).run();
+    return { archived: true, writtenOff: stock };
   });
 }

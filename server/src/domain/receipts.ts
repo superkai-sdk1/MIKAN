@@ -15,7 +15,7 @@ import {
   servicesByIds,
   variantsByIds,
 } from './refs.js';
-import { resolveVariant } from './stock.js';
+import { assertInWarehouse, resolveVariant } from './stock.js';
 
 /** A line of an open receipt as stored in `open_receipts.items_json`. */
 export interface ReceiptItem {
@@ -58,6 +58,7 @@ function resolveItem(db: DbOrTx, item: ReceiptItemInput, position: number): Rece
     const product = db.select().from(products).where(eq(products.id, item.productId)).get();
     if (!product) throw badRequest(`${label}: товар не найден`);
     if (product.kind === 'consumable') throw badRequest(`«${product.name}» — расходник, его нельзя продать`);
+    assertInWarehouse(product);
     const variant = resolveVariant(
       db,
       product,

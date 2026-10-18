@@ -206,6 +206,7 @@ export const productOut = (p: ProductRow, variants: VariantRow[], serviceIds: nu
     stockMode: p.stockMode,
     presenceStatus: p.stockMode === 'presence' ? p.presenceStatus : null,
     active: p.active,
+    archived: p.archived,
     variants: variants.map(variantOut),
     quantity: variants.reduce((sum, v) => sum + v.quantity, 0),
     minQuantity: variants.reduce((sum, v) => sum + v.minQuantity, 0),

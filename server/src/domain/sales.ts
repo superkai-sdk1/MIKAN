@@ -11,7 +11,7 @@ import { getAppointmentRow, getSaleRow, serializeSales } from './refs.js';
 import { applyConsumptionNorms, usageRecorded } from './consumption.js';
 import { closeReceipts } from './receipts.js';
 import { cancelPendingForAppointment } from './scheduling.js';
-import { applyMovement, getProductRow, insufficientMessage, resolveVariant, returnVariantId } from './stock.js';
+import { applyMovement, assertInWarehouse, getProductRow, insufficientMessage, resolveVariant, returnVariantId } from './stock.js';
 
 export interface SaleItemInput {
   type: 'product' | 'service';
@@ -67,6 +67,7 @@ function resolveItem(db: DbOrTx, item: SaleItemInput, position: number): Resolve
     const product = db.select().from(products).where(eq(products.id, item.productId)).get();
     if (!product) throw badRequest(`${label}: товар не найден`);
     if (product.kind === 'consumable') throw badRequest(`«${product.name}» — расходник, его нельзя продать`);
+    assertInWarehouse(product);
     const variant = resolveVariant(db, product, item.variantId, severalSizesForSale(product), `${label}: размер не найден`);
     const price = item.price ?? variant.price ?? product.price;
     return {
@@ -263,6 +264,8 @@ export function refundSale(db: DbOrTx, id: number, input: { reason: string; rest
       const items = tx.select().from(saleItems).where(eq(saleItems.saleId, id)).all();
       for (const item of items) {
         if (item.type !== 'product' || item.productId == null) continue;
+        // A product deleted since the sale has nowhere to return to: the money is refunded, the stock is not.
+        if (getProductRow(tx, item.productId).archived) continue;
         applyMovement(tx, {
           productId: item.productId,
           variantId: returnVariantId(tx, soldVariantId(tx, item.productId, item)),

@@ -150,6 +150,8 @@ export const products = sqliteTable(
     /** `ok` | `low` | `out` — meaningful for `presence` products only. */
     presenceStatus: text('presence_status').notNull().default('ok'),
     active: bool('active').notNull().default(true),
+    /** Deleted by staff but kept for its history (sales, movements still name it); hidden everywhere else. */
+    archived: bool('archived').notNull().default(false),
     /** Built from the product's text fields and its sizes (names, SKUs). */
     searchText: text('search_text').notNull().default(''),
     createdAt: ms('created_at').notNull(),

@@ -66,7 +66,7 @@ function registerMissing(db: DbOrTx): void {
     ...db
       .selectDistinct({ section: products.kind, name: products.category })
       .from(products)
-      .where(isNotNull(products.category))
+      .where(and(isNotNull(products.category), eq(products.archived, false)))
       .all()
       .map((r) => ({ scope: productScope(r.section), name: r.name! })),
     ...db
@@ -90,7 +90,7 @@ function itemCounts(db: DbOrTx): Map<string, number> {
   for (const r of db
     .select({ kind: products.kind, name: products.category, n: count() })
     .from(products)
-    .where(isNotNull(products.category))
+    .where(and(isNotNull(products.category), eq(products.archived, false)))
     .groupBy(products.kind, products.category)
     .all()) {
     counts.set(`${r.kind}\u0000\u0000${r.name}`, r.n);
