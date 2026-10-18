@@ -157,7 +157,7 @@ export async function bindChatToEmployee(ctx: AppContext, chatId: number, employ
   const { db } = ctx;
   const chat = getChat(db, chatId);
   if (chat.employeeId === employee.id) return chat;
-  const bound = setChatEmployee(db, chatId, employee.id);
+  setChatEmployee(db, chatId, employee.id);
   const text = staffGreeting(getStudioSettings(db).name, employee);
   try {
     await ctx.gateway.sendText(chatId, text, { replyKeyboard: STAFF_KEYBOARD });
@@ -166,7 +166,7 @@ export async function bindChatToEmployee(ctx: AppContext, chatId: number, employ
     ctx.log.warn({ chatId, employeeId: employee.id, err: errorMessage(err) }, 'staff greeting not delivered');
   }
   await notifyStaff(ctx, `🔑 ${employee.name} подключён(а) к боту как сотрудник (вручную${chat.username ? `, @${chat.username}` : ''})`);
-  return bound;
+  return getChat(db, chatId);
 }
 
 export function handleStaffCommand(ctx: AppContext, chatId: number, code: string): string {
