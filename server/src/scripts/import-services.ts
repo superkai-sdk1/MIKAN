@@ -207,6 +207,7 @@ function insertService(
       imageUrl,
       photosJson: '[]',
       aftercareTemplateId: templateId,
+      freshProcedure: templateId !== null,
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -244,7 +245,10 @@ function fillEmptyFields(row: ServiceRow, entry: PriceListService, templateId: n
     patch.variantsJson = JSON.stringify(entry.variants);
   }
   if (!row.imagePrompt?.trim()) patch.imagePrompt = entry.imageSubject;
-  if (row.aftercareTemplateId === null && templateId !== null) patch.aftercareTemplateId = templateId;
+  if (row.aftercareTemplateId === null && templateId !== null) {
+    patch.aftercareTemplateId = templateId;
+    patch.freshProcedure = true;
+  }
   return patch;
 }
 

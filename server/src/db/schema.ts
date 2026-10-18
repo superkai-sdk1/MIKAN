@@ -84,6 +84,11 @@ export const services = sqliteTable('services', {
   aftercareTemplateId: integer('aftercare_template_id').references(() => aftercareTemplates.id, {
     onDelete: 'set null',
   }),
+  /**
+   * «Свежий прокол» / «Свежее тату»: the service leaves a fresh wound, so completing it sends the aftercare memo.
+   * Memos go out only for appointments with at least one such service.
+   */
+  freshProcedure: bool('fresh_procedure').notNull().default(false),
   active: bool('active').notNull().default(true),
   sort: integer('sort').notNull().default(0),
   createdAt: ms('created_at').notNull(),

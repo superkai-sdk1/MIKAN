@@ -96,6 +96,7 @@ const FIELD_LABELS: Record<string, string> = {
   variantId: 'Размер',
   lines: 'Размеры',
   description: 'Описание',
+  freshProcedure: 'Свежий прокол / свежее тату',
 };
 
 function fieldLabel(path: PropertyKey[]): string | null {

@@ -57,6 +57,13 @@
       "when": 1792339500805,
       "tag": "0007_product_variants",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792340732668,
+      "tag": "0008_service_fresh_procedure",
+      "breakpoints": true
     }
   ]
 }

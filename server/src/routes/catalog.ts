@@ -53,6 +53,7 @@ const optionalServiceFields = {
   variants: nonNull(z.array(variant).max(MAX_VARIANTS)),
   depositAmount: nonNull(money),
   aftercareTemplateId: z.number().int().positive().nullish(),
+  freshProcedure: nonNull(z.boolean()),
   active: nonNull(z.boolean()),
   sort: nonNull(z.number().int().min(-100_000).max(100_000)),
 };
@@ -156,6 +157,8 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
         variantsJson: variantsJson(input.variants ?? []),
         depositAmount: input.depositAmount ?? 0,
         aftercareTemplateId: input.aftercareTemplateId ?? null,
+        // Older builds do not send it: a service with its own memo template is taken as a fresh procedure.
+        freshProcedure: input.freshProcedure ?? input.aftercareTemplateId != null,
         active: input.active ?? true,
         sort: input.sort ?? 0,
         createdAt: now,
@@ -191,6 +194,7 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
         variantsJson: input.variants ? variantsJson(input.variants) : current.variantsJson,
         depositAmount: input.depositAmount ?? current.depositAmount,
         aftercareTemplateId: keep(input.aftercareTemplateId, current.aftercareTemplateId),
+        freshProcedure: input.freshProcedure ?? current.freshProcedure,
         active: input.active ?? current.active,
         sort: input.sort ?? current.sort,
         updatedAt: Date.now(),

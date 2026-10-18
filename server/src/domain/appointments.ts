@@ -310,17 +310,17 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
   });
 }
 
-/** The template of the first line (by position) whose catalog service has one; falls back to the legacy service. */
-function defaultAftercareTemplateId(db: DbOrTx, appointment: AppointmentRow): number | null {
+/**
+ * The appointment's catalog services marked «Свежий прокол» / «Свежее тату», in line order (the legacy single
+ * service when it has no lines). Aftercare memos are sent only when there is at least one.
+ */
+function freshServices(db: DbOrTx, appointment: AppointmentRow): ServiceRow[] {
   const lines = currentLines(db, appointment.id);
-  const catalog = servicesByIds(db, [...lines.map((l) => l.serviceId), appointment.serviceId]);
-  const templateOf = (serviceId: number | null) =>
-    serviceId != null ? (catalog.get(serviceId)?.aftercareTemplateId ?? null) : null;
-  for (const line of lines) {
-    const templateId = templateOf(line.serviceId);
-    if (templateId != null) return templateId;
-  }
-  return templateOf(appointment.serviceId);
+  const ids = lines.length ? lines.map((l) => l.serviceId) : [appointment.serviceId];
+  const catalog = servicesByIds(db, ids);
+  return ids
+    .map((id) => (id != null ? catalog.get(id) : undefined))
+    .filter((s): s is ServiceRow => s !== undefined && s.freshProcedure);
 }
 
 export interface CompleteInput {
@@ -365,8 +365,9 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
     cancelPendingDepositCodes(tx, id, now);
 
     let scheduled = 0;
-    if (input.sendAftercare && !hasAftercare(tx, id)) {
-      const templateId = input.aftercareTemplateId ?? defaultAftercareTemplateId(tx, row);
+    const fresh = input.sendAftercare ? freshServices(tx, row) : [];
+    if (fresh.length > 0 && !hasAftercare(tx, id)) {
+      const templateId = input.aftercareTemplateId ?? fresh.find((s) => s.aftercareTemplateId != null)?.aftercareTemplateId ?? null;
       if (templateId != null) {
         const template = tx.select().from(aftercareTemplates).where(eq(aftercareTemplates.id, templateId)).get();
         if (!template) throw badRequest('Памятка по уходу не найдена');

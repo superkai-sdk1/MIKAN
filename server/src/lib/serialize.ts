@@ -118,6 +118,7 @@ export const serviceOut = (sv: ServiceRow) => ({
   variants: parseVariants(sv.variantsJson),
   depositAmount: sv.depositAmount,
   aftercareTemplateId: sv.aftercareTemplateId,
+  freshProcedure: sv.freshProcedure,
   active: sv.active,
   sort: sv.sort,
 });

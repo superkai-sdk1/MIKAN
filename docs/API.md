@@ -89,8 +89,12 @@ If the implementation must deviate, update this file in the same change.
   "variants": [ { "name": "Один", "price": 2500, "durationMin": null },
                 { "name": "Два", "price": 4000, "durationMin": 60 } ],
   "depositAmount": 0,
-  "aftercareTemplateId": 2, "active": true, "sort": 0 }
+  "aftercareTemplateId": 2, "freshProcedure": true, "active": true, "sort": 0 }
 ```
+- `freshProcedure` — the service leaves a fresh wound: «Свежий прокол» (piercing), «Свежее тату» (tattoo), «Нужна
+  памятка по уходу» (other). Aftercare memos are sent only for appointments with at least one such service (see
+  `complete`); a jewelry change, cleaning or consultation keeps it `false`. On create it defaults to whether
+  `aftercareTemplateId` is set (older builds do not send it); PATCH without it keeps the value.
 - `depositAmount`: prepayment required to book this service (whole rubles); `0` — no prepayment. An appointment's
   `depositRequired` defaults to the sum over its lines' catalog services (a service booked twice counts twice).
 - `category`: `tattoo` | `piercing` | `other` (drives the default aftercare template and icons).
@@ -493,9 +497,11 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
   appointments before opening or after closing are accepted.
 - `complete`: sets `status = completed`, `completedAt = now`; writes `usage` movements for `consumables` (the only
   size of the product unless `variantId` is given; a product with several sizes needs `variantId`, `400` otherwise); when
-  `sendAftercare` and the client has Telegram linked and `botEnabled`, schedules the aftercare template steps
-  (template = `aftercareTemplateId` ?? the template of the first line whose service has one). Cancels pending
-  reminders of this appointment.
+  `sendAftercare`, the client has Telegram linked and `botEnabled`, **and at least one of the appointment's catalog
+  services has `freshProcedure`**, schedules the aftercare template steps (template = `aftercareTemplateId` ?? the
+  template of the first such service that has one). An appointment without a fresh procedure (only a jewelry change,
+  say, or no catalog services) gets no memo whatever the app sends: `scheduledMessages: 0`. Cancels pending reminders
+  of this appointment.
 - Creating/rescheduling an appointment for a Telegram-linked client schedules a reminder
   `reminderHoursBefore` hours before `startsAt` (if `remindersEnabled` and that moment is in the future).
   Cancelling / no-show / rescheduling cancels or replaces pending reminders.
