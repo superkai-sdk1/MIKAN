@@ -73,15 +73,9 @@ final class PaymentQueueTests: XCTestCase {
         XCTAssertEqual(PaymentQueue.unpaid(appointments).map(\.id), [5, 1, 6])
     }
 
-    func testVisitsPaidBeforeMikanAreNotAwaitingPayment() throws {
-        var carriedOver = POSFixtures.appointment(id: 7, status: .completed)
-        carriedOver.paidOutside = true
-        XCTAssertTrue(carriedOver.isPaid)
-        XCTAssertEqual(PaymentQueue.unpaid([carriedOver, POSFixtures.appointment(id: 8)]).map(\.id), [8])
-
-        let json = Fixtures.appointment.replacingOccurrences(of: #""saleId": null"#, with: #""saleId": null, "paidOutside": true"#)
-        XCTAssertTrue(try Fixtures.decode(Appointment.self, json).isPaid)
-        XCTAssertFalse(try Fixtures.decode(Appointment.self, Fixtures.appointment).paidOutside, "a server without the flag")
+    func testAVisitWithASaleIsPaid() {
+        XCTAssertTrue(POSFixtures.appointment(id: 7, status: .completed, saleId: 3).isPaid)
+        XCTAssertFalse(POSFixtures.appointment(id: 8).isPaid)
     }
 
     func testDepositBadgeShowsAHeldOrAWaitedPrepayment() {

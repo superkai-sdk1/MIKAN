@@ -307,7 +307,6 @@ export const appointmentOut = (
   depositLink: deposit.link,
   notes: a.notes,
   saleId: a.saleId,
-  paidOutside: a.paidOutside,
   completedAt: toIso(a.completedAt),
   createdAt: toIso(a.createdAt),
   updatedAt: toIso(a.updatedAt),

@@ -66,13 +66,6 @@
       "breakpoints": true
     },
     {
-      "idx": 9,
-      "version": "6",
-      "when": 1792342344364,
-      "tag": "0009_appointment_paid_outside",
-      "breakpoints": true
-    },
-    {
       "idx": 10,
       "version": "6",
       "when": 1792342777579,

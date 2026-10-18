@@ -32,8 +32,6 @@ nonisolated struct Appointment: Codable, Hashable, Identifiable, Sendable {
     var depositLink: QrPayment?
     var notes: String?
     var saleId: Int?
-    /// Paid before MIKAN (a visit carried over from YCLIENTS): paid, but has no sale here.
-    var paidOutside = false
     var completedAt: Date?
     let createdAt: Date
     var updatedAt: Date
@@ -48,8 +46,8 @@ nonisolated struct Appointment: Codable, Hashable, Identifiable, Sendable {
 
     var durationMin: Int { max(0, Int(endsAt.timeIntervalSince(startsAt) / 60)) }
 
-    /// Paid by a sale in MIKAN, or before MIKAN.
-    var isPaid: Bool { saleId != nil || paidOutside }
+    /// Paid: a sale is linked.
+    var isPaid: Bool { saleId != nil }
 
     /// Not cancelled and not a no-show.
     var isActive: Bool { status != .cancelled && status != .noShow }
@@ -62,7 +60,7 @@ nonisolated extension Appointment {
     private enum CodingKeys: String, CodingKey {
         case id, client, master, service, services, title, startsAt, endsAt, status, price, deposit, notes
         case depositRequired, depositStatus, depositOperations, depositLink
-        case saleId, paidOutside, completedAt, createdAt, updatedAt
+        case saleId, completedAt, createdAt, updatedAt
     }
 
     /// Tolerates servers that predate multi-service appointments (no `services`) and prepayments (no `deposit…`).
@@ -85,7 +83,6 @@ nonisolated extension Appointment {
         depositLink = try c.decodeIfPresent(QrPayment.self, forKey: .depositLink)
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
         saleId = try c.decodeIfPresent(Int.self, forKey: .saleId)
-        paidOutside = try c.decodeIfPresent(Bool.self, forKey: .paidOutside) ?? false
         completedAt = try c.decodeIfPresent(Date.self, forKey: .completedAt)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)

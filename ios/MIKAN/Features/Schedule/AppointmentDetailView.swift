@@ -164,14 +164,6 @@ struct AppointmentDetailView: View {
                         .fontWeight(.semibold)
                 }
             }
-        } else if appointment.paidOutside {
-            Section {
-                Label("Оплачено до перехода на MIKAN", systemImage: "checkmark.seal.fill")
-                    .foregroundStyle(.green)
-                    .fontWeight(.semibold)
-            } footer: {
-                Text("Визит перенесён из YCLIENTS — чека в MIKAN нет.")
-            }
         } else if appointment.status == .completed {
             Section {
                 Button {

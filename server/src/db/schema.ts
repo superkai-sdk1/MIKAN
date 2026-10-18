@@ -254,8 +254,6 @@ export const appointments = sqliteTable(
     depositRequired: integer('deposit_required').notNull().default(0),
     notes: text('notes'),
     saleId: integer('sale_id'),
-    /** Paid before MIKAN (a visit carried over from YCLIENTS): counts as paid, has no sale here. */
-    paidOutside: bool('paid_outside').notNull().default(false),
     completedAt: ms('completed_at'),
     createdAt: ms('created_at').notNull(),
     updatedAt: ms('updated_at').notNull(),

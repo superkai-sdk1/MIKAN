@@ -2,7 +2,7 @@
   "version": "6",
   "dialect": "sqlite",
   "id": "44ddc2da-55fb-410c-bf4d-3d9a9bf57a00",
-  "prevId": "50cb3aa2-0e2f-4dca-907c-e8e96fa4e072",
+  "prevId": "e238967c-111f-42ba-b54a-c88baf9cf86e",
   "tables": {
     "aftercare_templates": {
       "name": "aftercare_templates",
@@ -324,14 +324,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "paid_outside": {
-          "name": "paid_outside",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "completed_at": {
           "name": "completed_at",
@@ -1912,7 +1904,7 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "'шт'"
+          "default": "'\u0448\u0442'"
         },
         "photo_url": {
           "name": "photo_url",
