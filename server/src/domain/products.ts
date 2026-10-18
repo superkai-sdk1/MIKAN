@@ -411,11 +411,14 @@ export function deleteProduct(db: DbOrTx, id: number, opts: { writeOff: boolean 
     const product = getProductRow(tx, id);
     if (product.archived) throw notFound('Товар не найден');
     const sizes = tx.select().from(productVariants).where(eq(productVariants.productId, id)).all();
-    const stock = sizes.reduce((sum, v) => sum + v.quantity, 0);
+    // A presence consumable has no stock to write off: a count left from before it was switched to «есть / нет» is
+    // not real stock and must not become an expense.
+    const counted = product.stockMode !== 'presence';
+    const stock = counted ? sizes.reduce((sum, v) => sum + v.quantity, 0) : 0;
     if (stock > 0 && !opts.writeOff) {
       throw conflict(`На складе ещё ${stock} шт. — спишите остаток, чтобы удалить позицию`);
     }
-    for (const size of sizes) {
+    for (const size of counted ? sizes : []) {
       if (size.quantity > 0) {
         applyMovement(tx, { productId: id, variantId: size.id, delta: -size.quantity, type: 'writeoff', note: DELETED_NOTE, employeeId });
       }

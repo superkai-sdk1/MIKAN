@@ -96,3 +96,19 @@ describe('deleting products and the unit cost of receipts', () => {
     expect(writeoff.json().product.cost).toBe(400);
   });
 });
+
+describe('deleting a presence consumable', () => {
+  it('writes nothing off, whatever count was left from before', async () => {
+    const t = await createTestApp();
+    try {
+      const soap = await make(t, '/api/products', { kind: 'consumable', name: 'Мыло', initialQuantity: 4, cost: 100 });
+      await t.api('PATCH', `/api/products/${soap.id}`, { stockMode: 'presence' });
+      const res = await t.api('DELETE', `/api/products/${soap.id}`);
+      expect(res.json()).toEqual({ archived: true, writtenOff: 0 });
+      const moves = (await t.api('GET', `/api/products/${soap.id}/movements`)).json().items;
+      expect(moves.some((m: { type: string }) => m.type === 'writeoff')).toBe(false);
+    } finally {
+      await t.close();
+    }
+  });
+});

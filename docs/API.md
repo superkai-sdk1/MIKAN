@@ -568,7 +568,7 @@ The token lives 90 days. On first start, if there are no employees, the server c
   and movements still name it: `{ "archived": true, "writtenOff": 0 }`; its links to services and consumption norms are
   removed, and it can no longer be sold or moved (`400` «Позиция удалена со склада»). Stock left on it → `409 conflict`
   «На складе ещё 3 шт. — спишите остаток, чтобы удалить позицию» unless `?writeOff=true`, which first writes the
-  stock of every size off (`writeoff` movements, note «Позиция удалена со склада»; counted as a stock expense) and
+  stock of every size off (a presence consumable has no stock to write off: it is deleted as is) (`writeoff` movements, note «Позиция удалена со склада»; counted as a stock expense) and
   returns `writtenOff` = the units written off. Deleting twice → `404`.
 
 Movements:
