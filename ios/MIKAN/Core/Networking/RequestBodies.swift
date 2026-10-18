@@ -155,6 +155,15 @@ nonisolated struct StockLineBody: Encodable, Hashable, Sendable {
     let quantity: Int
 }
 
+/// `POST /products/:id/purchases` — a restock of a presence consumable with what it cost.
+nonisolated struct PurchaseBody: Encodable, Hashable, Sendable {
+    /// Rubles paid, 1…100 000 000.
+    let amount: Int
+    var note: String?
+    /// The status after the purchase; the server defaults to `ok`.
+    var presenceStatus: PresenceStatus?
+}
+
 /// A booked service line; variants are resolved by the app (name/price/duration of the variant).
 nonisolated struct AppointmentServiceBody: Encodable, Hashable, Sendable {
     var serviceId: Int?

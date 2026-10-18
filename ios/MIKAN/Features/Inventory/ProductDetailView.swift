@@ -15,6 +15,7 @@ struct ProductDetailView: View {
     @State private var purchases = Remote<[HistoryEntry]>()
     @State private var purchasesTotal = 0
     @State private var movementRequest: StockMovementRequest?
+    @State private var showsPurchase = false
     @State private var showsEditor = false
     @State private var viewer: ServicePhotoViewerItem?
     @State private var isSavingPresence = false
@@ -38,7 +39,13 @@ struct ProductDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     titleBlock
                     if product.isPresenceTracked {
-                        ProductPresenceCard(status: product.presenceStatus ?? .ok, isSaving: isSavingPresence, onSelect: setPresence)
+                        ProductPresenceCard(
+                            status: product.presenceStatus ?? .ok,
+                            isSaving: isSavingPresence,
+                            spentRecently: spentRecently,
+                            onSelect: setPresence,
+                            onPurchase: { showsPurchase = true }
+                        )
                     } else {
                         quantityCard
                         actions
@@ -88,6 +95,12 @@ struct ProductDetailView: View {
             MovementSheet(product: product, initialType: request.type, variantId: request.variantId) { result in
                 apply(result.product)
                 prependMovements(result.movements)
+            }
+        }
+        .sheet(isPresented: $showsPurchase) {
+            ConsumablePurchaseSheet(product: product) { result in
+                apply(result.product)
+                prependMovements([result.movement])
             }
         }
         .sheet(isPresented: $showsEditor) {
@@ -240,6 +253,12 @@ struct ProductDetailView: View {
             .font(.subheadline)
         }
         .accessibilityLabel("Размер для истории")
+    }
+
+    /// Purchases of the last 30 days, while the loaded history reaches that far back.
+    private var spentRecently: Int? {
+        guard let items = movements.value, movementsVariantId == nil else { return nil }
+        return PurchaseSummary.spent(in: items, isComplete: items.count < Self.historyLimit)
     }
 
     /// Jewelry and goods are sold at the POS; consumables only show buyers when someone actually bought one.

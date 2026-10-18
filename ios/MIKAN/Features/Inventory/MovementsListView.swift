@@ -25,7 +25,7 @@ struct MovementsListView: View {
                 ContentUnavailableView(
                     "Движений нет",
                     systemImage: "arrow.left.arrow.right",
-                    description: Text(type == nil ? "Здесь появятся приходы, продажи и списания." : "Нет движений этого типа.")
+                    description: Text(type == nil ? "Здесь появятся приходы, продажи, списания и покупки." : "Нет движений этого типа.")
                 )
             }
         }
@@ -42,7 +42,7 @@ struct MovementsListView: View {
                 Menu {
                     Picker("Тип", selection: $type) {
                         Text("Все").tag(MovementType?.none)
-                        ForEach(MovementType.allCases) { type in
+                        ForEach(MovementType.listed) { type in
                             Label(type.title, systemImage: type.symbol).tag(MovementType?.some(type))
                         }
                     }

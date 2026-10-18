@@ -127,16 +127,39 @@ nonisolated extension AnalyticsProductVariant: Decodable {
 
 // MARK: - Stock
 
-nonisolated struct AnalyticsStock: Decodable, Hashable, Sendable {
+nonisolated struct AnalyticsStock: Hashable, Sendable {
     var writeoffs = AnalyticsStockFlow()
     /// Consumables used in procedures.
     var usage = AnalyticsStockFlow()
-    /// `writeoffs.value + usage.value`.
+    /// Restocks of presence consumables at what they cost.
+    var purchases = AnalyticsStockPurchases()
+    /// `writeoffs.value + usage.value + purchases.value`.
     var expenses = 0
-    /// Up to 20 products by the value that left the stock.
+    /// Up to 20 products by value.
     var top: [AnalyticsStockExpense] = []
     /// Snapshot now, not at the end of the period.
     var onHand = AnalyticsStockOnHand()
+}
+
+nonisolated extension AnalyticsStock: Decodable {
+    private enum CodingKeys: String, CodingKey { case writeoffs, usage, purchases, expenses, top, onHand }
+
+    /// A server that predates purchases sends none (zero).
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        writeoffs = try c.decode(.writeoffs, or: AnalyticsStockFlow())
+        usage = try c.decode(.usage, or: AnalyticsStockFlow())
+        purchases = try c.decode(.purchases, or: AnalyticsStockPurchases())
+        expenses = try c.decode(.expenses, or: 0)
+        top = try c.decode(.top, or: [])
+        onHand = try c.decode(.onHand, or: AnalyticsStockOnHand())
+    }
+}
+
+/// Restocks of presence consumables: how many and what was paid.
+nonisolated struct AnalyticsStockPurchases: Decodable, Hashable, Sendable {
+    var count = 0
+    var value = 0
 }
 
 /// Units that left the stock, valued at the current cost.
@@ -150,13 +173,15 @@ nonisolated struct AnalyticsStockExpense: Decodable, Hashable, Identifiable, Sen
     let productId: Int
     let name: String
     let kind: String
-    /// `writeoff` | `usage`.
+    /// `writeoff` | `usage` | `purchase`.
     let type: String
+    /// Units; for a purchase — the number of purchases.
     var quantity = 0
     var value = 0
 
     var id: String { "\(productId)-\(type)" }
     var isUsage: Bool { type == MovementType.usage.rawValue }
+    var isPurchase: Bool { type == MovementType.purchase.rawValue }
 }
 
 nonisolated struct AnalyticsStockOnHand: Decodable, Hashable, Sendable {

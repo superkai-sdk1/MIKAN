@@ -60,6 +60,26 @@ nonisolated enum ReportText {
         "\(count)\u{00A0}шт."
     }
 
+    /// «1 покупка», «3 покупки», «5 покупок».
+    static func purchases(_ count: Int) -> String {
+        Plural.count(count, one: "покупка", few: "покупки", many: "покупок")
+    }
+
+    /// Operation of a stock expense row: «Списание · 2 шт.», «Расход · 5 шт.», «Покупка · 3 раза» (a purchase counts
+    /// purchases, not units).
+    static func stockExpenseLine(_ expense: AnalyticsStockExpense) -> String {
+        if expense.isPurchase {
+            return "Покупка · " + Plural.count(expense.quantity, one: "раз", few: "раза", many: "раз")
+        }
+        return "\(expense.isUsage ? "Расход" : "Списание") · \(units(expense.quantity))"
+    }
+
+    /// The operation column of the export: «Списание», «Расход на процедуры», «Покупка».
+    static func stockExpenseTitle(_ expense: AnalyticsStockExpense) -> String {
+        if expense.isPurchase { return "Покупка" }
+        return expense.isUsage ? "Расход на процедуры" : "Списание"
+    }
+
     /// «3 шт. без себестоимости — укажите её в карточке товара, чтобы маржа была точной», or `nil` when all have it.
     static func missingCostHint(_ units: Int) -> String? {
         guard units > 0 else { return nil }

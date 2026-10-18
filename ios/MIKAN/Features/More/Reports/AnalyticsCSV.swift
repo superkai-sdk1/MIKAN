@@ -123,15 +123,16 @@ nonisolated enum AnalyticsCSV {
     }
 
     private static func stock(_ s: AnalyticsStock) -> [[String]] {
-        let top = s.top.map { [$0.name, $0.isUsage ? "Расход на процедуры" : "Списание", String($0.quantity), String($0.value)] }
+        let top = s.top.map { [$0.name, ReportText.stockExpenseTitle($0), String($0.quantity), String($0.value)] }
         let onHand = s.onHand.byKind.map { [ReportText.kindTitle($0.kind), String($0.units), String($0.value), String($0.unitsWithoutCost)] }
         return [
             ["Расходы склада", "Количество", "По себестоимости, ₽", "Без себестоимости, шт."],
             ["Списания", String(s.writeoffs.quantity), String(s.writeoffs.value), String(s.writeoffs.unitsWithoutCost)],
             ["Расход на процедуры", String(s.usage.quantity), String(s.usage.value), String(s.usage.unitsWithoutCost)],
+            ["Покупки расходников", String(s.purchases.count), String(s.purchases.value), ""],
             ["Итого", "", String(s.expenses), ""],
             [],
-            ["Товар", "Операция", "Количество", "По себестоимости, ₽"],
+            ["Товар", "Операция", "Количество", "Сумма, ₽"],
         ] + top + [[], ["На складе сейчас", "Количество", "По себестоимости, ₽", "Без себестоимости, шт."]] + onHand
             + [["Всего", String(s.onHand.units), String(s.onHand.value), String(s.onHand.unitsWithoutCost)]]
     }

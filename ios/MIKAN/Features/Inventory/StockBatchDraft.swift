@@ -86,7 +86,7 @@ nonisolated struct StockBatchDraft: Hashable, Sendable {
         case .receipt: return size.quantity + amount
         case .writeoff, .usage: return size.quantity - amount
         case .adjustment: return amount
-        case .sale, .returned: return nil
+        case .sale, .returned, .purchase, .other: return nil
         }
     }
 

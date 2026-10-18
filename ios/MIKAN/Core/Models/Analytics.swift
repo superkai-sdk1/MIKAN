@@ -30,7 +30,7 @@ nonisolated struct ReportAnalytics: Decodable, Sendable {
     /// Nothing happened in the period: no sales, refunds, appointments, stock or cash movements, prepayments.
     var isEmpty: Bool {
         revenue.gross == 0 && revenue.refunds == 0 && appointments.total == 0 && stock.expenses == 0
-            && stock.writeoffs.quantity == 0 && stock.usage.quantity == 0
+            && stock.writeoffs.quantity == 0 && stock.usage.quantity == 0 && stock.purchases.count == 0
             && cash.operationsCount == 0 && cash.shiftsClosed == 0 && deposits.received == 0
             && deposits.applied == 0 && deposits.refunded == 0 && deposits.retained == 0
     }

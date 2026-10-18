@@ -1,6 +1,6 @@
 import SwiftUI
 
-extension MovementType {
+nonisolated extension MovementType {
     var title: String {
         switch self {
         case .receipt: "Приход"
@@ -9,6 +9,8 @@ extension MovementType {
         case .writeoff: "Списание"
         case .usage: "Расход"
         case .adjustment: "Инвентаризация"
+        case .purchase: "Покупка"
+        case .other: "Движение"
         }
     }
 
@@ -28,6 +30,8 @@ extension MovementType {
         case .writeoff: "trash"
         case .usage: "drop"
         case .adjustment: "list.number"
+        case .purchase: "cart.badge.plus"
+        case .other: "arrow.left.arrow.right"
         }
     }
 
@@ -37,13 +41,32 @@ extension MovementType {
         case .writeoff: "Брак, потеря, истёк срок — сколько единиц списать."
         case .usage: "Сколько ушло на процедуры (не через завершение записи)."
         case .adjustment: "Пересчитайте остаток и введите фактическое количество."
-        case .sale, .returned: ""
+        case .sale, .returned, .purchase, .other: ""
         }
     }
 }
 
-/// Stock movement row: type, signed delta, resulting stock of the size, author and note.
-/// The global list names the product and size («Лабрет — 8 мм»); a product's own list shows the size as a badge.
+/// Texts of a stock movement row.
+nonisolated enum MovementText {
+    /// «Покупка · 3 500 ₽» for a purchase, the type's name otherwise.
+    static func title(_ movement: StockMovement) -> String {
+        guard movement.type == .purchase, let amount = movement.amount else { return movement.type.title }
+        return "\(movement.type.title) · \(Money.format(amount))"
+    }
+
+    /// «15 окт., 14:00 · Анна»; the list of all products starts with the operation: «Покупка · 3 500 ₽ · …».
+    static func subtitle(_ movement: StockMovement, showsProduct: Bool) -> String {
+        var parts: [String] = []
+        if showsProduct { parts.append(title(movement)) }
+        parts.append(DateText.dateTime(movement.createdAt))
+        if let employee = movement.employee { parts.append(employee.name) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Stock movement row: type, signed delta, resulting stock of the size, author and note; a purchase shows what it cost
+/// instead of the stock. The global list names the product and size («Лабрет — 8 мм»); a product's own list shows the
+/// size as a badge.
 struct MovementRow: View {
     let movement: StockMovement
     var showsProduct = false
@@ -58,13 +81,13 @@ struct MovementRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(showsProduct ? movement.displayName : movement.type.title)
+                    Text(showsProduct ? movement.displayName : MovementText.title(movement))
                         .font(.subheadline.weight(.semibold))
                     if !showsProduct, let size = movement.variantName.nonEmpty {
                         StatusBadge(text: size, color: .secondary)
                     }
                 }
-                Text(subtitle)
+                Text(MovementText.subtitle(movement, showsProduct: showsProduct))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let note = movement.note.nonEmpty {
@@ -72,25 +95,23 @@ struct MovementRow: View {
                 }
             }
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(movement.delta > 0 ? "+\(movement.delta)" : "\(movement.delta)")
-                    .font(.headline)
-                    .monospacedDigit()
-                    .foregroundStyle(movement.delta >= 0 ? Color.green : Color.primary)
-                Text("→ \(movement.quantityAfter)")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+            if movement.movesStock {
+                stockChange
             }
         }
         .accessibilityElement(children: .combine)
     }
 
-    private var subtitle: String {
-        var parts: [String] = []
-        if showsProduct { parts.append(movement.type.title) }
-        parts.append(DateText.dateTime(movement.createdAt))
-        if let employee = movement.employee { parts.append(employee.name) }
-        return parts.joined(separator: " · ")
+    private var stockChange: some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            Text(movement.delta > 0 ? "+\(movement.delta)" : "\(movement.delta)")
+                .font(.headline)
+                .monospacedDigit()
+                .foregroundStyle(movement.delta >= 0 ? Color.green : Color.primary)
+            Text("→ \(movement.quantityAfter)")
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
     }
 }

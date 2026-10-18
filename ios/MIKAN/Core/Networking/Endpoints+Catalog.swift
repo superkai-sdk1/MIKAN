@@ -89,6 +89,18 @@ extension APIClient {
         try await request(.post, "products/\(productId)/movements/batch", body: body, idempotencyKey: idempotencyKey)
     }
 
+    /// A restock of a presence consumable with what it cost: a `purchase` movement and the new status.
+    func recordPurchase(
+        productId: Int,
+        amount: Int,
+        note: String?,
+        presenceStatus: PresenceStatus?,
+        idempotencyKey: UUID
+    ) async throws -> MovementResult {
+        let body = PurchaseBody(amount: amount, note: note.nonEmpty, presenceStatus: presenceStatus)
+        return try await request(.post, "products/\(productId)/purchases", body: body, idempotencyKey: idempotencyKey)
+    }
+
     /// Movements of the product, or of one size.
     func productMovements(
         productId: Int,
