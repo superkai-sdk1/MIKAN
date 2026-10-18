@@ -95,14 +95,22 @@ enum PreviewData {
     ]
 
     static let labret = Product(
-        id: 1, kind: .jewelry, name: "Лабрет", sku: "LB-12-08", category: "Лабрет", material: "Титан G23",
-        size: "1.2×8 мм", description: nil, price: 1500, cost: 600, quantity: 12, minQuantity: 3, unit: "шт",
-        photoUrl: nil, active: true, lowStock: false, createdAt: now, updatedAt: now
+        id: 1, kind: .jewelry, name: "Лабрет", sku: "LB-12", category: "Лабрет", material: "Титан ASTM F136",
+        threadType: .internalThread, thicknessMm: 1.2, color: "Серебристый", stone: "Фианит", supplier: "Industrial Strength",
+        size: nil, description: "Плоский диск, внутренняя резьба — подходит для первичного прокола.",
+        price: 1500, cost: 600, quantity: 0, minQuantity: 0, unit: "шт",
+        photoUrl: nil, serviceIds: [3], active: true, lowStock: false,
+        variants: [
+            ProductVariant(id: 1, name: "6 мм", sku: nil, price: nil, cost: nil, quantity: 4, minQuantity: 1, lowStock: false),
+            ProductVariant(id: 4, name: "8 мм", sku: "LB-12-08", price: nil, cost: nil, quantity: 1, minQuantity: 2, lowStock: true),
+            ProductVariant(id: 5, name: "10 мм", sku: "LB-12-10", price: 1700, cost: 700, quantity: 0, minQuantity: 0, lowStock: true),
+        ],
+        createdAt: now, updatedAt: now
     )
     static let ring = Product(
-        id: 2, kind: .jewelry, name: "Кольцо-кликер", sku: "CL-10", category: "Кольцо", material: "Титан G23",
-        size: "1.2×10 мм", description: nil, price: 2800, cost: 1100, quantity: 2, minQuantity: 3, unit: "шт",
-        photoUrl: nil, active: true, lowStock: true, createdAt: now, updatedAt: now
+        id: 2, kind: .jewelry, name: "Кольцо-кликер", sku: "CL-10", category: "Кольцо", material: "Титан ASTM F136",
+        thicknessMm: 1.2, size: "1.2×10 мм", description: nil, price: 2800, cost: 1100, quantity: 2, minQuantity: 3,
+        unit: "шт", photoUrl: nil, active: true, lowStock: true, createdAt: now, updatedAt: now
     )
     static let needles = Product(
         id: 3, kind: .consumable, name: "Иглы 1.2 мм", sku: nil, category: "Иглы", material: nil,
@@ -112,14 +120,17 @@ enum PreviewData {
     static let products = [labret, ring, needles]
 
     static let movement = StockMovement(
-        id: 1, productId: 1, productName: "Лабрет", delta: -1, quantityAfter: 11, type: .sale,
-        note: nil, saleId: 5, appointmentId: nil, employee: anna.ref, createdAt: now
+        id: 1, productId: 1, productName: "Лабрет", variantId: 4, variantName: "8 мм", delta: -1, quantityAfter: 1,
+        type: .sale, note: nil, saleId: 5, appointmentId: nil, employee: anna.ref, createdAt: now
     )
 
     static let sale = Sale(
         id: 9, number: 17, client: ivanRef, employee: anna.ref, appointmentId: 3, shiftId: 3,
         items: [
-            SaleItem(id: 1, type: .product, productId: 1, serviceId: nil, name: "Лабрет", quantity: 1, price: 1500, total: 1500),
+            SaleItem(
+                id: 1, type: .product, productId: 1, variantId: 4, variantName: "8 мм", serviceId: nil,
+                name: "Лабрет — 8 мм", quantity: 1, price: 1500, total: 1500
+            ),
             SaleItem(id: 2, type: .service, productId: nil, serviceId: 3, name: "Прокол мочки", quantity: 1, price: 2500, total: 2500),
         ],
         subtotal: 4000, discount: 500, total: 3500,
@@ -134,8 +145,8 @@ enum PreviewData {
             saleId: 9, saleNumber: 17, refunded: false
         ),
         HistoryEntry(
-            id: "si1", kind: .product, date: at(hour: 17, minute: 40), name: "Лабрет", serviceId: nil, productId: 1,
-            quantity: 2, price: 1500, total: 3000, client: ivanRef, employee: anna.ref, appointmentId: nil,
+            id: "si1", kind: .product, date: at(hour: 17, minute: 40), name: "Лабрет — 8 мм", serviceId: nil, productId: 1,
+            variantId: 4, variantName: "8 мм", quantity: 2, price: 1500, total: 3000, client: ivanRef, employee: anna.ref, appointmentId: nil,
             saleId: 9, saleNumber: 17, refunded: true
         ),
     ]
@@ -173,7 +184,13 @@ enum PreviewData {
                                  applied: 10_000, refunded: 1000, retained: 2000, held: 7000),
         servicesRevenue: 90_000, productsRevenue: 30_000,
         byDay: [ReportDay(date: CalendarDay.string(from: today), revenue: 8000, salesCount: 3)],
-        topProducts: [TopProduct(productId: 1, name: "Лабрет", quantity: 7, revenue: 10_500)],
+        topProducts: [TopProduct(
+            productId: 1, name: "Лабрет", quantity: 7, revenue: 10_500,
+            variants: [
+                TopProductVariant(variantId: 4, name: "8 мм", quantity: 4, revenue: 6000),
+                TopProductVariant(variantId: 1, name: "6 мм", quantity: 3, revenue: 4500),
+            ]
+        )],
         topServices: [TopService(serviceId: 3, name: "Прокол мочки", quantity: 12, revenue: 30_000)],
         byMaster: [MasterStat(employee: anna.ref, appointmentsCompleted: 10, revenue: 50_000)],
         newClients: 14, appointmentsCompleted: 35, noShows: 2

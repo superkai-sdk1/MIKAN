@@ -56,6 +56,7 @@ enum Fixtures {
       "createdAt": "<T>", "updatedAt": "<T>" }
     """#
 
+    /// A product from a server that predates sizes (the app reads it as one size).
     static let product = #"""
     { "id": 1, "kind": "jewelry", "name": "Лабрет", "sku": "LB-12-08", "category": "Лабрет",
       "material": "Титан G23", "size": "1.2×8 мм", "description": "Описание",

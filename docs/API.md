@@ -25,7 +25,8 @@ If the implementation must deviate, update this file in the same change.
   image generation failed), `internal` (500).
   `message` is always human-readable Russian; the app shows it as is.
 - All employees have identical permissions.
-- Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /cash/operations`, `POST /products/:id/movements`
+- Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /cash/operations`, `POST /products/:id/movements`,
+  `POST /products/:id/movements/batch`
   and the prepayment writes `POST /appointments/:id/deposit`, `…/deposit/refund`, `…/deposit/retain` accept an optional `Idempotency-Key: <UUID>` header. The app generates one key per user action and resends the
   same key when it retries that action (timeout, dropped connection, repeated tap after an unclear outcome).
   - The first request with a key runs normally; its successful response is stored for **24 h**, scoped to the
@@ -121,24 +122,56 @@ If the implementation must deviate, update this file in the same change.
 
 ### Product (jewelry and consumables)
 ```json
-{ "id": 1, "kind": "jewelry", "name": "Лабрет", "sku": "LB-12-08", "category": "Лабрет",
-  "material": "Титан G23", "size": "1.2×8 мм", "description": "...",
-  "price": 1500, "cost": 600, "quantity": 12, "minQuantity": 3, "unit": "шт",
-  "photoUrl": "/uploads/3f1c….jpg", "active": true, "lowStock": false,
+{ "id": 1, "kind": "jewelry", "name": "Лабрет", "sku": "LB-12", "category": "Лабрет",
+  "material": "Титан ASTM F136", "threadType": "internal", "thicknessMm": 1.2,
+  "color": "Серебристый", "stone": "Фианит", "supplier": "Industrial Strength",
+  "description": "...", "price": 1500, "cost": 600, "unit": "шт",
+  "photos": ["/uploads/3f1c….jpg", "/uploads/9a0b….jpg"], "photoUrl": "/uploads/3f1c….jpg",
+  "serviceIds": [3, 7], "active": true,
+  "variants": [
+    { "id": 1, "name": "6 мм", "sku": null, "price": null, "cost": null,
+      "quantity": 4, "minQuantity": 1, "lowStock": false },
+    { "id": 5, "name": "8 мм", "sku": "LB-12-08", "price": 1700, "cost": 700,
+      "quantity": 0, "minQuantity": 1, "lowStock": true } ],
+  "quantity": 4, "minQuantity": 2, "lowStock": true, "size": "6 мм, 8 мм",
   "createdAt": "...", "updatedAt": "..." }
 ```
 - `kind`: `jewelry` (sold to clients, visible to the bot) | `consumable` (used in procedures, not sold).
-- `quantity` is maintained only through stock movements (never set directly by PATCH).
-- `photoUrl`: path relative to the server origin (app prefixes the host) or `null`.
-- `lowStock` (derived, output only): `quantity <= minQuantity`.
+- `variants` — the sizes of the product (always at least one), in the order staff arranged them. Stock lives on
+  variants: every receipt, sale, write-off, usage, count and return moves one variant.
+  - A product without sizes has a single variant with `name: ""`. With two or more variants every `name` is required
+    and unique within the product (case-insensitive). Consumables always have exactly one variant.
+  - `sku`, `price`, `cost` — the size's own values; `null` = the product's. Selling price of a size =
+    `variant.price ?? product.price`, cost = `variant.cost ?? product.cost`, article = `variant.sku ?? product.sku`.
+  - `quantity` is maintained only through stock movements; `lowStock` (derived): `quantity <= minQuantity`.
+  - Sizes removed in the editor disappear from `variants`; one with stock history is kept on the server (archived),
+    so movements and sales still name it.
+- Product-level `quantity` (Σ variants), `minQuantity` (Σ variants), `lowStock` (at least one variant is low) and
+  `size` (variant names joined with `", "`, `null` when no variant has a name) are derived, output only, and keep
+  older app builds working. Apps read `variants`.
+- Jewelry attributes (all optional, `null` when not set):
+  - `material` — free text; apps offer «Титан ASTM F136», «Титан ASTM F1295», «Хирургическая сталь 316L»,
+    «Сталь ASTM F138», «Золото 585», «Золото 750», «Ниобий», «Биопласт (PTFE)», «Стекло».
+  - `threadType`: `internal` (внутренняя резьба) | `external` (внешняя) | `threadless` (безрезьбовое, push-pin).
+  - `thicknessMm` — bar / wire thickness in millimetres (`0 < x ≤ 30`, up to two decimals). Apps add the gauge:
+    0.8 = 20G, 1.0 = 18G, 1.2 = 16G, 1.6 = 14G, 2.0 = 12G, 2.5 = 10G, 3.2 = 8G, 4.0 = 6G, 5.0 = 4G, 6.0 = 2G, 8.0 = 0G.
+  - `color` (metal / anodizing colour), `stone` (insert: «Фианит», «Опал», …), `supplier` — free text up to 100 chars.
+  - `serviceIds` — catalog services (piercing zones) the jewelry suits, e.g. «Хеликс», «Септум»; `[]` when none.
+    The bot names them when it lists the jewelry.
+- `photos`: up to 10 upload paths (`/uploads/…`), the first is the cover; `photoUrl` (derived) = `photos[0]` ?? `null`
+  — shown in the POS catalog, the stock list and sent by the bot. Paths are relative to the server origin.
+- Apps show markup = `price − cost` (and its share of `cost` in %), per size when the size has its own price or cost.
 
 ### StockMovement
 ```json
-{ "id": 1, "productId": 1, "productName": "Лабрет", "delta": -1, "quantityAfter": 11,
+{ "id": 1, "productId": 1, "productName": "Лабрет", "variantId": 5, "variantName": "8 мм",
+  "delta": -1, "quantityAfter": 11,
   "type": "sale", "note": null, "saleId": 5, "appointmentId": null,
   "employee": { "id": 1, "name": "Анна", "color": "#FF7A1A" }, "createdAt": "..." }
 ```
 `type`: `receipt` (приход) | `sale` | `return` | `writeoff` (списание) | `usage` (расход на процедуру) | `adjustment` (инвентаризация).
+`variantName` — the size's current name (`""` for a product without sizes); `quantityAfter` — the stock of that size
+after the movement.
 
 ### Appointment
 ```json
@@ -176,13 +209,17 @@ If the implementation must deviate, update this file in the same change.
 ```json
 { "id": 1, "number": 17, "client": { ClientRef } | null, "employee": { EmployeeRef },
   "appointmentId": null, "shiftId": 3,
-  "items": [ { "id": 1, "type": "product", "productId": 1, "serviceId": null,
-               "name": "Лабрет", "quantity": 1, "price": 1500, "total": 1500 } ],
+  "items": [ { "id": 1, "type": "product", "productId": 1, "variantId": 5, "variantName": "8 мм",
+               "serviceId": null, "name": "Лабрет — 8 мм", "quantity": 1, "price": 1500, "total": 1500 } ],
   "subtotal": 1500, "discount": 0, "total": 1500,
   "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 0 },
   "status": "completed", "note": null, "refundedAt": null, "refundReason": null, "createdAt": "..." }
 ```
-- `type`: `product` (requires `productId`; decrements stock) | `service` (`serviceId` optional; `name` required when no `serviceId`).
+- `type`: `product` (requires `productId`; decrements the stock of the sold size) | `service` (`serviceId` optional;
+  `name` required when no `serviceId`).
+- Product items: `variantId` — the size sold; `variantName` — its name at the moment of sale (`null` for services,
+  for a product without sizes and for items sold before sizes existed); `name` = `"<product> — <size>"` (just the
+  product name without a size), so receipts and history always show the size.
 - `number`: sequential human-readable receipt number.
 - `status`: `completed` | `refunded`.
 - `payments.qr` — paid by an SBP QR code (Tochka); only set on sales created from a confirmed `QrPayment`.
@@ -320,7 +357,7 @@ The token lives 90 days. On first start, if there are no employees, the server c
 ### Badges & dashboard
 | Method | Path | Response |
 |---|---|---|
-| GET | `/badges` | `{ "unreadChats": 2, "needsAttention": 1, "newBookingRequests": 1, "lowStock": 3 }` (the app polls every 30 s) |
+| GET | `/badges` | `{ "unreadChats": 2, "needsAttention": 1, "newBookingRequests": 1, "lowStock": 3 }` (the app polls every 30 s; `lowStock` — active products with at least one low size) |
 | GET | `/dashboard` | `{ "date": "2026-10-15", "appointments": [Appointment] (today, studio tz, excl. cancelled), "revenueToday": 12000, "salesCountToday": 4, "openShift": CashShift \| null, "badges": {…same as /badges} }` |
 
 ### Employees
@@ -367,16 +404,54 @@ The token lives 90 days. On first start, if there are no employees, the server c
 |---|---|---|---|
 | GET | `/products?kind=jewelry&search=&lowStock=true&includeInactive=true` | — | `{ items: [Product] }` sorted by category, name |
 | GET | `/products/:id` | — | `Product` |
-| POST | `/products` | `{ kind, name, sku?, category?, material?, size?, description?, price, cost?, minQuantity?, unit?, photoUrl?, active?, initialQuantity? }` | `Product` (`initialQuantity > 0` creates a `receipt` movement) |
-| PATCH | `/products/:id` | any of the above except `quantity`/`initialQuantity` | `Product` |
-| POST | `/products/:id/movements` | `{ type: "receipt"\|"writeoff"\|"usage"\|"adjustment", quantity, note? }` | `{ product: Product, movement: StockMovement }` · accepts `Idempotency-Key` |
-| GET | `/products/:id/movements?limit=&offset=` | — | `{ items: [StockMovement], total }` |
-| GET | `/products/:id/history?limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who bought this product and when, newest first |
+| POST | `/products` | see below | `Product` |
+| PATCH | `/products/:id` | any of the POST fields | `Product` |
+| POST | `/products/:id/movements` | `{ type: "receipt"\|"writeoff"\|"usage"\|"adjustment", variantId?, quantity, note? }` | `{ product: Product, movement: StockMovement }` · accepts `Idempotency-Key` |
+| POST | `/products/:id/movements/batch` | `{ type, note?, lines: [{ variantId, quantity }] }` | `{ product: Product, movements: [StockMovement] }` · accepts `Idempotency-Key` |
+| GET | `/products/:id/movements?variantId=&limit=&offset=` | — | `{ items: [StockMovement], total }` |
+| GET | `/products/:id/history?variantId=&limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who bought this product (or this size) and when, newest first |
 | GET | `/stock/movements?type=&limit=&offset=` | — | `{ items: [StockMovement], total }` newest first |
 
-Movement `quantity` semantics: `receipt` — positive amount added; `writeoff`/`usage` — positive amount removed;
-`adjustment` — the **new absolute quantity** after a stock count (server computes `delta`). Stock may not go below 0
-(`409 insufficient_stock`).
+- `search` matches the name, SKUs (product and sizes), category, material, colour, stone, supplier and size names.
+  `lowStock=true` — products with at least one low size.
+
+`POST /products` body:
+```json
+{ "kind": "jewelry", "name": "Лабрет", "sku": "LB-12", "category": "Лабрет",
+  "material": "Титан ASTM F136", "threadType": "internal", "thicknessMm": 1.2, "color": null, "stone": null,
+  "supplier": "Industrial Strength", "description": null, "price": 1500, "cost": 600, "unit": "шт",
+  "photos": ["/uploads/3f1c….jpg"], "serviceIds": [3], "active": true,
+  "variants": [ { "name": "6 мм", "minQuantity": 1, "initialQuantity": 4 },
+                { "name": "8 мм", "sku": "LB-12-08", "price": 1700, "cost": 700, "minQuantity": 1, "initialQuantity": 0 } ] }
+```
+- `variants` (1–50): `{ id?, name?, sku?, price?, cost?, minQuantity?, initialQuantity? }`. A new size with
+  `initialQuantity > 0` gets a `receipt` movement «Начальный остаток».
+- PATCH with `variants` replaces the list (the new order is kept): an item with `id` (a size of this product) updates
+  that size (`initialQuantity` is ignored), an item without `id` adds a size, and a size left out is removed — deleted
+  when it has no movements or sales, archived otherwise. Removing a size that still has stock → `409 conflict`
+  («Размер «8 мм»: на складе 3 шт — спишите остаток, прежде чем удалять размер»); an unknown `id` → `400`.
+- Validation (`400`): a duplicate size name, an empty name when there are two or more sizes, more than one size for a
+  consumable.
+- Without `variants` (older builds) the legacy fields `size`, `minQuantity` and `initialQuantity` (POST only) describe
+  the only size. On PATCH they change the only size; when the product has several sizes, a changed `size` or
+  `minQuantity` → `409 conflict` «У «Лабрет» несколько размеров — обновите приложение MIKAN, чтобы изменить их»
+  (unchanged values, which older builds always resend, are ignored).
+- `photos` (≤ 10) replaces the photos; without it, `photoUrl` (older builds) replaces the cover (`null` removes it)
+  and keeps the other photos.
+- `serviceIds` (≤ 30) replaces the linked services; an unknown id → `400`.
+- `quantity` is never set by PATCH.
+
+Movements:
+- `quantity` semantics: `receipt` — positive amount added; `writeoff`/`usage` — positive amount removed;
+  `adjustment` — the **new absolute quantity** of the size after a stock count (server computes `delta`). Stock may not
+  go below 0 (`409 insufficient_stock`, «Недостаточно на складе: Лабрет — 8 мм (осталось 2)»).
+- `variantId` must be a current size of the product (`400` otherwise). Without it (older builds) the only size is
+  used; for a product with several sizes → `409 conflict` «У «Лабрет» несколько размеров — обновите приложение MIKAN,
+  чтобы провести операцию по размеру».
+- `batch` records one operation for several sizes in one transaction (a delivery, a stock count of all sizes):
+  1–50 lines with distinct `variantId`s. `receipt` / `writeoff` / `usage` lines need `quantity > 0`; `adjustment`
+  lines whose count equals the current stock are skipped, and a count that changes nothing → `400` «Остатки не
+  изменились». `movements` are in line order.
 
 ### Uploads
 | Method | Path | Body | Response |
@@ -392,7 +467,7 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 | GET | `/appointments/:id` | — | `Appointment` |
 | POST | `/appointments` | `{ clientId, masterId, services?, serviceId?, title?, startsAt, endsAt?, price?, depositRequired?, notes?, status?, force? }` | `Appointment` |
 | PATCH | `/appointments/:id` | any of the above (incl. `status`) + `force?` | `Appointment` |
-| POST | `/appointments/:id/complete` | `{ sendAftercare: true, aftercareTemplateId?, consumables?: [{ productId, quantity }] }` | `{ appointment: Appointment, scheduledMessages: 3 }` |
+| POST | `/appointments/:id/complete` | `{ sendAftercare: true, aftercareTemplateId?, consumables?: [{ productId, variantId?, quantity }] }` | `{ appointment: Appointment, scheduledMessages: 3 }` |
 | POST | `/appointments/:id/deposit` | `{ amount > 0, method: "cash"\|"card"\|"transfer", note? }` | `Appointment` · accepts `Idempotency-Key` |
 | POST | `/appointments/:id/deposit/refund` | `{ amount?, method?, reason? }` | `Appointment` · accepts `Idempotency-Key` |
 | POST | `/appointments/:id/deposit/retain` | `{ amount?, reason? }` | `Appointment` · accepts `Idempotency-Key` |
@@ -416,7 +491,8 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
   `409 schedule_conflict` (message names the conflicting client and time) unless `force: true`.
 - The studio's working hours (`StudioSettings.workdayStart` / `workdayEnd`) do not restrict `startsAt` / `endsAt`:
   appointments before opening or after closing are accepted.
-- `complete`: sets `status = completed`, `completedAt = now`; writes `usage` movements for `consumables`; when
+- `complete`: sets `status = completed`, `completedAt = now`; writes `usage` movements for `consumables` (the only
+  size of the product unless `variantId` is given; a product with several sizes needs `variantId`, `400` otherwise); when
   `sendAftercare` and the client has Telegram linked and `botEnabled`, schedules the aftercare template steps
   (template = `aftercareTemplateId` ?? the template of the first line whose service has one). Cancels pending
   reminders of this appointment.
@@ -473,14 +549,17 @@ the background.
 `HistoryEntry` — one thing done for or sold to a client:
 ```json
 { "id": "as10", "kind": "service", "date": "...", "name": "Соски — Два",
-  "serviceId": 3, "productId": null, "quantity": 1, "price": 4000, "total": 4000,
+  "serviceId": 3, "productId": null, "variantId": null, "variantName": null,
+  "quantity": 1, "price": 4000, "total": 4000,
   "client": { ClientRef } | null, "employee": { EmployeeRef } | null,
   "appointmentId": 12, "saleId": 40, "saleNumber": 17, "refunded": false }
 ```
 - Services come from **completed** appointments: one entry per service line (`id` `as<line id>`), or one entry named
   after the appointment `title` («Процедура» when empty, `id` `at<appointment id>`, price = appointment price) when
   the appointment has no lines. `date` = `startsAt`, `employee` = master, `saleId`/`saleNumber` = the paying sale.
-- Products come from sale items of type `product` (`id` `si<item id>`, `date` = sale time, `employee` = seller).
+- Products come from sale items of type `product` (`id` `si<item id>`, `date` = sale time, `employee` = seller);
+  `variantId` / `variantName` — the size sold (as in the sale item; `null` for services). `?variantId=` on
+  `GET /products/:id/history` keeps one size.
   Service items of a sale count only when the sale is not linked to an appointment (otherwise the appointment
   already lists them).
 - `refunded`: the sale (of the item, or the one that paid for the appointment) was refunded.
@@ -498,11 +577,15 @@ the background.
 `POST /sales` body:
 ```json
 { "clientId": 1, "appointmentId": 4,
-  "items": [ { "type": "product", "productId": 1, "quantity": 1, "price": 1500 },
+  "items": [ { "type": "product", "productId": 1, "variantId": 5, "quantity": 1, "price": 1500 },
              { "type": "service", "serviceId": 3, "name": "Прокол мочки", "quantity": 1, "price": 2500 } ],
   "discount": 500, "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 2000 }, "note": null }
 ```
-- `price` per item is the unit price actually charged (defaults to catalog price if omitted).
+- `price` per item is the unit price actually charged (defaults to the catalog price if omitted: for a product, the
+  size's price ?? the product's).
+- Product items name the size in `variantId` (a current size of `productId`, `400` otherwise). Without `variantId`
+  (older builds) the product's only size is sold; a product with several sizes → `409 conflict` «У «Лабрет» несколько
+  размеров. Обновите приложение MIKAN, чтобы выбрать размер.». Consumables cannot be sold (`400`).
 - `subtotal = Σ quantity × price`; `total = subtotal − discount` (`0 ≤ discount ≤ subtotal`);
   `payments.cash + payments.card + payments.transfer + payments.qr + payments.deposit` must equal `total` (`400` otherwise).
 - `payments.deposit` — the appointment's held prepayment counted in this receipt: needs `appointmentId` (`400`
@@ -512,10 +595,12 @@ the background.
 - `payments.qr > 0` is rejected here (`400`): a sale with a QR share is created by the server through `/qr-payments`.
 - The app no longer offers card payments (cash, transfer and QR only); `payments.card` stays in the API for older
   sales and older app builds.
-- Product items decrement stock (`sale` movements); insufficient stock → `409 insufficient_stock`
-  ("Недостаточно на складе: Лабрет (осталось 0)"). Whole sale is one transaction.
+- Product items decrement the stock of their size (`sale` movements); quantities of one size are summed across lines
+  before the check; insufficient stock → `409 insufficient_stock` ("Недостаточно на складе: Лабрет — 8 мм (осталось 0)",
+  or "Лабрет (осталось 0)" for a product without sizes). Whole sale is one transaction.
 - With `appointmentId`, the appointment gets `saleId` (and is marked `completed` if not already, without aftercare).
-- Refund: marks `refunded`, returns product stock (`return` movements) when `restock`; a cash refund is attributed
+- Refund: marks `refunded`, returns product stock to the sold size (`return` movements; an archived size comes back to
+  the list) when `restock`; a cash refund is attributed
   to the currently open shift (`summary.cashRefunds`). The `payments.deposit` part is not paid out: it becomes the
   appointment's held prepayment again (`unapply`).
 
@@ -530,8 +615,8 @@ the background.
 `GET /qr-payments/:id` and `POST /qr-payments/:id/cancel` work for prepayment codes too (`kind: "deposit"`, see
 Prepayments); `POST /qr-payments` creates `sale` codes only.
 
-Flow: the app sends the cart; the server validates it like a sale (nothing is written, stock is checked), registers a
-one-off SBP QR for `payments.qr` (valid 10 min) and stores the cart with its prices fixed. The app shows `payload` as
+Flow: the app sends the cart; the server validates it like a sale (nothing is written, stock of every size is checked),
+registers a one-off SBP QR for `payments.qr` (valid 10 min) and stores the cart with its sizes and prices fixed. The app shows `payload` as
 a QR and polls `GET /qr-payments/:id` every ~2 s. When the bank reports the money, the server creates the sale from the
 stored cart in one transaction (with the cash/card/transfer parts as sent) and returns it in `sale`; one paid code
 always yields at most one sale. A background job checks watched codes every 15 s, so a payment is recorded even if the
@@ -561,7 +646,9 @@ sale refunded).
                 "applied": 10000, "refunded": 1000, "retained": 2000, "held": 7000 },
   "servicesRevenue": 90000, "productsRevenue": 30000,
   "byDay": [ { "date": "2026-10-01", "revenue": 8000, "salesCount": 3 } ],
-  "topProducts": [ { "productId": 1, "name": "Лабрет", "quantity": 7, "revenue": 10500 } ],
+  "topProducts": [ { "productId": 1, "name": "Лабрет", "quantity": 7, "revenue": 10500,
+                     "variants": [ { "variantId": 5, "name": "8 мм", "quantity": 4, "revenue": 6000 },
+                                   { "variantId": 1, "name": "6 мм", "quantity": 3, "revenue": 4500 } ] } ],
   "topServices": [ { "serviceId": 3, "name": "Прокол мочки", "quantity": 12, "revenue": 30000 } ],
   "byMaster": [ { "employee": { EmployeeRef }, "appointmentsCompleted": 10, "revenue": 50000 } ],
   "newClients": 14, "appointmentsCompleted": 35, "noShows": 2 }
@@ -572,7 +659,8 @@ Revenue excludes refunded sales. `byDay` uses the studio timezone and lists ever
 sale refunds), `refunded`, `retained` (kept after cancellations / no-shows; not part of `revenue`); `held` — the total
 held for appointments at the end of the period. `held(start) + received − applied − refunded − retained = held(end)`.
 `byMaster.revenue` = sales linked to that master's appointments. Item-level revenue is split proportionally to the
-sale discount (rounded to whole rubles).
+sale discount (rounded to whole rubles). `topProducts` are grouped by product (`name` — its current name); `variants`
+splits each by size (current size name, `""` for a product without sizes), sorted like the top itself.
 
 ### Bot (Telegram + AI)
 | Method | Path | Body | Response |
@@ -592,6 +680,11 @@ sale discount (rounded to whole rubles).
 | POST | `/knowledge` | `{ title, content, active?, sort? }` | `KnowledgeEntry` |
 | PATCH | `/knowledge/:id` | any of the above | `KnowledgeEntry` |
 | DELETE | `/knowledge/:id` | — | `204` |
+
+Jewelry in the bot: the AI context lists active jewelry that has at least one size in stock, with its category,
+material, thread, thickness, colour, stone, suitable services, price (per size when sizes differ in price) and the
+names of the sizes in stock — never quantities. `show_products` sends the cover photo with the name, material,
+thickness, price and the sizes in stock.
 
 ### Settings
 | Method | Path | Body | Response |

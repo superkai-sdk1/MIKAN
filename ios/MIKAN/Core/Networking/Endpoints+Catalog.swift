@@ -84,16 +84,34 @@ extension APIClient {
         try await request(.post, "products/\(productId)/movements", body: body, idempotencyKey: idempotencyKey)
     }
 
-    func productMovements(productId: Int, limit: Int = 50, offset: Int = 0) async throws -> ItemsResponse<StockMovement> {
+    /// One operation over several sizes in one transaction.
+    func addMovements(productId: Int, _ body: StockBatchBody, idempotencyKey: UUID) async throws -> BatchMovementResult {
+        try await request(.post, "products/\(productId)/movements/batch", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// Movements of the product, or of one size.
+    func productMovements(
+        productId: Int,
+        variantId: Int? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> ItemsResponse<StockMovement> {
         try await request(.get, "products/\(productId)/movements", query: queryItems([
+            "variantId": variantId.map(String.init),
             "limit": String(limit),
             "offset": String(offset),
         ]))
     }
 
-    /// Who bought this product and when, newest first.
-    func productHistory(id: Int, limit: Int = 50, offset: Int = 0) async throws -> ItemsResponse<HistoryEntry> {
+    /// Who bought this product (or one size of it) and when, newest first.
+    func productHistory(
+        id: Int,
+        variantId: Int? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> ItemsResponse<HistoryEntry> {
         try await request(.get, "products/\(id)/history", query: queryItems([
+            "variantId": variantId.map(String.init),
             "limit": String(limit),
             "offset": String(offset),
         ]))

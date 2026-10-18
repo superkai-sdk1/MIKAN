@@ -43,7 +43,12 @@ nonisolated struct SaleItem: Codable, Hashable, Identifiable, Sendable {
     let id: Int
     let type: SaleItemType
     let productId: Int?
+    /// The size sold (product items).
+    var variantId: Int? = nil
+    /// Name of that size at the moment of sale; `nil` for services, a product without sizes and older sales.
+    var variantName: String? = nil
     let serviceId: Int?
+    /// «Лабрет — 8 мм» for a product sold in a size.
     let name: String
     let quantity: Int
     let price: Int

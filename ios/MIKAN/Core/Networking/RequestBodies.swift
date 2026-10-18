@@ -23,6 +23,9 @@ nonisolated struct Nullable<Value: Encodable & Sendable>: Encodable, Sendable, E
     }
 }
 
+nonisolated extension Nullable: Equatable where Value: Equatable {}
+nonisolated extension Nullable: Hashable where Value: Hashable {}
+
 nonisolated struct LoginBody: Encodable, Sendable {
     let login: String
     let password: String
@@ -86,21 +89,39 @@ nonisolated struct AftercareTemplateBody: Encodable, Sendable {
     var steps: [AftercareStep]
 }
 
-nonisolated struct ProductBody: Encodable, Sendable {
+/// `POST /products` and `PATCH /products/:id`. `variants` replaces the sizes: an item with `id` updates that size,
+/// one without adds a size, and a size left out is removed (see docs/API.md).
+nonisolated struct ProductBody: Encodable, Hashable, Sendable {
     var kind: ProductKind
     var name: String
     var sku: Nullable<String>
     var category: Nullable<String>
     var material: Nullable<String>
-    var size: Nullable<String>
+    var threadType: Nullable<ThreadType>
+    var thicknessMm: Nullable<Double>
+    var color: Nullable<String>
+    var stone: Nullable<String>
+    var supplier: Nullable<String>
     var description: Nullable<String>
     var price: Int
     var cost: Nullable<Int>
-    var minQuantity: Int
     var unit: String
-    var photoUrl: Nullable<String>
+    var photos: [String]
+    var serviceIds: [Int]
     var active: Bool
-    /// Create only; omitted on PATCH.
+    var variants: [ProductVariantBody]
+}
+
+nonisolated struct ProductVariantBody: Encodable, Hashable, Sendable {
+    /// `nil` adds a new size.
+    var id: Int?
+    var name: String
+    /// Own article / price / cost; `nil` = the product's.
+    var sku: Nullable<String>
+    var price: Nullable<Int>
+    var cost: Nullable<Int>
+    var minQuantity: Int
+    /// New sizes only: recorded as a receipt «Начальный остаток».
     var initialQuantity: Int?
 }
 
@@ -108,6 +129,21 @@ nonisolated struct MovementBody: Encodable, Sendable {
     let type: MovementType
     let quantity: Int
     var note: Nullable<String>
+    /// Required by the server for a product with several sizes.
+    var variantId: Int? = nil
+}
+
+/// `POST /products/:id/movements/batch` — one operation over several sizes (a delivery, a stock count).
+nonisolated struct StockBatchBody: Encodable, Hashable, Sendable {
+    let type: MovementType
+    var note: String?
+    let lines: [StockLineBody]
+}
+
+/// `quantity`: added / removed amount, or the counted stock for `adjustment`.
+nonisolated struct StockLineBody: Encodable, Hashable, Sendable {
+    let variantId: Int
+    let quantity: Int
 }
 
 /// A booked service line; variants are resolved by the app (name/price/duration of the variant).
@@ -186,6 +222,8 @@ nonisolated struct StatusBody<Status: Encodable & Sendable>: Encodable, Sendable
 nonisolated struct ConsumableUse: Encodable, Hashable, Sendable {
     let productId: Int
     let quantity: Int
+    /// Needed only for a product with several sizes (consumables have one).
+    var variantId: Int? = nil
 }
 
 nonisolated struct CompleteBody: Encodable, Sendable {
@@ -201,6 +239,8 @@ nonisolated struct SaleItemBody: Encodable, Hashable, Sendable {
     let name: String?
     let quantity: Int
     let price: Int
+    /// The size sold; required by the server for a product with several sizes.
+    var variantId: Int? = nil
 }
 
 nonisolated struct SaleBody: Encodable, Sendable {

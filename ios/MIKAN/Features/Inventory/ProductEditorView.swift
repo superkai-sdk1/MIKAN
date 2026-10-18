@@ -203,15 +203,27 @@ struct ProductEditorView: View {
             sku: Nullable(sku.nonEmpty),
             category: Nullable(category.nonEmpty),
             material: Nullable(material.nonEmpty),
-            size: Nullable(size.nonEmpty),
+            threadType: Nullable(product?.threadType),
+            thicknessMm: Nullable(product?.thicknessMm),
+            color: Nullable(product?.color),
+            stone: Nullable(product?.stone),
+            supplier: Nullable(product?.supplier),
             description: Nullable(description.nonEmpty),
             price: kind == .jewelry ? price : (product?.price ?? 0),
             cost: Nullable(cost),
-            minQuantity: max(0, minQuantity),
             unit: unit.trimmed,
-            photoUrl: Nullable(photoUrl),
+            photos: photoUrl.map { [$0] } ?? [],
+            serviceIds: product?.serviceIds ?? [],
             active: active,
-            initialQuantity: product == nil && initialQuantity > 0 ? initialQuantity : nil
+            variants: [ProductVariantBody(
+                id: product?.variants.first?.id,
+                name: size.trimmed,
+                sku: nil,
+                price: nil,
+                cost: nil,
+                minQuantity: max(0, minQuantity),
+                initialQuantity: product == nil && initialQuantity > 0 ? initialQuantity : nil
+            )]
         )
         isSaving = true
         Task {

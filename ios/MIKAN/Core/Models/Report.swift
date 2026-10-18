@@ -35,8 +35,34 @@ nonisolated struct TopProduct: Codable, Hashable, Identifiable, Sendable {
     let name: String
     let quantity: Int
     let revenue: Int
+    /// Sales of the product split by size (`[]` from a server that predates sizes).
+    var variants: [TopProductVariant] = []
 
     var id: Int { productId }
+}
+
+nonisolated extension TopProduct {
+    private enum CodingKeys: String, CodingKey { case productId, name, quantity, revenue, variants }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        productId = try c.decode(Int.self, forKey: .productId)
+        name = try c.decode(String.self, forKey: .name)
+        quantity = try c.decode(Int.self, forKey: .quantity)
+        revenue = try c.decode(Int.self, forKey: .revenue)
+        variants = try c.decodeIfPresent([TopProductVariant].self, forKey: .variants) ?? []
+    }
+}
+
+/// One size of a top product: «8 мм» — 4 шт.
+nonisolated struct TopProductVariant: Codable, Hashable, Identifiable, Sendable {
+    let variantId: Int
+    /// "" for a product without sizes.
+    let name: String
+    let quantity: Int
+    let revenue: Int
+
+    var id: Int { variantId }
 }
 
 nonisolated struct TopService: Codable, Hashable, Identifiable, Sendable {

@@ -99,6 +99,9 @@ nonisolated struct HistoryEntry: Codable, Hashable, Identifiable, Sendable {
     let name: String
     let serviceId: Int?
     let productId: Int?
+    /// The size sold (product entries).
+    var variantId: Int? = nil
+    var variantName: String? = nil
     let quantity: Int
     let price: Int
     let total: Int
