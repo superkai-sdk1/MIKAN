@@ -146,6 +146,8 @@ nonisolated struct MovementBody: Encodable, Sendable {
 nonisolated struct StockBatchBody: Encodable, Hashable, Sendable {
     let type: MovementType
     var note: String?
+    /// Receipts only: what one unit cost on this delivery; becomes the new cost of what was received.
+    var unitCost: Int? = nil
     let lines: [StockLineBody]
 }
 

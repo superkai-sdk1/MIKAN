@@ -48,16 +48,24 @@ nonisolated extension MovementType {
 
 /// Texts of a stock movement row.
 nonisolated enum MovementText {
-    /// «Покупка · 3 500 ₽» for a purchase, the type's name otherwise.
-    static func title(_ movement: StockMovement) -> String {
-        guard movement.type == .purchase, let amount = movement.amount else { return movement.type.title }
-        return "\(movement.type.title) · \(Money.format(amount))"
+    /// «Покупка · 3 500 ₽», «Приход · +5 шт · 6 000 ₽» for a receipt recorded with its cost, the type's name otherwise.
+    static func title(_ movement: StockMovement, unit: String = ProductLimits.defaultUnit) -> String {
+        guard let amount = movement.amount else { return movement.type.title }
+        switch movement.type {
+        case .purchase:
+            return "\(movement.type.title) · \(Money.format(amount))"
+        case .receipt:
+            let quantity = InventoryText.quantity(movement.delta, unit: unit)
+            return "\(movement.type.title) · +\(quantity) · \(Money.format(amount))"
+        default:
+            return movement.type.title
+        }
     }
 
     /// «15 окт., 14:00 · Анна»; the list of all products starts with the operation: «Покупка · 3 500 ₽ · …».
-    static func subtitle(_ movement: StockMovement, showsProduct: Bool) -> String {
+    static func subtitle(_ movement: StockMovement, showsProduct: Bool, unit: String = ProductLimits.defaultUnit) -> String {
         var parts: [String] = []
-        if showsProduct { parts.append(title(movement)) }
+        if showsProduct { parts.append(title(movement, unit: unit)) }
         parts.append(DateText.dateTime(movement.createdAt))
         if let employee = movement.employee { parts.append(employee.name) }
         return parts.joined(separator: " · ")
@@ -70,6 +78,8 @@ nonisolated enum MovementText {
 struct MovementRow: View {
     let movement: StockMovement
     var showsProduct = false
+    /// The product's unit, for a receipt with its cost («+5 шт»).
+    var unit = ProductLimits.defaultUnit
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -81,13 +91,13 @@ struct MovementRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(showsProduct ? movement.displayName : MovementText.title(movement))
+                    Text(showsProduct ? movement.displayName : MovementText.title(movement, unit: unit))
                         .font(.subheadline.weight(.semibold))
                     if !showsProduct, let size = movement.variantName.nonEmpty {
                         StatusBadge(text: size, color: .secondary)
                     }
                 }
-                Text(MovementText.subtitle(movement, showsProduct: showsProduct))
+                Text(MovementText.subtitle(movement, showsProduct: showsProduct, unit: unit))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if let note = movement.note.nonEmpty {

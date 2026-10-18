@@ -80,6 +80,16 @@ extension APIClient {
         try await request(.patch, "products/\(id)", body: body)
     }
 
+    /// Deletes a product without history and archives one with it; `writeOff` first writes the stock left off
+    /// (without it the server refuses while stock is left). A product that is already gone (`404`) counts as deleted.
+    func deleteProduct(id: Int, writeOff: Bool) async throws -> ProductDeletionResult {
+        do {
+            return try await request(.delete, "products/\(id)", query: queryItems(["writeOff": writeOff ? "true" : nil]))
+        } catch let error as APIError where error.status == 404 {
+            return ProductDeletionResult(deleted: true)
+        }
+    }
+
     func addMovement(productId: Int, _ body: MovementBody, idempotencyKey: UUID) async throws -> MovementResult {
         try await request(.post, "products/\(productId)/movements", body: body, idempotencyKey: idempotencyKey)
     }

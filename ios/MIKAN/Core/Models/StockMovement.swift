@@ -18,6 +18,11 @@ nonisolated enum MovementType: String, Codable, CaseIterable, Identifiable, Send
     static let manual: [MovementType] = [.receipt, .writeoff, .usage, .adjustment]
     /// Types the movements list filters by.
     static let listed: [MovementType] = allCases.filter { $0 != .other }
+
+    /// The manual operations of a kind: «Расход» (used in procedures) is for consumables only.
+    static func manual(for kind: ProductKind) -> [MovementType] {
+        kind == .consumable ? manual : manual.filter { $0 != .usage }
+    }
 }
 
 nonisolated extension MovementType {
@@ -45,7 +50,7 @@ nonisolated struct StockMovement: Codable, Hashable, Identifiable, Sendable {
     let appointmentId: Int?
     /// The stock count an adjustment came from.
     var revisionId: Int?
-    /// Rubles paid; set only on a `purchase`.
+    /// Rubles paid: on a `purchase`, and on a `receipt` recorded with its unit cost (`unitCost × quantity`).
     var amount: Int?
     let employee: EmployeeRef?
     let createdAt: Date

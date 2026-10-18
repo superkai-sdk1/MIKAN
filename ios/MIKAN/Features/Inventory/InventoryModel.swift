@@ -81,6 +81,13 @@ final class InventoryModel {
         remote(for: product.kind).upsert(product)
     }
 
+    /// Drops a deleted product from every list.
+    func remove(productId: Int) {
+        for kind in ProductKind.allCases {
+            remote(for: kind).remove(id: productId)
+        }
+    }
+
     /// Marks the availability of a presence consumable at once and sends it; restores the old status when it fails.
     /// Returns the error message to show.
     func setPresence(_ status: PresenceStatus, of product: Product, api: APIClient) async -> String? {

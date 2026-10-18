@@ -83,6 +83,7 @@
 		3F88109173635F879778F2FE /* NumberField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D0D86DB71C6C4DF9D782E4 /* NumberField.swift */; };
 		40AB2715781E2B99D8AC97A8 /* AnalyticsMarginCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A4F86AE8BD474A35F37BEA /* AnalyticsMarginCard.swift */; };
 		411B8490148FEC83DB1715DB /* ImagePreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E91FD698B24533B48C28D6 /* ImagePreparer.swift */; };
+		437E486B9487166876F3EE2C /* ProductDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F894AFCBA2A4B00B4177A628 /* ProductDeletion.swift */; };
 		438FFAEEF0AD65857D9F894C /* ServiceVariantsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85AE9E0B9D1E4C1F94223B6D /* ServiceVariantsEditor.swift */; };
 		43957E6320D0B8B0263D9022 /* ReceiptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD0B1FC77354B72018CA391 /* ReceiptView.swift */; };
 		43DC5E5324D86C2CCBBC31F0 /* ProductEditorConsumableSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058272A2F11924DABC95D7A3 /* ProductEditorConsumableSections.swift */; };
@@ -167,6 +168,7 @@
 		9C2CB053FAC849F1689C4E7F /* CategoryField.swift in Sources */ = {isa = PBXBuildFile; fileRef = C12B558C9B66B049B443B932 /* CategoryField.swift */; };
 		9D5F4A01038214199B77C9DA /* ServicePickingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7376C571BFA57295D5F70F2 /* ServicePickingTests.swift */; };
 		9EC1839766A47B8D7F4E1B48 /* CategoryMergeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E94142BDBD36F389B14D900 /* CategoryMergeSheet.swift */; };
+		9F61B2B5B0BC93839DEB3AF7 /* ProductDeleteAndReceiptCostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CCEC3631D88448BD8942F04 /* ProductDeleteAndReceiptCostTests.swift */; };
 		9F6A6EA45B5505A193BC1100 /* WarehousePreviewData.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA24C16D8565B13D0596E9D4 /* WarehousePreviewData.swift */; };
 		A07FE279730B2AB34939C82E /* StaffBinding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02D37E8DF7351A8D786FADCF /* StaffBinding.swift */; };
 		A23AECA870D9EAC00573329F /* GridScrollStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A999F395F10C25D1E24C69CF /* GridScrollStateTests.swift */; };
@@ -326,6 +328,7 @@
 		2AD0B1FC77354B72018CA391 /* ReceiptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptView.swift; sourceTree = "<group>"; };
 		2B841244FD91AED12751B800 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		2CAE2DA0C18EE332E5CC7165 /* IdempotencyKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdempotencyKey.swift; sourceTree = "<group>"; };
+		2CCEC3631D88448BD8942F04 /* ProductDeleteAndReceiptCostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDeleteAndReceiptCostTests.swift; sourceTree = "<group>"; };
 		2D6B6F6D81B8130FE024CFF5 /* VisitCheckout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitCheckout.swift; sourceTree = "<group>"; };
 		2E3883445BA4BD7D21F5AA4D /* CheckoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckoutView.swift; sourceTree = "<group>"; };
 		2EF2B69CC60FFD9AA74F14C2 /* StockBatchDraftTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockBatchDraftTests.swift; sourceTree = "<group>"; };
@@ -526,6 +529,7 @@
 		F71781FD96A7025755A6A201 /* OpenReceiptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenReceiptTests.swift; sourceTree = "<group>"; };
 		F7A13FB96BAE3351E6897984 /* CartStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CartStoreTests.swift; sourceTree = "<group>"; };
 		F7B0D515FC6B9BBDC467B539 /* OpenReceiptsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenReceiptsStore.swift; sourceTree = "<group>"; };
+		F894AFCBA2A4B00B4177A628 /* ProductDeletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDeletion.swift; sourceTree = "<group>"; };
 		F8ADD0517AA589E9C35201E7 /* ProductCardText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductCardText.swift; sourceTree = "<group>"; };
 		F8BF35C689CACB24321FB06C /* AnalyticsPeopleCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsPeopleCards.swift; sourceTree = "<group>"; };
 		F985F915493E3CA5811D421A /* ServiceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceDetailView.swift; sourceTree = "<group>"; };
@@ -722,6 +726,7 @@
 				4CA163F30E275FD613FC0B67 /* POSGoodsCatalogTests.swift */,
 				3A913C12ADC71D88CFD27AF8 /* POSProductSizesTests.swift */,
 				3C03942C5C2E9585A2FA0805 /* POSReceiptTests.swift */,
+				2CCEC3631D88448BD8942F04 /* ProductDeleteAndReceiptCostTests.swift */,
 				52BDABF882425AA236F09E16 /* ProductDraftKindsTests.swift */,
 				788665723EFAF7B9D175A693 /* ProductDraftTests.swift */,
 				8BCBB93C09D6C60A78BA28E6 /* ProductVariantsTests.swift */,
@@ -861,6 +866,7 @@
 				779DD3D5E35FF4CAB90448CC /* MovementType+UI.swift */,
 				EB2F44CCB229F6564B8787B9 /* PresenceStatus+UI.swift */,
 				F8ADD0517AA589E9C35201E7 /* ProductCardText.swift */,
+				F894AFCBA2A4B00B4177A628 /* ProductDeletion.swift */,
 				6CD067D1BCF2FF1C579248D4 /* ProductDetailCards.swift */,
 				556D6804AFC3ADB8DE91ED99 /* ProductDetailView.swift */,
 				6BE61DAC0044A54F41AFD1AB /* ProductDraft.swift */,
@@ -1303,6 +1309,7 @@
 				0382B40D0F1EBA3907FAFAF0 /* PreviewData.swift in Sources */,
 				34535FA264F065C626178A6A /* Product.swift in Sources */,
 				F34CD475EDA3E05E96CACE0A /* ProductCardText.swift in Sources */,
+				437E486B9487166876F3EE2C /* ProductDeletion.swift in Sources */,
 				C5FBA0266ABC6EDEEE3481FA /* ProductDetailCards.swift in Sources */,
 				1C4D3506BBE40E0FB04A612B /* ProductDetailView.swift in Sources */,
 				47221EFF9789356FBACA9CFD /* ProductDraft.swift in Sources */,
@@ -1424,6 +1431,7 @@
 				B9713C72CACAEA8A9A0AFBB9 /* POSProductSizesTests.swift in Sources */,
 				17A8C3854DD054EF9A89058C /* POSReceiptTests.swift in Sources */,
 				B093AFBDD6C9987914D5D4A8 /* PaymentSplitTests.swift in Sources */,
+				9F61B2B5B0BC93839DEB3AF7 /* ProductDeleteAndReceiptCostTests.swift in Sources */,
 				309D7E1549E83689CD020548 /* ProductDraftKindsTests.swift in Sources */,
 				BE335BFC8B7912852D4AD0BC /* ProductDraftTests.swift in Sources */,
 				4BDC72B1F099571DC1CA2E64 /* ProductVariantsTests.swift in Sources */,

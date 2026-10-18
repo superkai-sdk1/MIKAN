@@ -376,3 +376,27 @@ nonisolated enum Gauge {
         return (value * 100).rounded() / 100
     }
 }
+
+/// `DELETE /products/:id`: deleted for good (no history), or archived — hidden everywhere, with sales and movements
+/// still naming it.
+nonisolated struct ProductDeletionResult: Decodable, Hashable, Sendable {
+    var deleted = false
+    var archived = false
+    /// Units written off first (`?writeOff=true`).
+    var writtenOff = 0
+
+    private enum CodingKeys: String, CodingKey { case deleted, archived, writtenOff }
+
+    init(deleted: Bool = false, archived: Bool = false, writtenOff: Int = 0) {
+        self.deleted = deleted
+        self.archived = archived
+        self.writtenOff = writtenOff
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        deleted = try c.decode(.deleted, or: false)
+        archived = try c.decode(.archived, or: false)
+        writtenOff = try c.decode(.writtenOff, or: 0)
+    }
+}

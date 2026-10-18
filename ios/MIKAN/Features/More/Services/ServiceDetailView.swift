@@ -64,7 +64,15 @@ struct ServiceDetailView: View {
         }
         .task(id: linkedIds) { await loadStockIfNeeded() }
         .navigationDestination(item: $openedProduct) { product in
-            ProductDetailView(product: product, categories: jewelryCategories) { updated in
+            ProductDetailView(
+                product: product,
+                categories: jewelryCategories,
+                onDelete: { id in
+                    stock.remove(id: id)
+                    // The server unlinks a deleted piece from its services.
+                    Task { await refresh() }
+                }
+            ) { updated in
                 applyProduct(updated)
             }
         }
