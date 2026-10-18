@@ -25,8 +25,8 @@ If the implementation must deviate, update this file in the same change.
   image generation failed), `internal` (500).
   `message` is always human-readable Russian; the app shows it as is.
 - All employees have identical permissions.
-- Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /cash/operations`, `POST /products/:id/movements`,
-  `POST /products/:id/movements/batch`
+- Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /receipts`, `POST /cash/operations`,
+  `POST /products/:id/movements`, `POST /products/:id/movements/batch`
   and the prepayment writes `POST /appointments/:id/deposit`, `…/deposit/refund`, `…/deposit/retain` accept an optional `Idempotency-Key: <UUID>` header. The app generates one key per user action and resends the
   same key when it retries that action (timeout, dropped connection, repeated tap after an unclear outcome).
   - The first request with a key runs normally; its successful response is stored for **24 h**, scoped to the
@@ -229,9 +229,10 @@ or `null` for a mixed count.
   "status": "scheduled", "price": 8000, "notes": "...",
   "deposit": 2000, "depositRequired": 2000, "depositStatus": "paid",
   "depositOperations": [ DepositOperation ], "depositLink": QrPayment | null,
-  "saleId": null, "completedAt": null, "createdAt": "...", "updatedAt": "..." }
+  "saleId": null, "receiptId": null, "completedAt": null, "createdAt": "...", "updatedAt": "..." }
 ```
 `status`: `scheduled` | `confirmed` | `completed` | `cancelled` | `no_show`. `saleId` — the sale that paid for it.
+`receiptId` — its open receipt in the POS (`OpenReceipt`, the visit has started), `null` when none.
 Visits carried over from YCLIENTS were paid in cash at the studio: the server maintenance script
 `pay-imported-appointments` (dry run by default; `--apply`) records each past unpaid imported visit as a completed cash
 sale dated at the end of the visit (note «Перенесено из YCLIENTS», no cash shift) and completes the visit.
@@ -273,6 +274,27 @@ sale dated at the end of the visit (note «Перенесено из YCLIENTS»,
 - `payments.qr` — paid by an SBP QR code (Tochka); only set on sales created from a confirmed `QrPayment`.
 - `payments.deposit` — part of the total covered by the appointment's prepayment (money received earlier and
   already counted when received, so it is not cash in the drawer now). `cash + card + transfer + qr + deposit = total`.
+
+### OpenReceipt (открытый чек)
+```json
+{ "id": 7, "appointment": Appointment | null, "client": { ClientRef } | null,
+  "items": [ { "type": "product", "productId": 1, "variantId": 5, "variantName": "8 мм", "productKind": "jewelry",
+               "serviceId": null, "name": "Лабрет — 8 мм", "quantity": 1, "price": 1500, "total": 1500, "stock": 3 },
+             { "type": "service", "productId": null, "variantId": null, "variantName": null, "productKind": null,
+               "serviceId": 3, "name": "Прокол мочки", "quantity": 1, "price": 2500, "total": 2500, "stock": null } ],
+  "subtotal": 4000, "discount": 0, "total": 4000, "itemCount": 2, "note": null,
+  "openedBy": { EmployeeRef }, "createdAt": "...", "updatedAt": "..." }
+```
+- A receipt being put together before payment. Nothing is sold yet: no stock moves, a prepayment stays held. Several
+  receipts can be open at once (one per visit in progress plus receipts without an appointment), and every device sees
+  the same list. An appointment has at most one open receipt.
+- `items` — the lines in order, as the app saved them. Product lines: `name` = `"<product> — <size>"` from the current
+  catalog (the saved name when the product is gone), `variantName` — the size's name (`null` without sizes),
+  `productKind` — `jewelry` | `goods`, `stock` — the size's current quantity (`null` when the size is gone).
+  Service lines: `name` as saved, `productKind`/`stock` `null`. `price` — the unit price saved for the line.
+- `subtotal = Σ quantity × price`, `total = subtotal − discount`, `itemCount = Σ quantity`.
+- `appointment` — the whole appointment it pays for (status, held prepayment), `null` without one.
+- `openedBy` — the employee who opened it.
 
 ### DepositOperation (prepayment ledger entry)
 ```json
@@ -677,6 +699,37 @@ the background.
 - Used by `GET /clients/:id/history` (`items`, all entries), `GET /services/:id/history` and
   `GET /products/:id/history` (paginated, default limit 50, max 200).
 
+### Open receipts (POS)
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/receipts` | — | `{ items: [OpenReceipt] }` oldest first |
+| GET | `/receipts/:id` | — | `OpenReceipt` · `404` «Чек уже оплачен или удалён» |
+| POST | `/receipts` | `{ appointmentId?, clientId?, items?, discount?, note? }` | `OpenReceipt` · accepts `Idempotency-Key` |
+| PUT | `/receipts/:id` | `{ appointmentId?, clientId?, items, discount?, note? }` | `OpenReceipt` |
+| DELETE | `/receipts/:id` | — | `{ "ok": true }` · `404` when already gone |
+
+- `items`: `[{ type, productId?, variantId?, serviceId?, name?, quantity, price? }]` (≤ 100) — the shape of sale items.
+  Product lines need an existing sellable product (`400` for a consumable or a missing one) and one of its current
+  sizes (`variantId`; omitted → its only size; several sizes → `400` «Выберите размер «Лабрет»»). Service lines need
+  `name` unless `serviceId` is given. `price` defaults to the catalog price (the size's ?? the product's, the service's).
+  Stock is not checked here: the sale checks it.
+- `POST /receipts` with `appointmentId` — «Начать визит» (the appointment moves to the POS). If the appointment already
+  has an open receipt, that receipt is returned unchanged (two devices starting one visit share it). Otherwise a new
+  one: `clientId` defaults to the appointment's client; `items` omitted → the appointment's service lines (one per
+  booked line when their prices add up to the appointment price, otherwise one line at the appointment price named
+  like the appointment: its services, else `title`, else «Услуга»). The appointment must be unpaid and `scheduled` /
+  `confirmed` / `completed`: `409` «Запись уже оплачена (чек №17)» / «Запись отменена — верните её в расписание, чтобы
+  открыть чек». Without `appointmentId` — a receipt with what was sent (empty is fine).
+- `PUT /receipts/:id` replaces the whole receipt (the app sends all of it; omitted `appointmentId`/`clientId`/`note`
+  = none, `discount` = 0). Linking it to an appointment that has another open receipt → `409`; `0 ≤ discount ≤
+  subtotal` (`400`).
+- `DELETE /receipts/:id` removes the open receipt and nothing else: no stock moves, a prepayment stays held, the
+  appointment keeps its status and is back among the unpaid ones (`receiptId: null`).
+- Paying: `POST /sales` and `POST /qr-payments` take an optional `receiptId`. The sale deletes that receipt (if it
+  still exists) in its own transaction, and also the open receipt of the sale's `appointmentId` — so sales from older
+  builds and QR payments confirmed later close it too.
+- Cancelling an appointment or marking it `no_show` deletes its open receipt.
+
 ### Sales (POS)
 | Method | Path | Body | Response |
 |---|---|---|---|
@@ -690,8 +743,10 @@ the background.
 { "clientId": 1, "appointmentId": 4,
   "items": [ { "type": "product", "productId": 1, "variantId": 5, "quantity": 1, "price": 1500 },
              { "type": "service", "serviceId": 3, "name": "Прокол мочки", "quantity": 1, "price": 2500 } ],
-  "discount": 500, "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 2000 }, "note": null }
+  "discount": 500, "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 2000 }, "note": null,
+  "receiptId": 7 }
 ```
+- `receiptId` — the open receipt being paid (optional): deleted together with the sale (see «Open receipts»).
 - `price` per item is the unit price actually charged (defaults to the catalog price if omitted: for a product, the
   size's price ?? the product's).
 - Product items name the size in `variantId` (a current size of `productId`, `400` otherwise). Without `variantId`
