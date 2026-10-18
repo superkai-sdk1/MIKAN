@@ -111,3 +111,9 @@ export function formatTimeOfDay(minutes: number): string {
 export function localHour(ms: number, tz: string): number {
   return DateTime.fromMillis(ms, { zone: tz }).hour;
 }
+
+/** ISO weekday (1 = Monday … 7 = Sunday) and hour of day (0–23) of an instant in the studio timezone. */
+export function localWeekdayHour(ms: number, tz: string): { weekday: number; hour: number } {
+  const dt = DateTime.fromMillis(ms, { zone: tz });
+  return { weekday: dt.weekday, hour: dt.hour };
+}
