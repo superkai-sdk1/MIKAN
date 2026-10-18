@@ -202,7 +202,7 @@ struct POSServiceCatalogSection: View {
             ContentUnavailableView(
                 "Нет услуг",
                 systemImage: "sparkles",
-                description: Text("Добавьте услуги в разделе «Ещё» → «Услуги». Свою услугу можно добавить кнопкой «Услуга».")
+                description: Text("Добавьте услуги в разделе «Склад» → «Услуги». Свою услугу можно добавить кнопкой «Услуга».")
             )
         }
     }

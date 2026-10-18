@@ -103,7 +103,7 @@ struct ServicePickerView: View {
             ContentUnavailableView {
                 Label("Нет услуг", systemImage: "list.bullet.rectangle")
             } description: {
-                Text("Добавьте услуги в разделе «Ещё → Услуги» или впишите свою услугу для этой записи.")
+                Text("Добавьте услуги в разделе «Склад → Услуги» или впишите свою услугу для этой записи.")
             } actions: {
                 Button("Своя услуга") { showsCustom = true }
                     .buttonStyle(.glassProminent)
