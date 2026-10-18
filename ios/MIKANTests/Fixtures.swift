@@ -185,6 +185,13 @@ enum Fixtures {
       "lastMessage": \#(botMessage), "updatedAt": "<T>" }
     """#
 
+    /// A chat whose shared contact matched an employee's phone.
+    static let staffBotChat = #"""
+    { "chatId": 987654321, "client": null, "telegramName": "Аня", "username": "anna_mikan",
+      "aiPaused": false, "needsAttention": false, "unreadCount": 0,
+      "lastMessage": null, "updatedAt": "<T>", "employee": \#(employeeRef) }
+    """#
+
     static let scheduledMessage = #"""
     { "id": 1, "chatId": 123456789, "client": \#(clientRef), "appointmentId": 4,
       "kind": "aftercare", "sendAt": "<T>", "text": "Памятка",
@@ -211,6 +218,13 @@ enum Fixtures {
     { "enabled": true, "aiEnabled": true, "greeting": "Привет", "extraInstructions": "",
       "aftercareHour": 12, "remindersEnabled": true, "reminderHoursBefore": 24,
       "botUsername": "mikan_studio_bot", "staffChatBound": false, "aiConfigured": true }
+    """#
+
+    /// Several reminders: a day and two hours before (`reminderHoursBefore` = the first one, for older builds).
+    static let botSettingsWithOffsets = #"""
+    { "enabled": true, "aiEnabled": true, "greeting": "Привет", "extraInstructions": "",
+      "aftercareHour": 12, "remindersEnabled": true, "reminderOffsets": [120, 1440], "reminderHoursBefore": 24,
+      "botUsername": "mikan_studio_bot", "staffChatBound": true, "aiConfigured": true }
     """#
 
     static let badges = #"{ "unreadChats": 2, "needsAttention": 1, "newBookingRequests": 1, "lowStock": 3 }"#

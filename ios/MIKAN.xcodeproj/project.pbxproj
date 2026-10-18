@@ -22,6 +22,7 @@
 		10044890EB931EAF2455773F /* CompleteAppointmentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D63098527662C1B7F84BE4C0 /* CompleteAppointmentSheet.swift */; };
 		12CC415E32AA59C1ACDBFBDD /* Endpoints+Account.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B407182EA230057D3246DD8 /* Endpoints+Account.swift */; };
 		130A284AA536DBEEB8BAE088 /* MIKANApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803FFBD1E4E7CD6D3022693C /* MIKANApp.swift */; };
+		16D9328E700AC9DD46AA84DF /* ChatFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBC54B6FC31C6D15C3872B61 /* ChatFilterTests.swift */; };
 		16F7144172F600798D583F12 /* CartStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A13FB96BAE3351E6897984 /* CartStoreTests.swift */; };
 		17A8C3854DD054EF9A89058C /* POSReceiptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C03942C5C2E9585A2FA0805 /* POSReceiptTests.swift */; };
 		17D74E96136782BD59C21042 /* DepositCollectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F2C8181B94F86AF2F921292 /* DepositCollectView.swift */; };
@@ -33,6 +34,7 @@
 		1C4D3506BBE40E0FB04A612B /* ProductDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556D6804AFC3ADB8DE91ED99 /* ProductDetailView.swift */; };
 		1CE5B7CE615922E3FC7596B5 /* ServiceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6C7D445EFDFCBBAC35DF9CE /* ServiceCatalog.swift */; };
 		1E094868B83F94329D627BA5 /* POSHubViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD95B65A438B170A097431DD /* POSHubViews.swift */; };
+		2011BFBFA8836B0EEBAB2813 /* BotSettingsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D97326206F2DAA9448358A /* BotSettingsSheets.swift */; };
 		20516AA2C00146A1E5E55135 /* ReportDepositsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9F194CA8CF164C7177B7D44 /* ReportDepositsCard.swift */; };
 		207A9304A1A46FE60F77D155 /* ServicePhotosEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB9205D26DACA02685C77FF5 /* ServicePhotosEditor.swift */; };
 		23AF225399630E407752EEF7 /* MovementSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731F62CB33852CE670C1FB05 /* MovementSheet.swift */; };
@@ -70,15 +72,18 @@
 		453735F967C6E9B29BF1BA23 /* Endpoints+Sales.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C11BFD56021E395067159D6 /* Endpoints+Sales.swift */; };
 		47221EFF9789356FBACA9CFD /* ProductDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE61DAC0044A54F41AFD1AB /* ProductDraft.swift */; };
 		47E10D72883C9854142A8DE8 /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13AA12514182D4BC3E64672 /* ServerConfig.swift */; };
+		482F8F05594144A0EDD596E6 /* CustomReminderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5C29E5B312A93D58A4E3B0 /* CustomReminderSheet.swift */; };
 		4BDC72B1F099571DC1CA2E64 /* ProductVariantsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BCBB93C09D6C60A78BA28E6 /* ProductVariantsTests.swift */; };
 		4DF6EC13DD0013B807C63201 /* ReceiptDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64DCC2C0B3204B305023435 /* ReceiptDraft.swift */; };
 		4F879CCD469D7D981B92E919 /* AnalyticsDelta.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C5E64C1AE8475764D3AC90 /* AnalyticsDelta.swift */; };
+		54C7E483ABD8E4BB265A3D4F /* ReminderScheduleSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6325FF9DBF94CA6F00D1F7 /* ReminderScheduleSection.swift */; };
 		54E2912B017EC8413443C994 /* AppointmentDepositSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8518ADBEBCB3DE6711D1773 /* AppointmentDepositSection.swift */; };
 		5788901D5668D0D4EABC964B /* CheckoutPaymentSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC5B637F6C5E7986BF29B41E /* CheckoutPaymentSection.swift */; };
 		59E9A809C7267D46938CBF1A /* ClientDetailSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A9DFE6A44B722148ECE85BE /* ClientDetailSections.swift */; };
 		5B18C45B08476AB5A1B3C63C /* ReportText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71E6101AEF4FD63E44FA408C /* ReportText.swift */; };
 		5BF5699CB6C75BEBFB4A16B6 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E3D26C91CEB9CA01D99F220 /* LoginView.swift */; };
 		5E8157AC1AA5CB87BEE47095 /* AnalyticsKPIGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1671D415138D39FBBFA62DC /* AnalyticsKPIGrid.swift */; };
+		5EED0C63895E4AF88A87BB22 /* ReminderSchedule.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB8348209E7E60DBA4ABA1E5 /* ReminderSchedule.swift */; };
 		61BEDDCD8D0E23E53A856BC5 /* BotTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2345165E9B62F652AEB72E1C /* BotTestView.swift */; };
 		63874B65F2F5776D0450BAD5 /* FormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA2E8F65999E7CF1200D3B2D /* FormattingTests.swift */; };
 		6453BF97AAB2D68744A3ACC7 /* ClientsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B6423F78A168C3D984D2CE /* ClientsListView.swift */; };
@@ -93,6 +98,7 @@
 		6CA3F0F2441E6C5EC31DCCEF /* AnalyticsStockCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A283B1FA29E6D0BACDBA9D0 /* AnalyticsStockCard.swift */; };
 		6D6B62834F270E3A0DF38E0C /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B841244FD91AED12751B800 /* Components.swift */; };
 		6F48951937F8A3B3B96BB652 /* Endpoints+Bot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D537AAA9305E264B55324418 /* Endpoints+Bot.swift */; };
+		7046838FD83C9557CF0A1A72 /* ReminderScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9831FCBCB339FBD60303DE53 /* ReminderScheduleTests.swift */; };
 		70983C886016470523335028 /* CheckoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E3883445BA4BD7D21F5AA4D /* CheckoutView.swift */; };
 		710CB90AF0E79662CEFEA4AD /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC5AAA291F84AE74E66B4E9E /* AppState.swift */; };
 		718C525417101AB850CE63A3 /* WorkdayHours.swift in Sources */ = {isa = PBXBuildFile; fileRef = 102254737D09E405F2F46BE7 /* WorkdayHours.swift */; };
@@ -143,6 +149,7 @@
 		AE6DC2EB506F3B90E50C6AB4 /* ImagePreparerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 836825577E80C15BA76F849E /* ImagePreparerTests.swift */; };
 		AFCACB65826E9C7514A15BF3 /* APIErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB11E834D5BB6685F4BD529 /* APIErrorTests.swift */; };
 		B093AFBDD6C9987914D5D4A8 /* PaymentSplitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9609329DD2C1DFAED71C56E8 /* PaymentSplitTests.swift */; };
+		B108D06B7F8571FC436EA8E6 /* ChatRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D05D63525EABBCAF19A4D272 /* ChatRow.swift */; };
 		B11522D217353A206AB1349F /* TimeGridPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D298856AF7A6E24A036D538E /* TimeGridPage.swift */; };
 		B19E22B9E33D90B17C57B4C2 /* CalendarLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294DB1E5CAD228B914C2FBBE /* CalendarLayoutTests.swift */; };
 		B20F3881AB2DE90B0CB40FE6 /* AnalyticsRevenueCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B6AE8B7714D0BD995803CB /* AnalyticsRevenueCards.swift */; };
@@ -165,10 +172,12 @@
 		C3BD68831E741882329EA5F3 /* ReceiptSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54927AFEDBC899FA87058CC /* ReceiptSections.swift */; };
 		C57525FED971738F2FA633C0 /* AnalyticsSplitCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5BEB86644F6A5B2B39AA34F /* AnalyticsSplitCards.swift */; };
 		C5FBA0266ABC6EDEEE3481FA /* ProductDetailCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD067D1BCF2FF1C579248D4 /* ProductDetailCards.swift */; };
+		C77F7C2827233510FC78C396 /* ChatFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D89B37D306D92924FFA220D /* ChatFilter.swift */; };
 		C80B650CEDE59649B5775FCD /* ServiceEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F360E92B8751EDF8CCDBEADD /* ServiceEditorView.swift */; };
 		C857763FE4BEFB5242ABF31A /* ServiceCatalogViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20023261F21C707AA26A1FCF /* ServiceCatalogViews.swift */; };
 		CA4309AD61A042F9986175FC /* ClientEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A44B87266F6A04C63E86325B /* ClientEditorView.swift */; };
 		CB45E7BDDE014DFA52072F7E /* AnalyticsCSV.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803A0C2D0D4E06FF1C69A5FC /* AnalyticsCSV.swift */; };
+		CBE00A3690728DF459EDEC64 /* StaffChatBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DAA1D7170D1E5DD97048737 /* StaffChatBanner.swift */; };
 		CC78C3B484D8893EB545372A /* AppointmentCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEB26573409FB3F7BE4BF3BB /* AppointmentCard.swift */; };
 		CD1ADF3EE05749FA1DA90A36 /* ProductPhotosEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC32F8679FDBDF4F72562AF2 /* ProductPhotosEditor.swift */; };
 		CD6D7CB8E73007927CB9606E /* KnowledgeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EDFF41841CE8541AD5B3499 /* KnowledgeListView.swift */; };
@@ -182,6 +191,7 @@
 		D846A8634D3BADD1A3932337 /* Appointment.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFA99C653DC293F7BDDCCE9F /* Appointment.swift */; };
 		D8AD7FD67CB0E364F81484ED /* CartStoreServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24305D9E1B8FFE73B14319F3 /* CartStoreServiceTests.swift */; };
 		D8EF6135E198F2157AF2F64C /* RequestBodies.swift in Sources */ = {isa = PBXBuildFile; fileRef = C59AC6879F9631BEA192EDA3 /* RequestBodies.swift */; };
+		DB74B98E9A28F07EC2426EA0 /* StaffBotSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D103F956BF7FC91300C513F8 /* StaffBotSection.swift */; };
 		DD49020743A36720E5830931 /* WarehouseModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0483EAAF12832E06C966B1BE /* WarehouseModelTests.swift */; };
 		DEE94ADCEC9DD5EC0D91F1AD /* AnalyticsContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01ADAA590898F92D16B47A3A /* AnalyticsContent.swift */; };
 		E6810314076C85F1550FA1B7 /* QRCodeImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05C0F191F0459093DDC39B7B /* QRCodeImage.swift */; };
@@ -278,6 +288,7 @@
 		59EADE92F3797CB9D21E6040 /* MovementsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovementsListView.swift; sourceTree = "<group>"; };
 		5BF9373E58FF863F90BB2B98 /* PreviewData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewData.swift; sourceTree = "<group>"; };
 		5D5A1E310659CA380511EAD9 /* ClientPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientPickerView.swift; sourceTree = "<group>"; };
+		5DAA1D7170D1E5DD97048737 /* StaffChatBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffChatBanner.swift; sourceTree = "<group>"; };
 		5E14021CED9478A4D73F35AF /* AnalyticsChartData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsChartData.swift; sourceTree = "<group>"; };
 		5F2C8181B94F86AF2F921292 /* DepositCollectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositCollectView.swift; sourceTree = "<group>"; };
 		5F5BE31C742F5DC36E85AD4B /* AppointmentServicesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentServicesSection.swift; sourceTree = "<group>"; };
@@ -294,6 +305,7 @@
 		6CD067D1BCF2FF1C579248D4 /* ProductDetailCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailCards.swift; sourceTree = "<group>"; };
 		6CF709B7A6FBB01F8BCEDBED /* DepositPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositPresentation.swift; sourceTree = "<group>"; };
 		6EC3A48EF031946312B2CD9A /* QRPaymentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRPaymentView.swift; sourceTree = "<group>"; };
+		6F5C29E5B312A93D58A4E3B0 /* CustomReminderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomReminderSheet.swift; sourceTree = "<group>"; };
 		705848123118608EBD4CCD2D /* ReportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportsView.swift; sourceTree = "<group>"; };
 		71E6101AEF4FD63E44FA408C /* ReportText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportText.swift; sourceTree = "<group>"; };
 		731F62CB33852CE670C1FB05 /* MovementSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovementSheet.swift; sourceTree = "<group>"; };
@@ -332,9 +344,11 @@
 		96AE902F5323581B9770F9C4 /* ShiftCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftCardView.swift; sourceTree = "<group>"; };
 		976991F0D257EC4A66890425 /* EmployeesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeesListView.swift; sourceTree = "<group>"; };
 		982A2AC33D35C05CE3052EEB /* POSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = POSView.swift; sourceTree = "<group>"; };
+		9831FCBCB339FBD60303DE53 /* ReminderScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduleTests.swift; sourceTree = "<group>"; };
 		985B4C4D7F9681DC9553F708 /* DepositQRStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositQRStep.swift; sourceTree = "<group>"; };
 		9B5CC4A7928002CFBF8DCA7F /* SizePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SizePickerSheet.swift; sourceTree = "<group>"; };
 		9C3062BFB3C591E31989E0A7 /* ProductEditorSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductEditorSections.swift; sourceTree = "<group>"; };
+		9D89B37D306D92924FFA220D /* ChatFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatFilter.swift; sourceTree = "<group>"; };
 		9E3D26C91CEB9CA01D99F220 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		9FB8801D1C6A64E722BE4308 /* AnalyticsCatalogCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsCatalogCards.swift; sourceTree = "<group>"; };
 		A13AA12514182D4BC3E64672 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
@@ -347,10 +361,12 @@
 		A8E4640FE4067706A83CDAC3 /* InventoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryView.swift; sourceTree = "<group>"; };
 		A999F395F10C25D1E24C69CF /* GridScrollStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridScrollStateTests.swift; sourceTree = "<group>"; };
 		AADE391EFD2090C0B6A08F85 /* DateText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateText.swift; sourceTree = "<group>"; };
+		AB8348209E7E60DBA4ABA1E5 /* ReminderSchedule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderSchedule.swift; sourceTree = "<group>"; };
 		AC5B637F6C5E7986BF29B41E /* CheckoutPaymentSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckoutPaymentSection.swift; sourceTree = "<group>"; };
 		ADD33A4B9DC063C7F3453412 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 		B51ECA162A390E784B7685FF /* Bot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bot.swift; sourceTree = "<group>"; };
 		B64DCC2C0B3204B305023435 /* ReceiptDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptDraft.swift; sourceTree = "<group>"; };
+		B6D97326206F2DAA9448358A /* BotSettingsSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotSettingsSheets.swift; sourceTree = "<group>"; };
 		B7376C571BFA57295D5F70F2 /* ServicePickingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServicePickingTests.swift; sourceTree = "<group>"; };
 		B7D9ED3D0E6DA33021317905 /* InventoryFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryFilter.swift; sourceTree = "<group>"; };
 		B82AC74F4AC11FF620A34C8A /* ProductRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductRow.swift; sourceTree = "<group>"; };
@@ -371,6 +387,8 @@
 		CACF90299EAB7D4A5C8C618D /* StockBatchDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockBatchDraft.swift; sourceTree = "<group>"; };
 		CC5AAA291F84AE74E66B4E9E /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		CDA6E13A68FAD651B86E53F8 /* ProductPurchasesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductPurchasesView.swift; sourceTree = "<group>"; };
+		D05D63525EABBCAF19A4D272 /* ChatRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRow.swift; sourceTree = "<group>"; };
+		D103F956BF7FC91300C513F8 /* StaffBotSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffBotSection.swift; sourceTree = "<group>"; };
 		D298856AF7A6E24A036D538E /* TimeGridPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeGridPage.swift; sourceTree = "<group>"; };
 		D3DF452E9343C707401979FD /* BotSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotSettingsView.swift; sourceTree = "<group>"; };
 		D537AAA9305E264B55324418 /* Endpoints+Bot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Endpoints+Bot.swift"; sourceTree = "<group>"; };
@@ -380,6 +398,7 @@
 		D94B8311299A5C89F18F44D5 /* MonthCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthCalendarView.swift; sourceTree = "<group>"; };
 		D9F194CA8CF164C7177B7D44 /* ReportDepositsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportDepositsCard.swift; sourceTree = "<group>"; };
 		DA4CFDDAC59FE7AF44F4447B /* StudioSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioSettingsView.swift; sourceTree = "<group>"; };
+		DA6325FF9DBF94CA6F00D1F7 /* ReminderScheduleSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduleSection.swift; sourceTree = "<group>"; };
 		DBA6F8FECBCA06371ED372D2 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
 		DCDD239CAB5F2222E9594DDB /* ServicePhotoViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServicePhotoViewer.swift; sourceTree = "<group>"; };
 		DE7FDC2F5956A54E1A90B0E4 /* AnalyticsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsSections.swift; sourceTree = "<group>"; };
@@ -392,6 +411,7 @@
 		E621844A4DF2B416050A1E0C /* AftercareTemplateEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AftercareTemplateEditorView.swift; sourceTree = "<group>"; };
 		E71C7011A13192F300624967 /* CheckoutSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckoutSections.swift; sourceTree = "<group>"; };
 		EA2E8F65999E7CF1200D3B2D /* FormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingTests.swift; sourceTree = "<group>"; };
+		EBC54B6FC31C6D15C3872B61 /* ChatFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatFilterTests.swift; sourceTree = "<group>"; };
 		EC27DE86D243ED282305751D /* HistoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryViews.swift; sourceTree = "<group>"; };
 		EC32F8679FDBDF4F72562AF2 /* ProductPhotosEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductPhotosEditor.swift; sourceTree = "<group>"; };
 		F1671D415138D39FBBFA62DC /* AnalyticsKPIGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsKPIGrid.swift; sourceTree = "<group>"; };
@@ -466,7 +486,12 @@
 		23177F01301CCE9F28A29A38 /* BotSettings */ = {
 			isa = PBXGroup;
 			children = (
+				B6D97326206F2DAA9448358A /* BotSettingsSheets.swift */,
 				D3DF452E9343C707401979FD /* BotSettingsView.swift */,
+				6F5C29E5B312A93D58A4E3B0 /* CustomReminderSheet.swift */,
+				AB8348209E7E60DBA4ABA1E5 /* ReminderSchedule.swift */,
+				DA6325FF9DBF94CA6F00D1F7 /* ReminderScheduleSection.swift */,
+				D103F956BF7FC91300C513F8 /* StaffBotSection.swift */,
 			);
 			path = BotSettings;
 			sourceTree = "<group>";
@@ -567,6 +592,7 @@
 				294DB1E5CAD228B914C2FBBE /* CalendarLayoutTests.swift */,
 				24305D9E1B8FFE73B14319F3 /* CartStoreServiceTests.swift */,
 				F7A13FB96BAE3351E6897984 /* CartStoreTests.swift */,
+				EBC54B6FC31C6D15C3872B61 /* ChatFilterTests.swift */,
 				C9E011C3C92D126EF448B6F0 /* ClientCardTests.swift */,
 				18F34C3978768DA8286763D5 /* DepositTests.swift */,
 				1BD9DE19F1FFCC9B1B0E8ECE /* Fixtures.swift */,
@@ -583,6 +609,7 @@
 				3C03942C5C2E9585A2FA0805 /* POSReceiptTests.swift */,
 				788665723EFAF7B9D175A693 /* ProductDraftTests.swift */,
 				8BCBB93C09D6C60A78BA28E6 /* ProductVariantsTests.swift */,
+				9831FCBCB339FBD60303DE53 /* ReminderScheduleTests.swift */,
 				640DCF9373A3B925897F1920 /* ServiceCardTests.swift */,
 				B7376C571BFA57295D5F70F2 /* ServicePickingTests.swift */,
 				2EF2B69CC60FFD9AA74F14C2 /* StockBatchDraftTests.swift */,
@@ -841,9 +868,12 @@
 			isa = PBXGroup;
 			children = (
 				7CAE0D5C62902A35A20D7477 /* ChatBubble.swift */,
+				9D89B37D306D92924FFA220D /* ChatFilter.swift */,
+				D05D63525EABBCAF19A4D272 /* ChatRow.swift */,
 				24243E2A2B75BBAE69EBC518 /* ChatsListView.swift */,
 				7C205AFC64CEEB734DEAA36E /* ChatView.swift */,
 				FE769D54A2C3002367984A9F /* ClientChatView.swift */,
+				5DAA1D7170D1E5DD97048737 /* StaffChatBanner.swift */,
 			);
 			path = Chats;
 			sourceTree = "<group>";
@@ -1002,6 +1032,7 @@
 				04C009D29E46F0C785540126 /* BookingRequestDetailView.swift in Sources */,
 				E7958D6471295E555CC00969 /* BookingRequestsView.swift in Sources */,
 				B9C52D4E479E4EF3CEED5322 /* Bot.swift in Sources */,
+				2011BFBFA8836B0EEBAB2813 /* BotSettingsSheets.swift in Sources */,
 				E97F1C821C7E0BDF5E18A073 /* BotSettingsView.swift in Sources */,
 				61BEDDCD8D0E23E53A856BC5 /* BotTestView.swift in Sources */,
 				2DF2882B85ED04403CD919B0 /* CalendarPeriod.swift in Sources */,
@@ -1011,6 +1042,8 @@
 				AA4DB916F895FC770FB43A32 /* CatalogViews.swift in Sources */,
 				9C2CB053FAC849F1689C4E7F /* CategoryField.swift in Sources */,
 				76309DD8F4E8F5D8843615D0 /* ChatBubble.swift in Sources */,
+				C77F7C2827233510FC78C396 /* ChatFilter.swift in Sources */,
+				B108D06B7F8571FC436EA8E6 /* ChatRow.swift in Sources */,
 				A23D32AE105AFCDC898B7A75 /* ChatView.swift in Sources */,
 				BF3D38460619AC10ABBBBE8F /* ChatsListView.swift in Sources */,
 				5788901D5668D0D4EABC964B /* CheckoutPaymentSection.swift in Sources */,
@@ -1029,6 +1062,7 @@
 				8A2AA66D978873ACF2AF4436 /* Common.swift in Sources */,
 				10044890EB931EAF2455773F /* CompleteAppointmentSheet.swift in Sources */,
 				6D6B62834F270E3A0DF38E0C /* Components.swift in Sources */,
+				482F8F05594144A0EDD596E6 /* CustomReminderSheet.swift in Sources */,
 				1A3A56BC767D44EE29E3D199 /* DateText.swift in Sources */,
 				2B41C759EAD8D73C30633579 /* Deposit.swift in Sources */,
 				B9793F91B29E19D1B4D68A9C /* DepositCollectSections.swift in Sources */,
@@ -1089,6 +1123,8 @@
 				C3BD68831E741882329EA5F3 /* ReceiptSections.swift in Sources */,
 				43957E6320D0B8B0263D9022 /* ReceiptView.swift in Sources */,
 				CF268D827487AC5C9D7D1EC6 /* ReferenceStore.swift in Sources */,
+				5EED0C63895E4AF88A87BB22 /* ReminderSchedule.swift in Sources */,
+				54C7E483ABD8E4BB265A3D4F /* ReminderScheduleSection.swift in Sources */,
 				A5E6A4223B774E31BF2B5815 /* RemoteState.swift in Sources */,
 				0AD334B6AA34734AA0186D98 /* Report.swift in Sources */,
 				20516AA2C00146A1E5E55135 /* ReportDepositsCard.swift in Sources */,
@@ -1124,6 +1160,8 @@
 				A447B7435E512065F9CEC6FB /* ShiftStore.swift in Sources */,
 				BE4C5679F576E5F304CC0A30 /* ShiftsHistoryView.swift in Sources */,
 				A6B41B9E086569C6EBBB7CBA /* SizePickerSheet.swift in Sources */,
+				DB74B98E9A28F07EC2426EA0 /* StaffBotSection.swift in Sources */,
+				CBE00A3690728DF459EDEC64 /* StaffChatBanner.swift in Sources */,
 				680E6096D6AA6FDE20826B62 /* StockBatchDraft.swift in Sources */,
 				ADD6E38047565B7A46E7A5AF /* StudioSettingsView.swift in Sources */,
 				0405B1EB3DEB77B5B3B17040 /* TelegramLinkSheet.swift in Sources */,
@@ -1146,6 +1184,7 @@
 				B19E22B9E33D90B17C57B4C2 /* CalendarLayoutTests.swift in Sources */,
 				D8AD7FD67CB0E364F81484ED /* CartStoreServiceTests.swift in Sources */,
 				16F7144172F600798D583F12 /* CartStoreTests.swift in Sources */,
+				16D9328E700AC9DD46AA84DF /* ChatFilterTests.swift in Sources */,
 				BA7FB280AAE52B516C24340E /* ClientCardTests.swift in Sources */,
 				999C3B80C019D5F8D769DD5F /* DepositTests.swift in Sources */,
 				013DDB4EF7422F71A5576C65 /* Fixtures.swift in Sources */,
@@ -1162,6 +1201,7 @@
 				B093AFBDD6C9987914D5D4A8 /* PaymentSplitTests.swift in Sources */,
 				BE335BFC8B7912852D4AD0BC /* ProductDraftTests.swift in Sources */,
 				4BDC72B1F099571DC1CA2E64 /* ProductVariantsTests.swift in Sources */,
+				7046838FD83C9557CF0A1A72 /* ReminderScheduleTests.swift in Sources */,
 				753A857822C167F8EC540BA6 /* ServiceCardTests.swift in Sources */,
 				9D5F4A01038214199B77C9DA /* ServicePickingTests.swift in Sources */,
 				35671AA8FAF34CCD55CC1AF4 /* StockBatchDraftTests.swift in Sources */,

@@ -29,6 +29,11 @@ extension APIClient {
         try await request(.patch, "bot/chats/\(chatId)", body: AIPausedBody(aiPaused: paused))
     }
 
+    /// The chat becomes an ordinary client chat; the employee links again by sharing their phone with the bot.
+    func unlinkChatEmployee(chatId: Int64) async throws {
+        try await requestVoid(.delete, "bot/chats/\(chatId)/employee")
+    }
+
     func scheduledMessages(status: ScheduledStatus) async throws -> [ScheduledMessage] {
         let response: ItemsResponse<ScheduledMessage> = try await request(
             .get, "bot/scheduled",

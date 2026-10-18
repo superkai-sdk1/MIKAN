@@ -30,11 +30,16 @@ nonisolated struct BotChat: Codable, Hashable, Identifiable, Sendable {
     var unreadCount: Int
     var lastMessage: BotMessage?
     var updatedAt: Date
+    /// The employee whose phone matched the contact shared in this chat: the bot answers them as the studio's
+    /// assistant (appointments, clients, analytics, stock). `nil` for client chats and on older servers.
+    var employee: EmployeeRef?
 
     var id: Int64 { chatId }
 
+    var isStaff: Bool { employee != nil }
+
     var displayName: String {
-        client?.fullName ?? telegramName.nonEmpty ?? username.nonEmpty.map { "@\($0)" } ?? "Без имени"
+        employee?.name ?? client?.fullName ?? telegramName.nonEmpty ?? username.nonEmpty.map { "@\($0)" } ?? "Без имени"
     }
 }
 

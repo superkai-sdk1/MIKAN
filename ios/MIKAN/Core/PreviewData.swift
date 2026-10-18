@@ -284,6 +284,16 @@ enum PreviewData {
         needsAttention: true, unreadCount: 2, lastMessage: messages.last, updatedAt: now
     )
 
+    static let staffChat = BotChat(
+        chatId: 555_000_111, client: nil, telegramName: "Анна", username: "anna_mikan", aiPaused: false,
+        needsAttention: false, unreadCount: 0,
+        lastMessage: BotMessage(
+            id: 5, chatId: 555_000_111, role: .assistant, text: "Сегодня у вас 4 записи, первая в 11:00.",
+            employee: nil, createdAt: at(hour: 9)
+        ),
+        updatedAt: now, employee: anna.ref
+    )
+
     static let bookingRequest = BookingRequest(
         id: 1, chatId: 123_456_789, client: nil, contactName: "Иван", phone: "+79991234567",
         serviceName: "Прокол хеликса", preferredTime: "в субботу после 15:00", comment: "Хочу кольцо",
