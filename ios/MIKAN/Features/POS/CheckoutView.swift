@@ -249,7 +249,9 @@ struct CheckoutView: View {
 #Preview {
     let state = PreviewData.appState()
     state.cart.prefill(from: PreviewData.appointments[0])
-    state.cart.add(product: PreviewData.labret)
+    state.cart.add(product: PreviewData.labret, variant: PreviewData.labret.variants[0])
+    state.cart.add(product: PreviewData.labret, variant: PreviewData.labret.variants[1])
+    state.cart.add(product: PreviewData.labret, variant: PreviewData.labret.variants[1])
     return CheckoutView()
         .appEnvironment(state)
 }

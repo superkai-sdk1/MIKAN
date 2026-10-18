@@ -1,15 +1,17 @@
 import SwiftUI
 
-/// Jewelry tile in the POS catalog. Tap adds one to the cart.
+/// Jewelry tile in the POS catalog. Tap adds one to the receipt; a product with several sizes asks for the size
+/// first (the owner shows `SizePickerSheet`).
 struct ProductTile: View {
     let product: Product
+    /// Units in the receipt over all sizes.
     let inCart: Int
-    let onAdd: () -> Void
+    let onTap: () -> Void
 
-    private var isAvailable: Bool { product.quantity > 0 }
+    private var isAvailable: Bool { product.isAvailable }
 
     var body: some View {
-        Button(action: onAdd) {
+        Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack(alignment: .topTrailing) {
                     ProductThumbnail(path: product.photoUrl, size: 140)
@@ -35,15 +37,17 @@ struct ProductTile: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                HStack {
-                    MoneyText(product.price)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Spacer(minLength: 4)
-                    Text(isAvailable ? "\(product.quantity) \(product.unitLabel)" : "Нет")
-                        .font(.caption.weight(.medium))
-                        .monospacedDigit()
-                        .foregroundStyle(product.lowStock ? Color.red : Color.secondary)
+                // «от 1 500 ₽ · 2 из 3 размеров» may not fit one line: the stock then goes under the price.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        priceLabel
+                        Spacer(minLength: 4)
+                        stockLabel
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        priceLabel
+                        stockLabel
+                    }
                 }
             }
             .padding(10)
@@ -54,9 +58,37 @@ struct ProductTile: View {
         }
         .buttonStyle(.plain)
         .disabled(!isAvailable)
-        .accessibilityLabel("\(product.name), \(Money.format(product.price)), осталось \(product.quantity)")
-        .accessibilityHint(isAvailable ? "Добавить в корзину" : "Нет в наличии")
-        .accessibilityValue(inCart > 0 ? "В корзине: \(inCart)" : "")
+        .accessibilityLabel("\(product.name), \(product.priceText), \(ProductTileText.accessibilityStock(product))")
+        .accessibilityHint(accessibilityHint)
+        .accessibilityValue(inCart > 0 ? "В чеке: \(inCart)" : "")
+    }
+
+    private var priceLabel: some View {
+        Text(product.priceText)
+            .font(.headline)
+            .monospacedDigit()
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+    }
+
+    /// «4 шт» for one size, «2 из 3 размеров» with a sizes symbol for several; red when some size runs low.
+    private var stockLabel: some View {
+        HStack(spacing: 3) {
+            if product.hasSeveralSizes {
+                Image(systemName: "ruler")
+                    .imageScale(.small)
+            }
+            Text(ProductTileText.stock(product))
+                .lineLimit(1)
+        }
+        .font(.caption.weight(.medium))
+        .monospacedDigit()
+        .foregroundStyle(product.lowStock ? Color.red : Color.secondary)
+    }
+
+    private var accessibilityHint: String {
+        guard isAvailable else { return "Нет в наличии" }
+        return product.hasSeveralSizes ? "Выбрать размер и добавить в чек" : "Добавить в чек"
     }
 }
 

@@ -425,13 +425,15 @@ final class CartStoreTests: XCTestCase {
         cart.addCustomService(name: "  Прокол  ", price: 2_000)
 
         XCTAssertEqual(cart.lines.count, 2)
+        XCTAssertEqual(cart.lines.first?.kind, .product(id: 1, variantId: 1, stock: 2), "the only size of the product")
         XCTAssertEqual(cart.quantity(ofProduct: 1), 2)
         XCTAssertEqual(cart.itemCount, 3)
         XCTAssertEqual(cart.subtotal, 5_000)
 
         let body = cart.makeSaleBody()
         XCTAssertEqual(body.items.first?.productId, 1)
-        XCTAssertNil(body.items.first?.name, "product lines are identified by productId")
+        XCTAssertEqual(body.items.first?.variantId, 1)
+        XCTAssertNil(body.items.first?.name, "product lines are identified by productId and variantId")
         XCTAssertEqual(body.items.last?.name, "Прокол")
 
         cart.cashReceived = 10_000

@@ -7,7 +7,7 @@ struct CheckoutLinesSection: View {
         @Bindable var cart = cart
         Section("Позиции") {
             ForEach($cart.lines) { $line in
-                CheckoutLineRow(line: $line)
+                CheckoutLineRow(line: $line, stockWarning: cart.stockWarning(for: line))
             }
             .onDelete { cart.remove(at: $0) }
         }
@@ -16,6 +16,8 @@ struct CheckoutLinesSection: View {
 
 private struct CheckoutLineRow: View {
     @Binding var line: CartLine
+    /// Set when all lines of the size together exceed its stock.
+    let stockWarning: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -23,7 +25,7 @@ private struct CheckoutLineRow: View {
                 Image(systemName: line.productId == nil ? "sparkle" : "shippingbox")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                Text(line.name).font(.headline)
+                SizedItemTitle(name: line.name, size: line.sizeName).font(.headline)
                 Spacer()
                 MoneyText(line.total).font(.headline)
             }
@@ -31,8 +33,8 @@ private struct CheckoutLineRow: View {
                 Text("Количество: \(line.quantity)").monospacedDigit()
             }
             NumberField.money("Цена за шт.", value: $line.unitPrice)
-            if line.exceedsStock, let stock = line.stock {
-                Label("На складе только \(stock)", systemImage: "exclamationmark.triangle.fill")
+            if let stockWarning {
+                Label(stockWarning, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -245,7 +247,7 @@ struct SaleItemsSection: View {
             ForEach(sale.items) { item in
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name)
+                        SizedItemTitle(name: item.name, size: item.variantName)
                         Text("\(item.quantity) × \(Money.format(item.price))")
                             .font(.caption)
                             .foregroundStyle(.secondary)

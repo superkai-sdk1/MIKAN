@@ -70,16 +70,24 @@ nonisolated enum ProductCatalogFilter {
         Array(Set(products.compactMap(\.category.nonEmpty))).sorted()
     }
 
+    /// Products of `category` (all when `nil`) whose name, article, category, material, colour, insert,
+    /// size names or size articles match `query`.
     static func apply(_ products: [Product], query: String, category: String?) -> [Product] {
         let needle = query.trimmed.lowercased()
         return products.filter { product in
             guard category == nil || product.category.nonEmpty == category else { return false }
             guard !needle.isEmpty else { return true }
-            let haystack = [product.name, product.sku, product.material, product.size, product.category]
-                .compactMap { $0?.lowercased() }
-                .joined(separator: " ")
-            return haystack.contains(needle)
+            return searchText(of: product).contains(needle)
         }
+    }
+
+    /// Everything the search looks at, lowercased.
+    static func searchText(of product: Product) -> String {
+        let fields: [String?] = [product.name, product.sku, product.category, product.material, product.color, product.stone]
+        let sizes: [String?] = product.variants.flatMap { [$0.name, $0.sku] }
+        return (fields + sizes)
+            .compactMap { $0.nonEmpty?.lowercased() }
+            .joined(separator: " ")
     }
 
     /// Splits tiles into fixed-width rows, so a `List` can lay out (and lazily load) the grid row by row.

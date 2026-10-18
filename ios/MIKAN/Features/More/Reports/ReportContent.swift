@@ -29,10 +29,17 @@ struct ReportContent: View {
                 ReportDepositsCard(deposits: deposits)
             }
             if !summary.topServices.isEmpty {
-                RankingCard(title: "Топ услуг", rows: summary.topServices.map { ($0.id, $0.name, $0.quantity, $0.revenue) })
+                RankingCard(title: "Топ услуг", rows: summary.topServices.map {
+                    RankingRow(id: $0.id, name: $0.name, quantity: $0.quantity, revenue: $0.revenue)
+                })
             }
             if !summary.topProducts.isEmpty {
-                RankingCard(title: "Топ украшений", rows: summary.topProducts.map { ("\($0.id)", $0.name, $0.quantity, $0.revenue) })
+                RankingCard(title: "Топ украшений", rows: summary.topProducts.map {
+                    RankingRow(
+                        id: "\($0.id)", name: $0.name, quantity: $0.quantity, revenue: $0.revenue,
+                        sizes: ReportText.sizeBreakdown($0.variants)
+                    )
+                })
             }
             if !summary.byMaster.isEmpty {
                 MastersCard(masters: summary.byMaster)
@@ -135,9 +142,30 @@ private struct ShareRow: View {
     }
 }
 
+/// Texts of the report cards.
+nonisolated enum ReportText {
+    /// «8 мм × 4 · 6 мм × 3» — how a top product sold by size, in the server's order; `nil` without named sizes
+    /// (a product without sizes, or a server that predates them).
+    static func sizeBreakdown(_ variants: [TopProductVariant]) -> String? {
+        let parts = variants
+            .filter { $0.quantity > 0 }
+            .compactMap { variant in variant.name.nonEmpty.map { "\($0) × \(variant.quantity)" } }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+private struct RankingRow {
+    let id: String
+    let name: String
+    let quantity: Int
+    let revenue: Int
+    /// Size breakdown of a top product, shown under its name.
+    var sizes: String?
+}
+
 private struct RankingCard: View {
     let title: String
-    let rows: [(id: String, name: String, quantity: Int, revenue: Int)]
+    let rows: [RankingRow]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -150,6 +178,12 @@ private struct RankingCard: View {
                         .frame(width: 20, alignment: .leading)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.name).font(.subheadline)
+                        if let sizes = row.sizes {
+                            Text(sizes)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
                         Text("\(row.quantity) шт.").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
