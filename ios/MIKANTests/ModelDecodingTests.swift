@@ -246,6 +246,15 @@ final class ModelDecodingTests: XCTestCase {
             XCTAssertEqual(chat.chatId, 123_456_789)
             XCTAssertEqual(chat.lastMessage?.role, .user)
             XCTAssertEqual(chat.displayName, "Иван Петров")
+            XCTAssertNil(chat.employee, "older servers send no employee")
+            XCTAssertFalse(chat.isStaff)
+
+            let staff = try Fixtures.decode(BotChat.self, Fixtures.staffBotChat, fractional: fractional)
+            XCTAssertEqual(staff.employee, EmployeeRef(id: 2, name: "Анна", color: "#FF7A1A"))
+            XCTAssertTrue(staff.isStaff)
+            XCTAssertNil(staff.client)
+            XCTAssertNil(staff.lastMessage)
+            XCTAssertEqual(staff.displayName, "Анна", "a staff chat is named after the employee")
 
             let scheduled = try Fixtures.decode(ScheduledMessage.self, Fixtures.scheduledMessage, fractional: fractional)
             XCTAssertEqual(scheduled.kind, .aftercare)
@@ -290,11 +299,27 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(tolerant.workdayStart, "11:00", "servers without working hours get the server default")
         XCTAssertEqual(tolerant.workdayEnd, "21:00")
 
-        let bot = try Fixtures.decode(BotSettings.self, Fixtures.botSettings)
-        XCTAssertEqual(bot.botUsername, "mikan_studio_bot")
-        XCTAssertEqual(bot.reminderHoursBefore, 24)
-        XCTAssertTrue(bot.aiConfigured)
-        XCTAssertFalse(bot.staffChatBound)
+        let legacy = try Fixtures.decode(BotSettings.self, Fixtures.botSettings)
+        XCTAssertEqual(legacy.botUsername, "mikan_studio_bot")
+        XCTAssertEqual(legacy.reminderOffsets, [1440], "a server without offsets: [reminderHoursBefore * 60]")
+        XCTAssertFalse(legacy.supportsReminderOffsets)
+        XCTAssertTrue(legacy.aiConfigured)
+        XCTAssertFalse(legacy.staffChatBound)
+
+        let bot = try Fixtures.decode(BotSettings.self, Fixtures.botSettingsWithOffsets)
+        XCTAssertEqual(bot.reminderOffsets, [1440, 120], "earliest reminder first")
+        XCTAssertTrue(bot.supportsReminderOffsets)
+        XCTAssertTrue(bot.staffChatBound)
+        XCTAssertEqual(bot.reminderSchedule.summary, "за 1 день и за 2 часа")
+    }
+
+    func testBotChatEmployeeMayBeNull() throws {
+        let chat = try Fixtures.decode(
+            BotChat.self,
+            #"{ "chatId": 1, "client": null, "telegramName": "Иван", "username": null, "aiPaused": false, "needsAttention": false, "unreadCount": 0, "lastMessage": null, "updatedAt": "<T>", "employee": null }"#
+        )
+        XCTAssertNil(chat.employee)
+        XCTAssertEqual(chat.displayName, "Иван")
     }
 
     func testDashboardBadgesAndAuth() throws {

@@ -19,6 +19,7 @@ struct ChatView: View {
     @State private var errorMessage: String?
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var sentCount = 0
+    @State private var unlinkedCount = 0
 
     private static let pageSize = 50
     private static let pollInterval: Duration = .seconds(5)
@@ -59,6 +60,12 @@ struct ChatView: View {
         .defaultScrollAnchor(.bottom)
         .scrollPosition($position)
         .scrollDismissesKeyboard(.interactively)
+        .safeAreaBar(edge: .top) {
+            if let employee = chat.employee {
+                StaffChatBanner(chatId: chat.chatId, employee: employee, onUnlinked: employeeUnlinked)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .safeAreaBar(edge: .bottom) {
             ChatComposer(text: $draft, placeholder: "Ответ от студии", isSending: isSending, onSend: send)
         }
@@ -69,6 +76,7 @@ struct ChatView: View {
         .task { await pollLoop() }
         .errorAlert($errorMessage)
         .sensoryFeedback(.success, trigger: sentCount)
+        .sensoryFeedback(.success, trigger: unlinkedCount)
     }
 
     @ViewBuilder
@@ -80,7 +88,11 @@ struct ChatView: View {
                 ProgressView()
             }
         } else if messages.isEmpty {
-            ContentUnavailableView("Сообщений нет", systemImage: "bubble.left", description: Text("Напишите клиенту первым."))
+            ContentUnavailableView(
+                "Сообщений нет",
+                systemImage: "bubble.left",
+                description: Text(chat.isStaff ? "Напишите сотруднику первым." : "Напишите клиенту первым.")
+            )
         }
     }
 
@@ -223,6 +235,13 @@ struct ChatView: View {
         }
     }
 
+    /// The chat stays open as an ordinary client chat; the list gets the change.
+    private func employeeUnlinked() {
+        chat.employee = nil
+        onChange?(chat)
+        unlinkedCount += 1
+    }
+
     private func toggleAI() {
         isTogglingAI = true
         Task {
@@ -241,6 +260,13 @@ struct ChatView: View {
 #Preview {
     NavigationStack {
         ChatView(chat: PreviewData.chat)
+    }
+    .previewEnvironment()
+}
+
+#Preview("Чат сотрудника") {
+    NavigationStack {
+        ChatView(chat: PreviewData.staffChat)
     }
     .previewEnvironment()
 }
