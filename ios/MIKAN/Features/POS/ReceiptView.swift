@@ -1,11 +1,13 @@
 import SwiftUI
 
 /// «Чек»: the appointment or client it is for, editable lines, the jewelry / service / goods catalog, «Услуга»
-/// and «Оплатить · N ₽».
+/// and «Оплатить · N ₽»; «Удалить чек» in the menu. Every change is saved to the open receipt on the server.
 /// Checkout itself is the `CheckoutView` sheet on the POS root (bound to `cart.isCheckoutPresented`).
 struct ReceiptView: View {
+    @Environment(AppState.self) private var appState
     @Environment(APIClient.self) private var api
     @Environment(CartStore.self) private var cart
+    @Environment(OpenReceiptsStore.self) private var receipts
     @Environment(ReferenceStore.self) private var reference
     /// Jewelry and goods; owned by the POS hub, so the catalog stays loaded between receipts.
     let catalog: Remote<[Product]>
@@ -21,6 +23,9 @@ struct ReceiptView: View {
     /// A product with several sizes whose size is being picked.
     @State private var sizePickerProduct: Product?
     @State private var addCount = 0
+    @State private var deletion: ReceiptDeletion?
+    @State private var isDeleting = false
+    @State private var deleteError: String?
 
     private static let gridColumns = 2
     private static let tileSpacing: CGFloat = 12
@@ -60,6 +65,8 @@ struct ReceiptView: View {
             if catalogKind == .services { await loadServices(force: true) }
         }
         .task { await loadCatalog() }
+        // Picks up edits made on another phone; a receipt paid or deleted there is let go.
+        .task { await receipts.syncCart() }
         // Only orders the category chips; without it they are alphabetical.
         .task { try? await reference.ensureCategories() }
         .task(id: catalogKind) {
@@ -68,6 +75,9 @@ struct ReceiptView: View {
         .remoteErrorAlert(catalog)
         .navigationTitle("Чек")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { menu }
+        .receiptDeletionDialog($deletion, onDelete: delete)
+        .errorAlert($deleteError, title: "Чек не удалён")
         .sheet(isPresented: $showsServiceSheet) {
             AddServiceSheet { text in showHint(text) }
         }
@@ -77,6 +87,28 @@ struct ReceiptView: View {
             SizePickerSheet(product: product) { variant in add(product, variant: variant) }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: addCount)
+    }
+
+    @ToolbarContentBuilder
+    private var menu: some ToolbarContent {
+        if let receiptId = cart.receiptId {
+            ToolbarItem(placement: .topBarTrailing) {
+                if isDeleting {
+                    ProgressView()
+                } else {
+                    Menu {
+                        Button("Удалить чек", systemImage: "trash", role: .destructive) {
+                            deletion = ReceiptDeletion(
+                                id: receiptId, subtotal: cart.subtotal, itemCount: cart.itemCount,
+                                hasAppointment: cart.appointment != nil
+                            )
+                        }
+                    } label: {
+                        Label("Действия с чеком", systemImage: "ellipsis")
+                    }
+                }
+            }
+        }
     }
 
     private var catalogSection: some View {
@@ -221,6 +253,20 @@ struct ReceiptView: View {
     private func showHint(_ text: String?) {
         guard let text else { return }
         hint = CatalogHint(text: text)
+    }
+
+    /// Nothing is sold or returned; back to the hub once the server deleted it.
+    private func delete(_ deletion: ReceiptDeletion) {
+        isDeleting = true
+        Task {
+            defer { isDeleting = false }
+            do {
+                try await appState.deleteReceipt(id: deletion.id, hasAppointment: deletion.hasAppointment)
+                appState.closeReceipt()
+            } catch {
+                deleteError = error.userMessage
+            }
+        }
     }
 }
 

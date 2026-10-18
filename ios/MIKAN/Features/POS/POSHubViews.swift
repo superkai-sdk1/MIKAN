@@ -1,136 +1,104 @@
 import SwiftUI
 
-/// «Открыть чек без записи», or «Продолжить чек · N ₽» + «Новый чек» while a receipt is open.
-struct ReceiptEntryCard: View {
-    @Environment(CartStore.self) private var cart
-    let onContinue: () -> Void
-    let onNew: () -> Void
+/// What the hub is opening right now (its row shows a spinner; other taps wait).
+enum POSOpening: Hashable {
+    case receipt(Int)
+    case visit(appointmentId: Int)
+    case newReceipt
+}
 
-    private var isOpen: Bool {
-        ReceiptDraft.isOpen(lines: cart.lines, client: cart.client, appointment: cart.appointment)
+extension View {
+    /// A card row of the POS hub list: no row background, separators or side insets.
+    func hubRow(top: CGFloat = 5, bottom: CGFloat = 5) -> some View {
+        listRowInsets(EdgeInsets(top: top, leading: 0, bottom: bottom, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 
-    var body: some View {
-        GlassEffectContainer(spacing: 10) {
-            VStack(spacing: 10) {
-                if isOpen {
-                    Button(action: onContinue) {
-                        EntryLabel(
-                            title: ReceiptDraft.continueTitle(lineCount: cart.lines.count, total: cart.total),
-                            subtitle: ReceiptDraft.summary(itemCount: cart.itemCount, client: cart.client, appointment: cart.appointment),
-                            systemImage: "cart.fill",
-                            isProminent: true
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.tint(.accentColor).interactive(), in: .rect(cornerRadius: Theme.cardRadius))
-
-                    Button(action: onNew) {
-                        EntryLabel(title: "Новый чек", subtitle: "Начать с пустого чека без записи", systemImage: "plus", isProminent: false)
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.interactive(), in: .rect(cornerRadius: Theme.cardRadius))
-                } else {
-                    Button(action: onNew) {
-                        EntryLabel(
-                            title: "Открыть чек без записи",
-                            subtitle: "Украшения, товары и услуги, клиента можно добавить в чеке",
-                            systemImage: "receipt",
-                            isProminent: true
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.tint(.accentColor).interactive(), in: .rect(cornerRadius: Theme.cardRadius))
-                }
-            }
+    /// «Удалить чек?» with what deleting changes; `onDelete` runs on «Удалить чек».
+    func receiptDeletionDialog(_ deletion: Binding<ReceiptDeletion?>, onDelete: @escaping (ReceiptDeletion) -> Void) -> some View {
+        confirmationDialog(
+            OpenReceiptText.deleteTitle,
+            isPresented: Binding(
+                get: { deletion.wrappedValue != nil },
+                set: { if !$0 { deletion.wrappedValue = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: deletion.wrappedValue
+        ) { receipt in
+            Button("Удалить чек", role: .destructive) { onDelete(receipt) }
+            Button("Отмена", role: .cancel) {}
+        } message: { receipt in
+            Text(receipt.message)
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: isOpen)
     }
 }
 
-private struct EntryLabel: View {
+/// Title of a hub section with an optional count on the right; a list row of its own.
+struct HubSectionHeader: View {
     let title: String
-    let subtitle: String
-    let systemImage: String
-    let isProminent: Bool
+    var detail: String?
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: systemImage)
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
                 .font(.title3.weight(.semibold))
-                .frame(width: 30)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                Text(subtitle)
-                    .font(.caption)
-                    .opacity(0.8)
-                    .lineLimit(2)
-            }
             Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.subheadline.weight(.bold))
-                .accessibilityHidden(true)
+            if let detail {
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
-        .foregroundStyle(isProminent ? Color.white : Color.primary)
-        .multilineTextAlignment(.leading)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, minHeight: 64)
-        .contentShape(.rect(cornerRadius: Theme.cardRadius))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .hubRow(top: 16, bottom: 2)
     }
 }
 
-/// «К оплате по записям»: today's appointments without a sale.
+/// «К оплате по записям»: today's unpaid appointments whose visit has not started (no open receipt).
+/// A tap starts the visit: the appointment moves to the open receipts.
 struct PaymentQueueSection: View {
     let queue: Remote<[Appointment]>
-    /// Appointment the open receipt pays for (marked «В чеке»).
-    let openAppointmentId: Int?
+    let openReceipts: [OpenReceipt]
+    let opening: POSOpening?
     let retry: () async -> Void
-    let onSelect: (Appointment) -> Void
+    let onStart: (Appointment) -> Void
+
+    private var appointments: [Appointment]? {
+        queue.value.map { PaymentQueue.notStarted($0, openReceipts: openReceipts) }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("К оплате по записям")
-                    .font(.title3.weight(.semibold))
-                Spacer(minLength: 8)
-                if let count = queue.value?.count, count > 0 {
-                    Text(Plural.appointments(count))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
+        Section {
+            HubSectionHeader(title: "К оплате по записям", detail: appointments.flatMap { $0.isEmpty ? nil : Plural.appointments($0.count) })
             content
         }
+        .listSectionSeparator(.hidden)
     }
 
     @ViewBuilder
     private var content: some View {
-        if let appointments = queue.value {
+        if let appointments {
             if appointments.isEmpty {
-                emptyCard
+                emptyCard.hubRow()
             } else {
-                LazyVStack(spacing: 10) {
-                    ForEach(appointments) { appointment in
-                        PaymentQueueRow(appointment: appointment, isInReceipt: appointment.id == openAppointmentId) {
-                            onSelect(appointment)
-                        }
+                ForEach(appointments) { appointment in
+                    PaymentQueueRow(appointment: appointment, isStarting: opening == .visit(appointmentId: appointment.id)) {
+                        onStart(appointment)
                     }
+                    .hubRow()
                 }
             }
         } else if let failure = queue.failure {
             ErrorStateView(message: failure, retry: retry)
                 .cardStyle()
+                .hubRow()
         } else {
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: 120)
+                .hubRow()
         }
     }
 
@@ -141,7 +109,7 @@ struct PaymentQueueSection: View {
                 .foregroundStyle(.secondary)
             Text("Сегодня нет записей к оплате")
                 .font(.subheadline.weight(.semibold))
-            Text("Здесь появятся сегодняшние записи, которые ещё не оплачены.")
+            Text("Здесь появятся сегодняшние неоплаченные записи. Начатые визиты — в открытых чеках.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -155,7 +123,7 @@ struct PaymentQueueSection: View {
 /// Appointment awaiting payment: time, master color, client, service, price, prepayment, status.
 private struct PaymentQueueRow: View {
     let appointment: Appointment
-    let isInReceipt: Bool
+    let isStarting: Bool
     let action: () -> Void
 
     var body: some View {
@@ -182,26 +150,23 @@ private struct PaymentQueueRow: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
-                    QueuePriceLine(appointment: appointment, isInReceipt: isInReceipt)
+                    QueuePriceLine(appointment: appointment)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+                RowAccessory(isWorking: isStarting)
             }
             .foregroundStyle(.primary)
             .cardStyle(padding: 14)
             .contentShape(.rect(cornerRadius: Theme.cardRadius))
         }
         .buttonStyle(.plain)
-        .accessibilityHint(isInReceipt ? "Вернуться к открытому чеку" : "Открыть чек по записи")
+        .disabled(isStarting)
+        .accessibilityHint("Начать визит: откроется чек с услугами, клиентом и предоплатой")
     }
 }
 
-/// Price, prepayment badge and «В чеке»; the prepayment badge moves to its own line when they do not fit.
+/// Price and the prepayment badge; the badge moves to its own line when they do not fit.
 private struct QueuePriceLine: View {
     let appointment: Appointment
-    let isInReceipt: Bool
 
     private var badge: QueueDepositBadge? { PaymentQueue.depositBadge(for: appointment) }
 
@@ -211,14 +176,9 @@ private struct QueuePriceLine: View {
                 price
                 if let badge { QueueDepositBadgeView(badge: badge) }
                 Spacer(minLength: 0)
-                inReceipt
             }
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    price
-                    Spacer(minLength: 0)
-                    inReceipt
-                }
+                price
                 if let badge { QueueDepositBadgeView(badge: badge) }
             }
         }
@@ -228,17 +188,10 @@ private struct QueuePriceLine: View {
         MoneyText(appointment.price)
             .font(.subheadline.weight(.semibold))
     }
-
-    @ViewBuilder
-    private var inReceipt: some View {
-        if isInReceipt {
-            StatusBadge(text: "В чеке", color: .accentColor, systemImage: "cart.fill")
-        }
-    }
 }
 
 /// «Предоплата N ₽» (held, applied at checkout) or «Ждём предоплату N ₽» (required, not received yet).
-private struct QueueDepositBadgeView: View {
+struct QueueDepositBadgeView: View {
     let badge: QueueDepositBadge
 
     var body: some View {
@@ -248,5 +201,24 @@ private struct QueueDepositBadgeView: View {
         case .waiting:
             StatusBadge(text: badge.text, color: .orange, systemImage: "hourglass")
         }
+    }
+}
+
+/// Chevron of a hub row, or a spinner while it is being opened.
+struct RowAccessory: View {
+    let isWorking: Bool
+
+    var body: some View {
+        Group {
+            if isWorking {
+                ProgressView()
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(width: 20)
+        .accessibilityHidden(true)
     }
 }

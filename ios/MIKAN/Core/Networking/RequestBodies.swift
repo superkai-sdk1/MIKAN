@@ -273,6 +273,7 @@ nonisolated struct SaleItemBody: Encodable, Hashable, Sendable {
     var variantId: Int? = nil
 }
 
+/// `POST /sales` and `POST /qr-payments`.
 nonisolated struct SaleBody: Encodable, Sendable {
     let clientId: Int?
     let appointmentId: Int?
@@ -280,6 +281,28 @@ nonisolated struct SaleBody: Encodable, Sendable {
     let discount: Int
     let payments: Payments
     let note: String?
+    /// The open receipt being paid: the server deletes it together with the sale.
+    var receiptId: Int? = nil
+}
+
+/// `POST /receipts` and `PUT /receipts/:id`. `PUT` replaces the whole receipt: omitted ids and note mean none.
+nonisolated struct ReceiptBody: Encodable, Hashable, Sendable {
+    var appointmentId: Int?
+    var clientId: Int?
+    /// Omitted (`nil`) only when starting a visit: the server then takes the appointment's service lines.
+    var items: [SaleItemBody]?
+    var discount = 0
+    var note: String?
+
+    /// «Начать визит»: the appointment's receipt with its client and services (the existing one if already open).
+    static func visit(appointmentId: Int) -> ReceiptBody {
+        ReceiptBody(appointmentId: appointmentId, clientId: nil, items: nil, note: nil)
+    }
+
+    /// An empty receipt, optionally for a client.
+    static func blank(clientId: Int? = nil) -> ReceiptBody {
+        ReceiptBody(appointmentId: nil, clientId: clientId, items: [], note: nil)
+    }
 }
 
 nonisolated struct RefundBody: Encodable, Sendable {

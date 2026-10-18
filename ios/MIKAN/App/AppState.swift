@@ -23,6 +23,8 @@ final class AppState {
     let api: APIClient
     let shift: ShiftStore
     let cart: CartStore
+    /// Open receipts of all devices; saves the cart's one.
+    let receipts: OpenReceiptsStore
     let schedule: ScheduleStore
     let reference: ReferenceStore
 
@@ -40,7 +42,9 @@ final class AppState {
     init(api: APIClient, employee: Employee?, phase: Phase) {
         self.api = api
         self.shift = ShiftStore(api: api)
-        self.cart = CartStore()
+        let cart = CartStore()
+        self.cart = cart
+        self.receipts = OpenReceiptsStore(api: api, cart: cart)
         self.schedule = ScheduleStore(api: api)
         self.reference = ReferenceStore(api: api)
         self.employee = employee
@@ -80,6 +84,7 @@ final class AppState {
         employee = nil
         SessionCache.employee = nil
         badges = .zero
+        receipts.reset()
         cart.clear()
         cart.isCheckoutPresented = false
         posPath = []
@@ -146,30 +151,46 @@ final class AppState {
         }
     }
 
-    /// Opens the receipt for an appointment in «Касса» (jewelry can still be added before paying).
-    func startCheckout(for appointment: Appointment) {
-        cart.open(appointment)
-        openReceipt()
-    }
-
-    /// Opens the receipt in «Касса» with the client attached. A receipt for another client's appointment
-    /// is replaced; other lines stay.
-    func startSale(for client: ClientRef) {
-        if let appointment = cart.appointment, appointment.client.id != client.id {
-            cart.clear()
+    /// «Начать визит», «Открыть чек» or «Принять оплату» for an appointment: its open receipt — with the services,
+    /// client and prepayment, or the one another device already opened — in «Касса», where jewelry can still be
+    /// added before paying.
+    func startCheckout(for appointment: Appointment) async throws {
+        let receipt = try await receipts.startVisit(appointment)
+        if var started = receipt.appointment {
+            started.receiptId = receipt.id
+            schedule.upsert(started)
         }
-        cart.client = client
-        openReceipt()
+        showReceipt()
     }
 
-    /// Back to the POS hub (after a sale).
-    func closeReceipt() {
-        posPath = []
+    /// «Продать» in the client card: a new receipt for the client in «Касса».
+    func startSale(for client: ClientRef) async throws {
+        try await receipts.openNew(for: client)
+        showReceipt()
     }
 
-    private func openReceipt() {
+    /// Deletes an open receipt; its appointment, if any, is back among the unpaid ones in the schedule.
+    func deleteReceipt(id: Int, hasAppointment: Bool) async throws {
+        try await receipts.delete(id: id)
+        if hasAppointment { await schedule.refreshVisible() }
+    }
+
+    /// Cancelling an appointment or marking a no-show deletes its open receipt on the server: the cart lets it go.
+    func appointmentClosed(_ appointment: Appointment) {
+        guard !appointment.isActive else { return }
+        if cart.appointmentId == appointment.id { closeReceipt() }
+        receipts.forgetReceipt(ofAppointment: appointment.id)
+    }
+
+    /// The cart's receipt on the «Касса» tab (not in checkout).
+    func showReceipt() {
         cart.isCheckoutPresented = false
         selectedTab = .pos
         posPath = [.receipt]
+    }
+
+    /// Back to the POS hub (after a sale or a deletion).
+    func closeReceipt() {
+        posPath = []
     }
 }

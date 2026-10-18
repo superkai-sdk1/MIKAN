@@ -120,7 +120,7 @@ struct ClientDetailView: View {
                     }
 
                     Button {
-                        appState.startSale(for: current.ref)
+                        startSale(for: current.ref)
                     } label: {
                         ActionLabel(title: "Продать", systemImage: "cart.fill")
                     }
@@ -190,6 +190,19 @@ struct ClientDetailView: View {
         var result = updated
         result.stats = previous?.stats
         return result
+    }
+
+    /// «Продать»: a new open receipt for the client in «Касса».
+    private func startSale(for client: ClientRef) {
+        isWorking = true
+        Task {
+            defer { isWorking = false }
+            do {
+                try await appState.startSale(for: client)
+            } catch {
+                errorMessage = error.userMessage
+            }
+        }
     }
 
     private func setArchived(_ archived: Bool) {

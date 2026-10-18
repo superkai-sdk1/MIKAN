@@ -8,36 +8,8 @@ nonisolated enum POSRoute: Hashable, Sendable {
     case shiftsHistory
 }
 
-/// Rules and texts for the receipt that is being assembled in the cart.
+/// Texts for the receipt that is being assembled in the cart.
 enum ReceiptDraft {
-    /// The cart holds edits that starting another receipt would lose.
-    /// An untouched appointment prefill (one line at the appointment price) can be recreated, so it does not count.
-    static func hasUnsavedWork(lines: [CartLine], appointment: Appointment?) -> Bool {
-        guard !lines.isEmpty else { return false }
-        guard let appointment, lines.count == 1, let line = lines.first else { return true }
-        let isPristine = line.name == appointment.displayTitle
-            && line.unitPrice == appointment.price
-            && line.quantity == 1
-        return !isPristine
-    }
-
-    /// Something worth continuing: lines, a client or an appointment.
-    static func isOpen(lines: [CartLine], client: ClientRef?, appointment: Appointment?) -> Bool {
-        !lines.isEmpty || client != nil || appointment != nil
-    }
-
-    /// "Продолжить чек · 3 500 ₽", or without the amount while there are no lines yet.
-    static func continueTitle(lineCount: Int, total: Int) -> String {
-        lineCount == 0 ? "Продолжить чек" : "Продолжить чек · \(Money.format(total))"
-    }
-
-    /// "По записи · Анна", "Иван Петров · 2 позиции", "Без клиента · пусто".
-    static func summary(itemCount: Int, client: ClientRef?, appointment: Appointment?) -> String {
-        let who = appointment.map { "По записи · \($0.client.fullName)" } ?? client?.fullName ?? "Без клиента"
-        let what = itemCount == 0 ? "пусто" : Plural.count(itemCount, one: "позиция", few: "позиции", many: "позиций")
-        return "\(who) · \(what)"
-    }
-
     /// "По записи · 14:00–15:00 · Анна · Хеликс"
     static func appointmentBanner(_ appointment: Appointment) -> String {
         let time = DateText.timeRange(appointment.startsAt, appointment.endsAt)
@@ -96,30 +68,5 @@ nonisolated enum ProductCatalogFilter {
         return stride(from: 0, to: products.count, by: columns).map { start in
             Array(products[start..<min(start + columns, products.count)])
         }
-    }
-}
-
-extension CartStore {
-    /// Starts the receipt for an appointment. Reopening the same appointment keeps the edits
-    /// (lines, discount, note, checkout choices) and takes the fresh copy (status, deposit).
-    func open(_ appointment: Appointment) {
-        guard appointmentId == appointment.id else {
-            prefill(from: appointment)
-            return
-        }
-        let kept = (
-            lines: lines, discount: discount, note: note,
-            paymentMode: paymentMode, manualSplit: manualSplit, cashReceived: cashReceived,
-            completesAppointment: completesAppointment, sendsAftercare: sendsAftercare
-        )
-        prefill(from: appointment)
-        lines = kept.lines
-        discount = kept.discount
-        note = kept.note
-        selectPaymentMode(kept.paymentMode)
-        manualSplit = kept.manualSplit
-        cashReceived = kept.cashReceived
-        completesAppointment = kept.completesAppointment
-        sendsAftercare = kept.sendsAftercare
     }
 }

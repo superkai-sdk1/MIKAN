@@ -32,6 +32,8 @@ nonisolated struct Appointment: Codable, Hashable, Identifiable, Sendable {
     var depositLink: QrPayment?
     var notes: String?
     var saleId: Int?
+    /// Its open receipt in the POS (the visit has started); `nil` when none or from an older server.
+    var receiptId: Int? = nil
     var completedAt: Date?
     let createdAt: Date
     var updatedAt: Date
@@ -49,6 +51,9 @@ nonisolated struct Appointment: Codable, Hashable, Identifiable, Sendable {
     /// Paid: a sale is linked.
     var isPaid: Bool { saleId != nil }
 
+    /// Not paid yet and its receipt is open in the POS.
+    var isInPOS: Bool { !isPaid && receiptId != nil }
+
     /// Not cancelled and not a no-show.
     var isActive: Bool { status != .cancelled && status != .noShow }
 
@@ -60,10 +65,11 @@ nonisolated extension Appointment {
     private enum CodingKeys: String, CodingKey {
         case id, client, master, service, services, title, startsAt, endsAt, status, price, deposit, notes
         case depositRequired, depositStatus, depositOperations, depositLink
-        case saleId, completedAt, createdAt, updatedAt
+        case saleId, receiptId, completedAt, createdAt, updatedAt
     }
 
-    /// Tolerates servers that predate multi-service appointments (no `services`) and prepayments (no `deposit…`).
+    /// Tolerates servers that predate multi-service appointments (no `services`), prepayments (no `deposit…`)
+    /// and open receipts (no `receiptId`).
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
@@ -83,6 +89,7 @@ nonisolated extension Appointment {
         depositLink = try c.decodeIfPresent(QrPayment.self, forKey: .depositLink)
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
         saleId = try c.decodeIfPresent(Int.self, forKey: .saleId)
+        receiptId = try c.decodeIfPresent(Int.self, forKey: .receiptId)
         completedAt = try c.decodeIfPresent(Date.self, forKey: .completedAt)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
