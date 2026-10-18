@@ -1,0 +1,221 @@
+import SwiftUI
+
+// Jewelry parts of the product editor: characteristics and sizes.
+
+/// Material (with presets), thread type, thickness with the gauge hint, colour, stone.
+struct ProductCharacteristicsSection: View {
+    @Binding var draft: ProductDraft
+
+    var body: some View {
+        Section {
+            HStack {
+                TextField("Материал", text: $draft.material)
+                Menu {
+                    ForEach(ProductMaterial.presets, id: \.self) { preset in
+                        Button {
+                            draft.material = preset
+                        } label: {
+                            if preset == draft.material.trimmed {
+                                Label(preset, systemImage: "checkmark")
+                            } else {
+                                Text(preset)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "list.bullet.circle")
+                        .accessibilityLabel("Выбрать материал")
+                }
+            }
+            Picker("Резьба", selection: $draft.threadType) {
+                Text("Не указано").tag(ThreadType?.none)
+                ForEach(ThreadType.allCases) { type in
+                    Text(type.title).tag(ThreadType?.some(type))
+                }
+            }
+            HStack {
+                Text("Толщина")
+                Spacer(minLength: 12)
+                TextField("1.2", text: $draft.thicknessText)
+                    .keyboardType(.numbersAndPunctuation)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.characters)
+                    .multilineTextAlignment(.trailing)
+                    .monospacedDigit()
+                    .frame(maxWidth: 120)
+                    .accessibilityLabel("Толщина, мм")
+                Text("мм").foregroundStyle(.secondary)
+            }
+            TextField("Цвет, например «Золотистый»", text: $draft.color)
+            TextField("Камень, например «Фианит»", text: $draft.stone)
+        } header: {
+            Text("Характеристики")
+        } footer: {
+            if let message = draft.thicknessMessage ?? draft.appearanceMessage {
+                Text(message).foregroundStyle(.red)
+            } else if let hint = draft.thicknessHint {
+                Text("Толщина: \(hint).")
+            } else {
+                Text("Толщину можно ввести в миллиметрах (1.2) или калибром (16G).")
+            }
+        }
+    }
+}
+
+/// Sizes of the jewelry: a section per size (name, stock, minimum, own article and price) and the add buttons.
+struct ProductSizesEditor: View {
+    @Binding var draft: ProductDraft
+
+    @State private var showsBulkAdd = false
+    @State private var bulkText = ""
+    @FocusState private var focusedSize: UUID?
+
+    var body: some View {
+        ForEach($draft.sizes) { $size in
+            Section {
+                TextField(
+                    draft.hasSeveralSizes ? "Название, например «8 мм»" : "Размер, если есть (необязательно)",
+                    text: $size.name
+                )
+                .focused($focusedSize, equals: size.id)
+                if size.isNew {
+                    NumberField.integer("Начальный остаток", value: $size.initialQuantity, unit: draft.unitLabel)
+                } else {
+                    LabeledContent("На складе", value: InventoryText.quantity(size.quantity, unit: draft.unitLabel))
+                        .monospacedDigit()
+                }
+                NumberField.integer("Минимальный остаток", value: $size.minQuantity, unit: draft.unitLabel)
+                if draft.hasSeveralSizes || size.hasOwnValues {
+                    NavigationLink {
+                        ProductSizeOwnValuesView(size: $size, productSku: draft.sku, productPrice: draft.price, productCost: draft.cost)
+                    } label: {
+                        LabeledContent("Артикул и цена", value: ownValuesSummary(size))
+                    }
+                }
+            } header: {
+                header(for: size)
+            }
+        }
+        Section {
+            Button("Добавить размер", systemImage: "plus.circle.fill", action: addSize)
+                .disabled(draft.sizes.count >= ProductLimits.maxSizes)
+            Button("Добавить размеры списком…", systemImage: "text.badge.plus") { showsBulkAdd = true }
+                .disabled(draft.sizes.count >= ProductLimits.maxSizes)
+                .alert("Добавить размеры", isPresented: $showsBulkAdd) {
+                    TextField("6, 8, 10 мм", text: $bulkText)
+                    Button("Добавить", action: addBulk)
+                    Button("Отмена", role: .cancel) { bulkText = "" }
+                } message: {
+                    Text("Через запятую. Единицу достаточно написать у последнего: «6, 8, 10 мм». Дробные — через точку: «1.2×8 мм».")
+                }
+        } footer: {
+            if let message = draft.sizesMessage {
+                Text(message).foregroundStyle(.red)
+            } else if draft.hasSeveralSizes {
+                Text("Остаток считается по каждому размеру; в кассе при продаже выбирают размер.")
+            } else {
+                Text("Если украшение бывает разной длины или диаметра, добавьте размеры — остаток будет считаться по каждому.")
+            }
+        }
+    }
+
+    private func header(for size: SizeDraft) -> some View {
+        let index = draft.sizes.firstIndex { $0.id == size.id } ?? 0
+        let removalBlock = draft.removalBlock(for: size.id)
+        return HStack {
+            Text(draft.hasSeveralSizes ? "Размер \(index + 1)" : "Размер и остаток")
+            Spacer()
+            if draft.hasSeveralSizes {
+                Menu {
+                    Button("Выше", systemImage: "arrow.up") {
+                        draft = draft.movingSize(size.id, by: -1)
+                    }
+                    .disabled(index == 0)
+                    Button("Ниже", systemImage: "arrow.down") {
+                        draft = draft.movingSize(size.id, by: 1)
+                    }
+                    .disabled(index >= draft.sizes.count - 1)
+                    Divider()
+                    Button("Удалить размер", systemImage: "trash", role: .destructive) {
+                        draft = draft.removingSize(size.id)
+                    }
+                    .disabled(removalBlock != nil)
+                    if let removalBlock {
+                        Text(removalBlock)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.body)
+                        .accessibilityLabel("Действия с размером \(index + 1)")
+                }
+            }
+        }
+    }
+
+    /// «как у товара» or «LB-12-10 · 1 700 ₽».
+    private func ownValuesSummary(_ size: SizeDraft) -> String {
+        guard size.hasOwnValues else { return "как у товара" }
+        let parts = [size.sku.nonEmpty, size.price.map { Money.format($0) }, size.cost.map { "себест. \(Money.format($0))" }]
+        return parts.compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func addSize() {
+        let updated = draft.addingSize()
+        draft = updated
+        // The new row's text field exists only after this update, so focus it on the next turn.
+        if let id = updated.sizes.last?.id {
+            Task { focusedSize = id }
+        }
+    }
+
+    private func addBulk() {
+        let names = ProductSizeNames.parse(bulkText)
+        bulkText = ""
+        guard !names.isEmpty else { return }
+        withAnimation { draft = draft.addingSizes(named: names) }
+    }
+}
+
+/// Own article, price and cost of one size; empty fields fall back to the product's.
+struct ProductSizeOwnValuesView: View {
+    @Binding var size: SizeDraft
+    let productSku: String
+    let productPrice: Int
+    let productCost: Int?
+
+    var body: some View {
+        Form {
+            Section {
+                TextField(productSku.nonEmpty ?? "Артикул размера", text: $size.sku)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("Артикул")
+            } footer: {
+                Text(productSku.nonEmpty.map { "Пусто — артикул товара «\($0)»." } ?? "Пусто — без своего артикула.")
+            }
+            Section {
+                NumberField.optionalMoney("Цена продажи", value: $size.price, placeholder: Money.format(productPrice))
+                NumberField.optionalMoney("Себестоимость", value: $size.cost, placeholder: productCost.map(Money.format) ?? "—")
+                if let markup = ProductMarkup.text(price: size.price ?? productPrice, cost: size.cost ?? productCost) {
+                    LabeledContent("Наценка", value: markup).monospacedDigit()
+                }
+            } header: {
+                Text("Цена")
+            } footer: {
+                Text("Пустые поля — цена и себестоимость товара. Своя цена нужна, если размер стоит иначе.")
+            }
+            if size.hasOwnValues {
+                Section {
+                    Button("Как у товара", systemImage: "arrow.uturn.backward") {
+                        size.sku = ""
+                        size.price = nil
+                        size.cost = nil
+                    }
+                }
+            }
+        }
+        .navigationTitle(InventoryText.sizeTitle(size.name))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

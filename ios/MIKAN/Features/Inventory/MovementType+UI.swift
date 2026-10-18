@@ -42,7 +42,8 @@ extension MovementType {
     }
 }
 
-/// Stock movement row: type, signed delta, resulting quantity, author and note.
+/// Stock movement row: type, signed delta, resulting stock of the size, author and note.
+/// The global list names the product and size («Лабрет — 8 мм»); a product's own list shows the size as a badge.
 struct MovementRow: View {
     let movement: StockMovement
     var showsProduct = false
@@ -56,8 +57,13 @@ struct MovementRow: View {
                 .background((movement.delta >= 0 ? Color.green : Color.orange).opacity(0.14), in: .circle)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(showsProduct ? movement.productName : movement.type.title)
-                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 6) {
+                    Text(showsProduct ? movement.displayName : movement.type.title)
+                        .font(.subheadline.weight(.semibold))
+                    if !showsProduct, let size = movement.variantName.nonEmpty {
+                        StatusBadge(text: size, color: .secondary)
+                    }
+                }
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
