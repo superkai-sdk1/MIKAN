@@ -49,6 +49,7 @@ const FIELD_LABELS: Record<string, string> = {
   workdayEnd: 'Конец рабочего дня',
   aftercareHour: 'Час отправки памяток',
   reminderHoursBefore: 'За сколько часов напоминать',
+  reminderOffsets: 'Напоминания',
   minQuantity: 'Минимальный остаток',
   initialQuantity: 'Начальный остаток',
   from: 'Начало периода',

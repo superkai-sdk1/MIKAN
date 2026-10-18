@@ -162,6 +162,67 @@ describe('grammY handlers (no network)', () => {
     expect(content[0]!.source!.data).toBe(Buffer.from('late-image').toString('base64'));
   });
 
+  it('opens catalogs from the keyboard buttons and /catalog without the AI, and answers inline button presses', async () => {
+    const helix = await make(t, '/api/services', { name: 'Хеликс', category: 'piercing', price: 3000, durationMin: 30 });
+    await make(t, '/api/products', { kind: 'jewelry', name: 'Лабрет', price: 1500, serviceIds: [helix.id], variants: [{ name: '6 мм', initialQuantity: 2 }] });
+
+    await bot.handleUpdate(privateMsg({ text: '💎 Украшения' }));
+    await bot.handleUpdate(command('/catalog'));
+    await bot.handleUpdate(privateMsg({ text: '💉 Услуги и цены' }));
+    await pipeline.idle();
+    expect(ai.calls).toHaveLength(0);
+    const menus = t.gateway.sent.filter((s) => s.chatId === USER);
+    expect(menus.map((m) => m.text)).toEqual([
+      expect.stringMatching(/^💎 Украшения в наличии/),
+      expect.stringMatching(/^💎 Украшения в наличии/),
+      expect.stringMatching(/^💉 Услуги и цены/),
+    ]);
+    expect(menus[0]!.keyboard!.flat().map((b) => b.text)).toEqual(['Все украшения', '💉 Услуги и цены']);
+    const texts = (await t.api('GET', `/api/bot/chats/${USER}/messages`)).json().items.map((m: { role: string; text: string }) => `${m.role}:${m.text}`);
+    expect(texts.slice(0, 2)).toEqual(['user:💎 Украшения', expect.stringMatching(/^assistant:\[Каталог\] 💎 Украшения в наличии/)]);
+
+    const open = menus[0]!.keyboard![0]![0]!.data;
+    await bot.handleUpdate({
+      update_id: ++updateId,
+      callback_query: {
+        id: 'cb1',
+        from: { id: USER, is_bot: false, first_name: 'Ольга' },
+        chat_instance: 'ci',
+        data: open,
+        message: { message_id: menus[0]!.messageId, date: 0, chat: { id: USER, type: 'private', first_name: 'Ольга' }, text: menus[0]!.text },
+      },
+    } as unknown as Update);
+    expect(t.gateway.sent.at(-1)!.text).toContain('Лабрет'); // no photo → a text card with buttons
+    expect(calls.filter((c) => c.method === 'answerCallbackQuery').map((c) => c.payload)).toEqual([{ callback_query_id: 'cb1' }]);
+
+    // A button under a message Telegram no longer shows to the bot (inaccessible, date 0) answers with a new message.
+    const card = t.gateway.sent.at(-1)!;
+    const all = card.keyboard!.flat().find((b) => b.text === '📂 Все украшения')!.data;
+    const sentBefore = t.gateway.sent.length;
+    await bot.handleUpdate({
+      update_id: ++updateId,
+      callback_query: {
+        id: 'cb2',
+        from: { id: USER, is_bot: false, first_name: 'Ольга' },
+        chat_instance: 'ci',
+        data: all,
+        message: { message_id: card.messageId, date: 0, chat: { id: USER, type: 'private', first_name: 'Ольга' } },
+      },
+    } as unknown as Update);
+    expect(t.gateway.sent).toHaveLength(sentBefore + 1);
+    expect(t.gateway.sent.at(-1)!.text).toMatch(/^💎 Украшения в наличии/);
+    expect(t.gateway.edits.filter((e) => e.messageId === card.messageId)).toEqual([]);
+  });
+
+  it('shows the staff keyboard to a recognised employee', async () => {
+    await make(t, '/api/employees', { name: 'Анна', login: 'anna', password: 'secret123', phone: '+79990001122' });
+    await bot.handleUpdate(privateMsg({ contact: { phone_number: '+79990001122', first_name: 'Анна', user_id: USER } }));
+    const reply = replies().at(-1)!;
+    expect(reply.text).toMatch(/^Здравствуйте, Анна! Узнал вас/);
+    const keyboard = (reply.reply_markup as { keyboard: Array<Array<{ text: string }>> }).keyboard;
+    expect(keyboard.flat().map((b) => b.text)).toEqual(['📋 Что сегодня', '📊 Выручка за неделю', '📦 Что заканчивается', '💎 Украшения']);
+  });
+
   it('ignores private-only handlers in groups', async () => {
     await bot.handleUpdate({
       update_id: 999,

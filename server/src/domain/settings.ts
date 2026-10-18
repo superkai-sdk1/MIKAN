@@ -25,7 +25,29 @@ export interface BotSettingsStored {
   extraInstructions: string;
   aftercareHour: number;
   remindersEnabled: boolean;
-  reminderHoursBefore: number;
+  /** Minutes before the appointment start at which reminders are sent, distinct, latest-first (largest first). */
+  reminderOffsets: number[];
+}
+
+/** Reminder offsets: 1–6 distinct values, 15 minutes … 14 days. */
+export const REMINDER_OFFSET_MIN = 15;
+export const REMINDER_OFFSET_MAX = 14 * 24 * 60;
+export const MAX_REMINDER_OFFSETS = 6;
+
+/** Distinct offsets, earliest reminder first (largest offset first). */
+export function normalizeReminderOffsets(offsets: number[]): number[] {
+  return [...new Set(offsets.map((m) => Math.round(m)))].sort((a, b) => b - a);
+}
+
+/** Older builds accept and resend «hours before» only within 1…168. */
+export const LEGACY_REMINDER_HOURS_MAX = 168;
+
+/**
+ * `reminderHoursBefore` kept in the API for older builds: the first (largest) offset in whole hours, within
+ * 1…168 (a longer offset reads as 168, so builds that resend the value still save).
+ */
+export function legacyReminderHours(offsets: number[]): number {
+  return Math.min(LEGACY_REMINDER_HOURS_MAX, Math.max(1, Math.round((offsets[0] ?? 24 * 60) / 60)));
 }
 
 export interface StaffCode {
@@ -57,7 +79,7 @@ export const DEFAULT_BOT: BotSettingsStored = {
   extraInstructions: '',
   aftercareHour: 12,
   remindersEnabled: true,
-  reminderHoursBefore: 24,
+  reminderOffsets: [24 * 60],
 };
 
 const KEY_STUDIO = 'studio';
@@ -118,8 +140,18 @@ export function saveStudioSettings(db: DbOrTx, value: StudioSettings): StudioSet
   return value;
 }
 
+type StoredBotValue = Partial<BotSettingsStored> & { reminderHoursBefore?: number };
+
 export function getBotSettings(db: DbOrTx): BotSettingsStored {
-  return { ...DEFAULT_BOT, ...(readKey<Partial<BotSettingsStored>>(db, KEY_BOT) ?? {}) };
+  const { reminderHoursBefore, ...stored } = readKey<StoredBotValue>(db, KEY_BOT) ?? {};
+  // Settings saved before several reminders existed keep their single «hours before».
+  const offsets =
+    Array.isArray(stored.reminderOffsets) && stored.reminderOffsets.length > 0
+      ? stored.reminderOffsets
+      : typeof reminderHoursBefore === 'number'
+        ? [reminderHoursBefore * 60]
+        : DEFAULT_BOT.reminderOffsets;
+  return { ...DEFAULT_BOT, ...stored, reminderOffsets: normalizeReminderOffsets(offsets) };
 }
 
 export function saveBotSettings(db: DbOrTx, value: BotSettingsStored): BotSettingsStored {

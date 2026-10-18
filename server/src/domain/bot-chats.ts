@@ -1,17 +1,19 @@
 import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { botChats, botMessages, bookingRequests, clients, scheduledMessages } from '../db/schema.js';
+import { botChats, botMessages, bookingRequests, clients, employees, scheduledMessages } from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
 import {
   bookingOut,
   botChatOut,
   botMessageOut,
   clientRef,
+  employeeRef,
   scheduledOut,
   type BookingRow,
   type BotChatRow,
   type BotMessageRow,
   type ClientRow,
+  type EmployeeRow,
   type ScheduledRow,
 } from '../lib/serialize.js';
 import { clientsByIds, employeeRefOrMissing, employeesByIds } from './refs.js';
@@ -110,6 +112,22 @@ export function updateChatFlags(
   return db.update(botChats).set(patch).where(eq(botChats.chatId, chatId)).returning().get();
 }
 
+/**
+ * The studio employee recognised in this chat by the phone number they shared — only while the employee is
+ * active: a deactivated employee loses staff access at once (and gets it back if reactivated).
+ */
+export function chatEmployee(db: DbOrTx, chat: Pick<BotChatRow, 'employeeId'> | null): EmployeeRow | null {
+  if (chat?.employeeId == null) return null;
+  const employee = db.select().from(employees).where(eq(employees.id, chat.employeeId)).get();
+  return employee?.active ? employee : null;
+}
+
+/** Links the chat to an employee (staff mode) or unlinks it (`null`). */
+export function setChatEmployee(db: DbOrTx, chatId: number, employeeId: number | null): BotChatRow {
+  getChat(db, chatId);
+  return db.update(botChats).set({ employeeId }).where(eq(botChats.chatId, chatId)).returning().get();
+}
+
 export function serializeMessages(db: DbOrTx, rows: BotMessageRow[]) {
   const emps = employeesByIds(db, rows.map((r) => r.employeeId));
   return rows.map((m) => botMessageOut(m, employeeRefOrMissing(emps, m.employeeId)));
@@ -128,9 +146,16 @@ export function serializeChats(db: DbOrTx, rows: BotChatRow[]) {
     : [];
   const lastByChat = new Map(serializeMessages(db, lastRows).map((m) => [m.chatId, m]));
   const cl = clientsByIds(db, rows.map((r) => r.clientId));
+  const staff = employeesByIds(db, rows.map((r) => r.employeeId));
   return rows.map((chat) => {
     const client = chat.clientId != null ? cl.get(chat.clientId) : undefined;
-    return botChatOut(chat, client ? clientRef(client) : null, lastByChat.get(chat.chatId) ?? null);
+    const employee = chat.employeeId != null ? staff.get(chat.employeeId) : undefined;
+    return botChatOut(
+      chat,
+      client ? clientRef(client) : null,
+      lastByChat.get(chat.chatId) ?? null,
+      employee?.active ? employeeRef(employee) : null,
+    );
   });
 }
 

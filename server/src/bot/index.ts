@@ -1,9 +1,18 @@
 import { Bot, GrammyError, InputFile } from 'grammy';
+import type { InlineKeyboardMarkup, Message } from 'grammy/types';
 import type { AppContext } from '../context.js';
 import { getBotSettings, getCachedBotUsername, setCachedBotUsername } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
-import { splitMessage, TELEGRAM_MAX_CAPTION, truncate } from '../lib/text.js';
-import { BotSendError, BotUnavailableError, type BotGateway, type PhotoSource } from './gateway.js';
+import { splitMessage, TELEGRAM_MAX_CAPTION, TELEGRAM_MAX_MESSAGE, truncate } from '../lib/text.js';
+import {
+  BotSendError,
+  BotUnavailableError,
+  type BotGateway,
+  type InlineKeyboard,
+  type PhotoSource,
+  type SendOptions,
+  type SentMessage,
+} from './gateway.js';
 import { registerHandlers } from './handlers.js';
 import { BotPipeline } from './pipeline.js';
 
@@ -11,6 +20,17 @@ const MIN_BACKOFF_MS = 5_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 const WARN_THROTTLE_MS = 60_000;
 const API_TIMEOUT_SECONDS = 75; // > long-polling timeout (30 s)
+/** Uploaded pictures remembered by Telegram file_id, so carousel paging does not upload them again. */
+const MAX_CACHED_FILE_IDS = 500;
+
+function markup(keyboard: InlineKeyboard | null | undefined): InlineKeyboardMarkup | undefined {
+  if (keyboard === undefined) return undefined;
+  return { inline_keyboard: (keyboard ?? []).map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) };
+}
+
+/** Editing a message to exactly what it already shows is a harmless no-op for us. */
+const notModified = (err: unknown): boolean =>
+  err instanceof GrammyError && err.error_code === 400 && /message is not modified/i.test(err.description);
 
 function toSendError(err: unknown): BotSendError {
   if (err instanceof GrammyError) {
@@ -43,6 +63,8 @@ export class BotController implements BotGateway {
   private lastWarnAt = 0;
   private apiFailing = false;
   private readonly botFactory: (token: string) => Bot;
+  /** Local path / URL of a sent picture → its Telegram file_id. */
+  private readonly fileIds = new Map<string, string>();
 
   constructor(
     private readonly ctx: AppContext,
@@ -144,7 +166,7 @@ export class BotController implements BotGateway {
         setCachedBotUsername(this.ctx.db, bot.botInfo.username);
         if (!current()) break;
         await bot.start({
-          allowed_updates: ['message'],
+          allowed_updates: ['message', 'callback_query'],
           onStart: (info) => {
             if (!current()) return;
             this.polling = true;
@@ -184,22 +206,95 @@ export class BotController implements BotGateway {
     return this.bot;
   }
 
-  async sendText(chatId: number, text: string): Promise<void> {
+  async sendText(chatId: number, text: string, options: SendOptions = {}): Promise<SentMessage> {
     const bot = this.requireBot();
-    for (const chunk of splitMessage(text)) {
+    const chunks = splitMessage(text);
+    let messageId = 0;
+    for (const [index, chunk] of chunks.entries()) {
+      const last = index === chunks.length - 1;
       try {
-        await bot.api.sendMessage(chatId, chunk, { link_preview_options: { is_disabled: true } });
+        const sent = await bot.api.sendMessage(chatId, chunk, {
+          link_preview_options: { is_disabled: true },
+          ...(last && options.keyboard ? { reply_markup: markup(options.keyboard) } : {}),
+        });
+        messageId = sent.message_id;
       } catch (err) {
         throw toSendError(err);
       }
     }
+    return { messageId };
   }
 
-  async sendPhoto(chatId: number, photo: PhotoSource, caption: string): Promise<void> {
+  /** A cached file_id for an already uploaded picture, else the file / URL itself. */
+  private photoInput(photo: PhotoSource): { key: string; input: InputFile | string } {
+    const key = photo.kind === 'file' ? `file:${photo.path}` : `url:${photo.url}`;
+    const cached = this.fileIds.get(key);
+    if (cached) return { key, input: cached };
+    return { key, input: photo.kind === 'file' ? new InputFile(photo.path) : photo.url };
+  }
+
+  private rememberFileId(key: string, message: Message | true | undefined): void {
+    if (!message || message === true || !('photo' in message) || !message.photo?.length) return;
+    if (this.fileIds.size >= MAX_CACHED_FILE_IDS) this.fileIds.delete(this.fileIds.keys().next().value!);
+    this.fileIds.set(key, message.photo[message.photo.length - 1]!.file_id);
+  }
+
+  async sendPhoto(chatId: number, photo: PhotoSource, caption: string, options: SendOptions = {}): Promise<SentMessage> {
     const bot = this.requireBot();
-    const input = photo.kind === 'file' ? new InputFile(photo.path) : photo.url;
+    const { key, input } = this.photoInput(photo);
     try {
-      await bot.api.sendPhoto(chatId, input, { caption: truncate(caption, TELEGRAM_MAX_CAPTION) });
+      const sent = await bot.api.sendPhoto(chatId, input, {
+        caption: truncate(caption, TELEGRAM_MAX_CAPTION),
+        ...(options.keyboard ? { reply_markup: markup(options.keyboard) } : {}),
+      });
+      this.rememberFileId(key, sent);
+      return { messageId: sent.message_id };
+    } catch (err) {
+      throw toSendError(err);
+    }
+  }
+
+  async editPhoto(chatId: number, messageId: number, photo: PhotoSource, caption: string, keyboard?: InlineKeyboard): Promise<void> {
+    const bot = this.requireBot();
+    const { key, input } = this.photoInput(photo);
+    try {
+      const edited = await bot.api.editMessageMedia(
+        chatId,
+        messageId,
+        { type: 'photo', media: input, caption: truncate(caption, TELEGRAM_MAX_CAPTION) },
+        { reply_markup: markup(keyboard ?? []) },
+      );
+      this.rememberFileId(key, edited);
+    } catch (err) {
+      if (!notModified(err)) throw toSendError(err);
+    }
+  }
+
+  async editText(chatId: number, messageId: number, text: string, keyboard?: InlineKeyboard): Promise<void> {
+    const bot = this.requireBot();
+    try {
+      await bot.api.editMessageText(chatId, messageId, truncate(text, TELEGRAM_MAX_MESSAGE), {
+        link_preview_options: { is_disabled: true },
+        reply_markup: markup(keyboard ?? []),
+      });
+    } catch (err) {
+      if (!notModified(err)) throw toSendError(err);
+    }
+  }
+
+  async editKeyboard(chatId: number, messageId: number, keyboard: InlineKeyboard | null): Promise<void> {
+    const bot = this.requireBot();
+    try {
+      await bot.api.editMessageReplyMarkup(chatId, messageId, { reply_markup: markup(keyboard) });
+    } catch (err) {
+      if (!notModified(err)) throw toSendError(err);
+    }
+  }
+
+  async deleteMessage(chatId: number, messageId: number): Promise<void> {
+    const bot = this.requireBot();
+    try {
+      await bot.api.deleteMessage(chatId, messageId);
     } catch (err) {
       throw toSendError(err);
     }
