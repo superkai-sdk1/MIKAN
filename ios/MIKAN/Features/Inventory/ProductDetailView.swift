@@ -1,9 +1,12 @@
 import SwiftUI
 
 struct ProductDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
     @Environment(ReferenceStore.self) private var reference
     let categories: Set<String>
+    /// Runs after the product was deleted; the card closes itself.
+    let onDelete: (Int) -> Void
     let onChange: (Product) -> Void
 
     @State private var product: Product
@@ -15,17 +18,28 @@ struct ProductDetailView: View {
     @State private var purchases = Remote<[HistoryEntry]>()
     @State private var purchasesTotal = 0
     @State private var movementRequest: StockMovementRequest?
+    @State private var showsPurchase = false
     @State private var showsEditor = false
     @State private var viewer: ServicePhotoViewerItem?
     @State private var isSavingPresence = false
+    @State private var confirmsDelete = false
+    @State private var isDeleting = false
+    /// Deleted from the editor: the card closes once the editor is gone.
+    @State private var deletedInEditor = false
     @State private var errorMessage: String?
 
     private static let historyLimit = 30
     private static let purchasesPreviewLimit = 5
 
-    init(product: Product, categories: Set<String> = [], onChange: @escaping (Product) -> Void) {
+    init(
+        product: Product,
+        categories: Set<String> = [],
+        onDelete: @escaping (Int) -> Void = { _ in },
+        onChange: @escaping (Product) -> Void
+    ) {
         _product = State(initialValue: product)
         self.categories = categories
+        self.onDelete = onDelete
         self.onChange = onChange
     }
 
@@ -38,9 +52,15 @@ struct ProductDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     titleBlock
                     if product.isPresenceTracked {
-                        ProductPresenceCard(status: product.presenceStatus ?? .ok, isSaving: isSavingPresence, onSelect: setPresence)
+                        ProductPresenceCard(
+                            status: product.presenceStatus ?? .ok,
+                            isSaving: isSavingPresence,
+                            spentRecently: spentRecently,
+                            onSelect: setPresence,
+                            onPurchase: { showsPurchase = true }
+                        )
                     } else {
-                        quantityCard
+                        ProductStockCard(product: product)
                         actions
                         if showsSizesCard {
                             ProductSizesCard(product: product) { type, variant in
@@ -76,7 +96,22 @@ struct ProductDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Изменить") { showsEditor = true }
+                    .disabled(isDeleting)
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                if isDeleting {
+                    ProgressView()
+                } else {
+                    Menu {
+                        Button("Удалить", systemImage: "trash", role: .destructive) { confirmsDelete = true }
+                    } label: {
+                        Label("Ещё", systemImage: "ellipsis")
+                    }
+                }
+            }
+        }
+        .productDeletion(product, isPresented: $confirmsDelete, isDeleting: $isDeleting, errorMessage: $errorMessage) { _ in
+            close()
         }
         .refreshable { await reload() }
         .task { await reload() }
@@ -90,8 +125,19 @@ struct ProductDetailView: View {
                 prependMovements(result.movements)
             }
         }
-        .sheet(isPresented: $showsEditor) {
-            ProductEditorView(product: product, defaultKind: product.kind, categories: categories) { saved in
+        .sheet(isPresented: $showsPurchase) {
+            ConsumablePurchaseSheet(product: product) { result in
+                apply(result.product)
+                prependMovements([result.movement])
+            }
+        }
+        .sheet(isPresented: $showsEditor, onDismiss: { if deletedInEditor { close() } }) {
+            ProductEditorView(
+                product: product,
+                defaultKind: product.kind,
+                categories: categories,
+                onDeleted: { _ in deletedInEditor = true }
+            ) { saved in
                 apply(saved)
             }
         }
@@ -132,55 +178,29 @@ struct ProductDetailView: View {
         }
     }
 
-    private var quantityCard: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(product.hasSeveralSizes ? "Остаток всех размеров" : "Остаток")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text(InventoryText.quantity(product.quantity, unit: product.unitLabel))
-                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                    .monospacedDigit()
-                    .foregroundStyle(product.lowStock ? Color.red : Color.primary)
-                    .contentTransition(.numericText(value: Double(product.quantity)))
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                if product.lowStock {
-                    StatusBadge(text: lowStockTitle, color: .red, systemImage: "exclamationmark.triangle.fill")
-                }
-                Text("Минимум: \(InventoryText.quantity(product.minQuantity, unit: product.unitLabel))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .cardStyle()
-        .accessibilityElement(children: .combine)
-    }
-
-    /// «Мало», or «Мало: 8 мм, 10 мм» for a product with sizes.
-    private var lowStockTitle: String {
-        guard product.hasSeveralSizes else { return "Мало" }
-        let names = product.lowVariants.map { InventoryText.sizeTitle($0.name) }
-        guard names.count > 2 else { return "Мало: " + names.joined(separator: ", ") }
-        return "Мало: " + Plural.count(names.count, one: "размер", few: "размера", many: "размеров")
-    }
-
-    /// The operations for all sizes at once.
+    /// The operations for all sizes at once; «Приход» first and prominent.
     private var actions: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
-                ForEach(MovementType.manual) { type in
-                    Button {
-                        movementRequest = StockMovementRequest(type: type)
-                    } label: {
-                        ActionLabel(title: type.shortTitle, systemImage: type.symbol)
+                ForEach(MovementType.manual(for: product.kind)) { type in
+                    if type == .receipt {
+                        actionButton(type).buttonStyle(.glassProminent)
+                    } else {
+                        actionButton(type)
                     }
-                    .accessibilityLabel(type.title)
                 }
             }
             .buttonStyle(.glass)
         }
+    }
+
+    private func actionButton(_ type: MovementType) -> some View {
+        Button {
+            movementRequest = StockMovementRequest(type: type)
+        } label: {
+            ActionLabel(title: type.shortTitle, systemImage: type.symbol)
+        }
+        .accessibilityLabel(type.title)
     }
 
     /// A product without sizes is covered by the stock card.
@@ -205,7 +225,7 @@ struct ProductDetailView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(items) { movement in
-                    MovementRow(movement: movement)
+                    MovementRow(movement: movement, unit: product.unitLabel)
                     if movement.id != items.last?.id { Divider() }
                 }
             } else if let failure = movements.failure {
@@ -240,6 +260,12 @@ struct ProductDetailView: View {
             .font(.subheadline)
         }
         .accessibilityLabel("Размер для истории")
+    }
+
+    /// Purchases of the last 30 days, while the loaded history reaches that far back.
+    private var spentRecently: Int? {
+        guard let items = movements.value, movementsVariantId == nil else { return nil }
+        return PurchaseSummary.spent(in: items, isComplete: items.count < Self.historyLimit)
     }
 
     /// Jewelry and goods are sold at the POS; consumables only show buyers when someone actually bought one.
@@ -300,6 +326,13 @@ struct ProductDetailView: View {
                 errorMessage = error.userMessage
             }
         }
+    }
+
+    /// Leaves the deleted product's card; the list drops it.
+    private func close() {
+        let id = product.id
+        dismiss()
+        onDelete(id)
     }
 
     private func apply(_ updated: Product) {

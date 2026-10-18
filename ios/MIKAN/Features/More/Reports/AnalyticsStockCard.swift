@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// «Расходы склада»: write-offs and consumables used in the period at cost, the biggest of them, and what is on the
-/// shelves now.
+/// «Расходы склада»: write-offs and consumables used in the period at cost, purchases of presence consumables at what
+/// they cost, the biggest of them, and what is on the shelves now.
 struct AnalyticsStockCard: View {
     let stock: AnalyticsStock
 
@@ -9,9 +9,10 @@ struct AnalyticsStockCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            AnalyticsCardTitle(title: "Расходы склада", systemImage: "shippingbox", caption: "Списания и расходники по себестоимости")
+            AnalyticsCardTitle(title: "Расходы склада", systemImage: "shippingbox", caption: "Списания, расход и покупки расходников")
             AnalyticsMoneyRow(title: "Списания", amount: stock.writeoffs.value, detail: ReportText.units(stock.writeoffs.quantity))
             AnalyticsMoneyRow(title: "Расход на процедуры", amount: stock.usage.value, detail: ReportText.units(stock.usage.quantity))
+            AnalyticsMoneyRow(title: "Покупки расходников", amount: stock.purchases.value, detail: ReportText.purchases(stock.purchases.count))
             Divider()
             AnalyticsMoneyRow(title: "Итого расходы", amount: stock.expenses, isEmphasized: true)
             if !stock.top.isEmpty {
@@ -20,7 +21,7 @@ struct AnalyticsStockCard: View {
                         AnalyticsRank(index: index)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(expense.name).font(.subheadline)
-                            Text("\(expense.isUsage ? "Расход" : "Списание") · \(ReportText.units(expense.quantity))")
+                            Text(ReportText.stockExpenseLine(expense))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

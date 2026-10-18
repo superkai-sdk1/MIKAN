@@ -41,7 +41,7 @@ struct MovementSheet: View {
             Form {
                 Section {
                     Picker("Операция", selection: typeBinding) {
-                        ForEach(MovementType.manual) { type in
+                        ForEach(draft.availableTypes) { type in
                             Text(type.shortTitle).tag(type)
                         }
                     }
@@ -53,6 +53,13 @@ struct MovementSheet: View {
                     sizesSection
                 } else if let size = draft.sizes.first {
                     singleSizeSection(size)
+                }
+                if draft.type == .receipt {
+                    Section {
+                        NumberField.optionalMoney(draft.unitCostTitle, value: $draft.unitCost)
+                    } footer: {
+                        Text("Сохранится в истории движений и станет новой себестоимостью.")
+                    }
                 }
                 Section("Комментарий") {
                     TextField("Поставщик, причина списания…", text: $draft.note, axis: .vertical)
@@ -219,7 +226,7 @@ extension MovementType {
         case .writeoff: "Брак, потеря, истёк срок — сколько списать по каждому размеру."
         case .usage: "Сколько ушло на процедуры по каждому размеру (не через завершение записи)."
         case .adjustment: "Пересчитайте остатки и исправьте те размеры, где фактическое количество другое."
-        case .sale, .returned: ""
+        case .sale, .returned, .purchase, .other: ""
         }
     }
 }

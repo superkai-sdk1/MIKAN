@@ -80,6 +80,16 @@ extension APIClient {
         try await request(.patch, "products/\(id)", body: body)
     }
 
+    /// Deletes a product without history and archives one with it; `writeOff` first writes the stock left off
+    /// (without it the server refuses while stock is left). A product that is already gone (`404`) counts as deleted.
+    func deleteProduct(id: Int, writeOff: Bool) async throws -> ProductDeletionResult {
+        do {
+            return try await request(.delete, "products/\(id)", query: queryItems(["writeOff": writeOff ? "true" : nil]))
+        } catch let error as APIError where error.status == 404 {
+            return ProductDeletionResult(deleted: true)
+        }
+    }
+
     func addMovement(productId: Int, _ body: MovementBody, idempotencyKey: UUID) async throws -> MovementResult {
         try await request(.post, "products/\(productId)/movements", body: body, idempotencyKey: idempotencyKey)
     }
@@ -87,6 +97,18 @@ extension APIClient {
     /// One operation over several sizes in one transaction.
     func addMovements(productId: Int, _ body: StockBatchBody, idempotencyKey: UUID) async throws -> BatchMovementResult {
         try await request(.post, "products/\(productId)/movements/batch", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// A restock of a presence consumable with what it cost: a `purchase` movement and the new status.
+    func recordPurchase(
+        productId: Int,
+        amount: Int,
+        note: String?,
+        presenceStatus: PresenceStatus?,
+        idempotencyKey: UUID
+    ) async throws -> MovementResult {
+        let body = PurchaseBody(amount: amount, note: note.nonEmpty, presenceStatus: presenceStatus)
+        return try await request(.post, "products/\(productId)/purchases", body: body, idempotencyKey: idempotencyKey)
     }
 
     /// Movements of the product, or of one size.

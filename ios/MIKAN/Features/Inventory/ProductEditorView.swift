@@ -10,21 +10,33 @@ struct ProductEditorView: View {
     let product: Product?
     /// Category names seen on the warehouse; offered only while the categories registry is not loaded.
     let categories: Set<String>
+    /// Runs after an existing product was deleted; the editor closes itself.
+    let onDeleted: (Int) -> Void
     let onSaved: (Product) -> Void
 
     @State private var draft: ProductDraft
     @State private var isUploading = false
     @State private var isSaving = false
+    @State private var confirmsDelete = false
+    @State private var isDeleting = false
     @State private var errorMessage: String?
 
-    init(product: Product?, defaultKind: ProductKind, categories: Set<String> = [], onSaved: @escaping (Product) -> Void) {
+    init(
+        product: Product?,
+        defaultKind: ProductKind,
+        categories: Set<String> = [],
+        onDeleted: @escaping (Int) -> Void = { _ in },
+        onSaved: @escaping (Product) -> Void
+    ) {
         self.product = product
         self.categories = categories
+        self.onDeleted = onDeleted
         self.onSaved = onSaved
         _draft = State(initialValue: ProductDraft(product: product, defaultKind: defaultKind))
     }
 
-    private var canSave: Bool { draft.canSave && !isSaving && !isUploading }
+    private var isBusy: Bool { isSaving || isUploading || isDeleting }
+    private var canSave: Bool { draft.canSave && !isBusy }
 
     var body: some View {
         NavigationStack {
@@ -32,6 +44,7 @@ struct ProductEditorView: View {
                 kindSection
                 ProductPhotosEditorSection(draft: $draft, isUploading: $isUploading, errorMessage: $errorMessage)
                 mainSection
+                accountingSection
                 if draft.isJewelry {
                     ProductCharacteristicsSection(draft: $draft)
                 }
@@ -41,7 +54,6 @@ struct ProductEditorView: View {
                 if draft.showsSizesEditor {
                     ProductSizesEditor(draft: $draft)
                 }
-                accountingSection
                 if draft.isJewelry {
                     servicesSection
                 }
@@ -54,21 +66,33 @@ struct ProductEditorView: View {
                 } footer: {
                     Text(activeFooter)
                 }
+                if product != nil {
+                    Section {
+                        Button("Удалить", systemImage: "trash", role: .destructive) { confirmsDelete = true }
+                            .disabled(isBusy)
+                    } footer: {
+                        Text("Продажи и история движений сохранятся.")
+                    }
+                }
             }
-            .disabled(isSaving)
+            .disabled(isSaving || isDeleting)
             .safeAreaInset(edge: .bottom) { saveBlockerBanner }
             .navigationTitle(product == nil ? "Новая позиция" : "Редактирование")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Отмена", role: .cancel) { dismiss() }
-                        .disabled(isSaving || isUploading)
+                        .disabled(isBusy)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!canSave) }
+                    if isSaving || isDeleting { ProgressView() } else { Button("Сохранить", action: save).disabled(!canSave) }
                 }
             }
-            .interactiveDismissDisabled(isSaving || isUploading)
+            .interactiveDismissDisabled(isBusy)
+            .productDeletion(product, isPresented: $confirmsDelete, isDeleting: $isDeleting, errorMessage: $errorMessage) { id in
+                onDeleted(id)
+                dismiss()
+            }
             // Only names the linked services and orders the categories; pickers report their own load errors.
             .task { try? await reference.ensureServices() }
             .task { try? await reference.ensureCategories() }

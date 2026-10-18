@@ -13,10 +13,18 @@ nonisolated struct StockSize: Identifiable, Hashable, Sendable {
 }
 
 /// Pure state of the movement sheet: one operation over several sizes (`POST /products/:id/movements/batch`).
-/// Receipt / write-off / usage take the amount moved; a stock count (adjustment) takes the counted stock.
+/// Receipt / write-off / usage take the amount moved; a stock count (adjustment) takes the counted stock. A receipt
+/// also carries what one unit cost on this delivery.
 nonisolated struct StockBatchDraft: Hashable, Sendable {
+    /// The server's upper limit of a unit cost, rubles.
+    static let maxUnitCost = 100_000_000
+
     private(set) var type: MovementType
     var note: String
+    /// Receipts: what one unit cost, for all lines; pre-filled with the current cost when the sizes share it.
+    var unitCost: Int?
+    /// The operations offered for the product's kind.
+    let availableTypes: [MovementType]
     let productName: String
     let unit: String
     let sizes: [StockSize]
@@ -35,6 +43,21 @@ nonisolated struct StockBatchDraft: Hashable, Sendable {
         }
         preselectedId = variantId.flatMap { id in product.variant(id: id) == nil ? nil : id }
         amounts = Self.startingAmounts(for: type, sizes: sizes)
+        availableTypes = MovementType.manual(for: product.kind)
+        unitCost = Self.currentUnitCost(of: product, preselected: preselectedId)
+    }
+
+    /// The cost of the preselected size (its own, else the product's), or the cost every size shares; `nil` when the
+    /// sizes differ or no cost is set.
+    static func currentUnitCost(of product: Product, preselected variantId: Int?) -> Int? {
+        if let variant = variantId.flatMap(product.variant(id:)) { return product.cost(of: variant) }
+        let costs = Set(product.variants.map(product.cost(of:)))
+        return costs.count == 1 ? costs.first.flatMap { $0 } : nil
+    }
+
+    /// «Цена закупки за шт.», «Цена закупки за уп».
+    var unitCostTitle: String {
+        unit == ProductLimits.defaultUnit ? "Цена закупки за шт." : "Цена закупки за \(unit)"
     }
 
     /// A stock count starts from the current stock of every size, so only differing sizes need typing.
@@ -86,7 +109,7 @@ nonisolated struct StockBatchDraft: Hashable, Sendable {
         case .receipt: return size.quantity + amount
         case .writeoff, .usage: return size.quantity - amount
         case .adjustment: return amount
-        case .sale, .returned: return nil
+        case .sale, .returned, .purchase, .other: return nil
         }
     }
 
@@ -122,6 +145,9 @@ nonisolated struct StockBatchDraft: Hashable, Sendable {
             if type == .adjustment { return "Остатки не изменились." }
             return hasSeveralSizes ? "Укажите количество хотя бы для одного размера." : "Укажите количество."
         }
+        if type == .receipt, let unitCost, unitCost > Self.maxUnitCost {
+            return "Цена закупки не может быть больше \(Money.format(Self.maxUnitCost))."
+        }
         if type == .writeoff || type == .usage, let short = sizes.first(where: { (resulting(for: $0) ?? 0) < 0 }) {
             let stock = InventoryText.quantity(short.quantity, unit: unit)
             return hasSeveralSizes
@@ -134,6 +160,6 @@ nonisolated struct StockBatchDraft: Hashable, Sendable {
     var canSubmit: Bool { validationMessage == nil }
 
     var body: StockBatchBody {
-        StockBatchBody(type: type, note: note.nonEmpty, lines: lines)
+        StockBatchBody(type: type, note: note.nonEmpty, unitCost: type == .receipt ? unitCost : nil, lines: lines)
     }
 }

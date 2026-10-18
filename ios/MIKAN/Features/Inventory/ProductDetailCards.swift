@@ -81,6 +81,45 @@ struct ProductGallery: View {
     }
 }
 
+/// «Остаток»: the stock of all sizes with the low badge and the minimum.
+struct ProductStockCard: View {
+    let product: Product
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(product.hasSeveralSizes ? "Остаток всех размеров" : "Остаток")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(InventoryText.quantity(product.quantity, unit: product.unitLabel))
+                    .font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(product.lowStock ? Color.red : Color.primary)
+                    .contentTransition(.numericText(value: Double(product.quantity)))
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                if product.lowStock {
+                    StatusBadge(text: lowStockTitle, color: .red, systemImage: "exclamationmark.triangle.fill")
+                }
+                Text("Минимум: \(InventoryText.quantity(product.minQuantity, unit: product.unitLabel))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .cardStyle()
+        .accessibilityElement(children: .combine)
+    }
+
+    /// «Мало», or «Мало: 8 мм, 10 мм» for a product with sizes.
+    private var lowStockTitle: String {
+        guard product.hasSeveralSizes else { return "Мало" }
+        let names = product.lowVariants.map { InventoryText.sizeTitle($0.name) }
+        guard names.count > 2 else { return "Мало: " + names.joined(separator: ", ") }
+        return "Мало: " + Plural.count(names.count, one: "размер", few: "размера", many: "размеров")
+    }
+}
+
 /// «Размеры»: stock, minimum and own SKU / price of every size. A tap offers the operations for that size.
 struct ProductSizesCard: View {
     let product: Product
@@ -100,7 +139,7 @@ struct ProductSizesCard: View {
             ForEach(product.variants) { variant in
                 Menu {
                     Section(InventoryText.sizeTitle(variant.name)) {
-                        ForEach(MovementType.manual) { type in
+                        ForEach(MovementType.manual(for: product.kind)) { type in
                             Button(type.title, systemImage: type.symbol) { onOperation(type, variant) }
                         }
                     }

@@ -377,55 +377,26 @@ nonisolated enum Gauge {
     }
 }
 
-nonisolated enum MovementType: String, Codable, CaseIterable, Identifiable, Sendable {
-    case receipt
-    case sale
-    case returned = "return"
-    case writeoff
-    case usage
-    case adjustment
+/// `DELETE /products/:id`: deleted for good (no history), or archived — hidden everywhere, with sales and movements
+/// still naming it.
+nonisolated struct ProductDeletionResult: Decodable, Hashable, Sendable {
+    var deleted = false
+    var archived = false
+    /// Units written off first (`?writeOff=true`).
+    var writtenOff = 0
 
-    var id: String { rawValue }
+    private enum CodingKeys: String, CodingKey { case deleted, archived, writtenOff }
 
-    /// Movement types an employee can create manually.
-    static let manual: [MovementType] = [.receipt, .writeoff, .usage, .adjustment]
-}
-
-nonisolated struct StockMovement: Codable, Hashable, Identifiable, Sendable {
-    let id: Int
-    let productId: Int
-    let productName: String
-    /// The size that moved; `nil` from a server that predates sizes.
-    var variantId: Int?
-    /// Current name of that size ("" for a product without sizes).
-    var variantName: String?
-    let delta: Int
-    /// Stock of the size after the movement.
-    let quantityAfter: Int
-    let type: MovementType
-    let note: String?
-    let saleId: Int?
-    let appointmentId: Int?
-    /// The stock count an adjustment came from.
-    var revisionId: Int?
-    let employee: EmployeeRef?
-    let createdAt: Date
-
-    /// «Лабрет — 8 мм», or just the product name without a size.
-    var displayName: String {
-        guard let size = variantName.nonEmpty else { return productName }
-        return "\(productName) — \(size)"
+    init(deleted: Bool = false, archived: Bool = false, writtenOff: Int = 0) {
+        self.deleted = deleted
+        self.archived = archived
+        self.writtenOff = writtenOff
     }
-}
 
-nonisolated struct MovementResult: Codable, Sendable {
-    let product: Product
-    let movement: StockMovement
-}
-
-/// `POST /products/:id/movements/batch`.
-nonisolated struct BatchMovementResult: Codable, Sendable {
-    let product: Product
-    /// In line order; a stock count skips the sizes whose count did not change.
-    let movements: [StockMovement]
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        deleted = try c.decode(.deleted, or: false)
+        archived = try c.decode(.archived, or: false)
+        writtenOff = try c.decode(.writtenOff, or: 0)
+    }
 }

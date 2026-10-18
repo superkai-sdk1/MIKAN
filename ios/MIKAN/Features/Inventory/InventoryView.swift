@@ -119,7 +119,14 @@ struct InventoryView: View {
 
     private func productLink(_ product: Product) -> some View {
         NavigationLink {
-            ProductDetailView(product: product, categories: model.knownCategories) { updated in
+            ProductDetailView(
+                product: product,
+                categories: model.knownCategories,
+                onDelete: { id in
+                    model.remove(productId: id)
+                    Task { await appState.refreshBadges() }
+                }
+            ) { updated in
                 model.upsert(updated)
                 Task { await appState.refreshBadges() }
             }
