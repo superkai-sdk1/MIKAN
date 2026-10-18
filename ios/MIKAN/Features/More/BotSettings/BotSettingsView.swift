@@ -23,6 +23,9 @@ struct BotSettingsView: View {
                     schedule: settings.reminderSchedule,
                     supportsSeveral: settings.wrappedValue.supportsReminderOffsets
                 )
+                if settings.wrappedValue.supportsStaffDigests {
+                    StaffDigestSection(settings: settings)
+                }
                 messagesSection(settings)
                 staffChatSection(settings.wrappedValue)
                 StaffBotSection()

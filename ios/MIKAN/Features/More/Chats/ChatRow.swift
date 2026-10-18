@@ -67,7 +67,7 @@ struct ChatRow: View {
         case .staff: "\(message.employee?.name ?? "Сотрудник"): "
         case .system: "Авто: "
         }
-        return prefix + message.text
+        return prefix + message.plainText
     }
 }
 

@@ -16,7 +16,7 @@ struct ChatBubble: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
                 }
-                Text(message.text)
+                Text(message.displayText)
                     .textSelection(.enabled)
                     .foregroundStyle(foreground)
                     .padding(.horizontal, 14)
@@ -62,7 +62,7 @@ struct ChatBubble: View {
         case .staff: message.employee?.name ?? "Сотрудник"
         case .system: "Автоматическое сообщение"
         }
-        return "\(author), \(DateText.time(message.createdAt)): \(message.text)"
+        return "\(author), \(DateText.time(message.createdAt)): \(message.plainText)"
     }
 }
 

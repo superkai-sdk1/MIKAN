@@ -129,7 +129,7 @@ private struct ScheduledMessageRow: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
-            Text(message.text)
+            Text(ChatMarkdown.render(message.text))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)

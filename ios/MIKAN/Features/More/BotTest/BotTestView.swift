@@ -67,7 +67,7 @@ struct BotTestView: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
-                Text(entry.text)
+                Text(entry.author == .bot ? ChatMarkdown.render(entry.text) : AttributedString(entry.text))
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
