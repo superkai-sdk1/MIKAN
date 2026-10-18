@@ -667,6 +667,108 @@ held for appointments at the end of the period. `held(start) + received − appl
 `byMaster.revenue` = sales linked to that master's appointments. Item-level revenue is split proportionally to the
 sale discount (rounded to whole rubles). `topProducts` are grouped by product (`name` — its current name); `variants`
 splits each by size (current size name, `""` for a product without sizes), sorted like the top itself.
+`/reports/summary` is kept unchanged for older app builds; current builds read `/reports/analytics`.
+
+#### Analytics
+`GET /reports/analytics?from=&to=` (instants, the app sends studio-local day boundaries) — the whole financial
+picture of `[from, to)` plus the headline numbers of the **previous period of the same length**
+`[from − (to − from), from)` for deltas. Same limits and `400` messages as the summary («Конец периода должен быть
+позже начала», «Период отчёта — не больше 400 дней»).
+```json
+{ "from": "2026-10-12T21:00:00.000Z", "to": "2026-10-15T21:00:00.000Z",
+  "previousFrom": "2026-10-09T21:00:00.000Z", "previousTo": "2026-10-12T21:00:00.000Z", "timezone": "Europe/Moscow",
+  "totals": { "net": 10380, "gross": 11680, "refunds": 1300, "salesCount": 4, "averageCheck": 2920, "discounts": 420,
+              "servicesRevenue": 2700, "productsRevenue": 8480, "cogs": 1900, "grossProfit": 2580, "marginPercent": 57.6,
+              "stockExpenses": 850, "newClients": 1, "appointmentsCompleted": 1, "noShows": 1, "noShowLoss": 5000,
+              "depositsReceived": 1000 },
+  "previous": { …same keys as totals },
+  "revenue": { "gross": 11680, "refunds": 1300, "refundsCount": 2, "net": 10380, "salesCount": 4, "averageCheck": 2920,
+               "discounts": 420, "kept": 11180,
+               "payments": { "cash": 6180, "card": 0, "transfer": 5500, "qr": 0, "deposit": 0 } },
+  "byDay": [ { "date": "2026-10-13", "gross": 3780, "refunds": 800, "net": 2980, "salesCount": 1 } ],
+  "byWeekday": [ { "weekday": 1, "revenue": 0, "salesCount": 0 } ],
+  "byHour": [ { "hour": 0, "revenue": 3780, "salesCount": 1 } ],
+  "services": { "quantity": 1, "revenue": 2700,
+                "byCategory": [ { "category": "piercing", "quantity": 1, "revenue": 2700 } ],
+                "top": [ { "serviceId": 1, "name": "Прокол хеликса", "category": "piercing", "quantity": 1, "revenue": 2700 } ] },
+  "products": { "quantity": 6, "revenue": 8480, "revenueWithCost": 4480, "cogs": 1900, "grossProfit": 2580,
+                "marginPercent": 57.6, "itemsWithoutCost": 2,
+                "byKind": [ { "kind": "jewelry", …same margin keys } ],
+                "top": [ { "productId": 1, "name": "Лабрет", "kind": "jewelry", …same margin keys,
+                           "variants": [ { "variantId": 2, "name": "8 мм", …same margin keys } ] } ] },
+  "stock": { "writeoffs": { "quantity": 2, "value": 800, "unitsWithoutCost": 0 },
+             "usage": { "quantity": 8, "value": 50, "unitsWithoutCost": 3 }, "expenses": 850,
+             "top": [ { "productId": 1, "name": "Лабрет", "kind": "jewelry", "type": "writeoff", "quantity": 2, "value": 800 } ],
+             "onHand": { "units": 118, "value": 6850, "unitsWithoutCost": 10,
+                         "byKind": [ { "kind": "jewelry", "units": 16, "value": 5900, "unitsWithoutCost": 3 } ] } },
+  "deposits": { …same as in the summary },
+  "cash": { "cashIn": 500, "cashOut": 2000, "operationsCount": 2, "shiftsClosed": 1, "closingDifference": -80,
+            "shortage": -80, "surplus": 0, "openingDifference": -300,
+            "shifts": [ { "id": 2, "openedAt": "...", "closedAt": "...", "closedBy": { EmployeeRef },
+                          "openingCash": 1200, "closingCash": 2600, "expectedCash": 2680,
+                          "openingDifference": -300, "difference": -80 } ] },
+  "masters": [ { "employee": { EmployeeRef }, "revenue": 3780, "salesCount": 1, "averageCheck": 3780,
+                 "appointmentsCompleted": 1, "noShows": 1, "servicesCount": 2 } ],
+  "clients": { "newClients": 1, "buyers": 3, "firstTime": { "count": 1, "revenue": 5000 },
+               "returning": { "count": 2, "revenue": 6180 }, "anonymous": { "salesCount": 0, "revenue": 0 },
+               "top": [ { "client": { ClientRef }, "revenue": 5000, "salesCount": 1, "visits": 0 } ] },
+  "appointments": { "total": 4, "open": 1, "completed": 1, "cancelled": 1, "noShow": 1,
+                    "noShowLoss": 5000, "cancelledValue": 2000 } }
+```
+Which sales count where:
+- **Made** sales — created in the period, whatever their status now (a receipt refunded later was still made then).
+- **Refunds** — sales refunded during the period (`refundedAt`), whenever they were made.
+- **Kept** sales — the made sales that are still `completed`. Every breakdown below `revenue` (services, products,
+  margins, weekdays, hours, masters, clients) counts kept sales only, so a returned receipt never inflates tops or
+  margins. Item revenue is net of the sale discount, split as in the summary (`allocateDiscount`).
+
+Fields:
+- `totals` — headline numbers of the period; `previous` — the same keys for the previous period (the app shows
+  deltas; a delta against `0` is shown as «—»). `servicesRevenue` / `productsRevenue` = `services.revenue` /
+  `products.revenue`; `cogs`, `grossProfit`, `marginPercent` as in `products`; `stockExpenses` = `stock.expenses`;
+  `newClients` as in `clients`; `appointmentsCompleted` / `noShows` / `noShowLoss` as in `appointments`;
+  `depositsReceived` = `deposits.received`.
+- `revenue`: `gross` — Σ totals of made sales, `salesCount` — their number, `averageCheck = round(gross / salesCount)`
+  (`0` without sales), `discounts` — Σ their discounts; `refunds` / `refundsCount` — refunded in the period;
+  `net = gross − refunds` («Выручка»); `kept` — Σ totals of kept sales (= `services.revenue + products.revenue`);
+  `payments` — how the made sales were paid (sums to `gross`; `deposit` — covered by prepayments received earlier).
+- `byDay` — every studio-local day of the range, zeros included: `gross` and `salesCount` of sales made that day,
+  `refunds` made that day, `net = gross − refunds` (Σ `byDay.net` = `revenue.net`).
+- `byWeekday` — always 7 entries, `weekday` 1 = Monday … 7 = Sunday; `byHour` — always 24 entries, `hour` 0–23. Both
+  bucket kept sales by their studio-local time (`revenue` = Σ totals, `salesCount`).
+- `services` — service items: `quantity` (Σ item quantities), `revenue`; `byCategory` by the catalog service's
+  `category` (`other` for custom lines and deleted services), by revenue; `top` — up to 20 services by revenue
+  (grouped by catalog service, named by its current name; custom lines grouped by name).
+- `products` — product items with margin keys: `quantity`, `revenue`, `cogs` = Σ quantity × current unit cost
+  (`variant.cost ?? product.cost`), `revenueWithCost` — revenue of the units whose cost is known,
+  `grossProfit = revenueWithCost − cogs`, `marginPercent = grossProfit / revenueWithCost × 100` (one decimal, `null`
+  when `revenueWithCost` is 0), `itemsWithoutCost` — sold units whose cost is unknown (left out of `cogs` and
+  `revenueWithCost`; the app asks to fill in the cost). The same keys appear in `byKind` (one entry per product
+  `kind` that sold, by revenue — any kind the server has, apps show unknown kinds by their raw name), in `top` (up to
+  20 products by revenue, current names) and in each top product's `variants` (by size, current size name, `""` for a
+  product without sizes; items sold before sizes existed have no size entry). Costs are today's, not the ones at sale
+  time.
+- `stock` — `writeoffs` and `usage` (consumables used in procedures) recorded in the period: `quantity` (units),
+  `value` at the current unit cost, `unitsWithoutCost`; `expenses = writeoffs.value + usage.value`; `top` — up to 20
+  products by value of what left the stock (`type`: `writeoff` | `usage`). `onHand` — a snapshot **now**, not at the
+  end of the period: units in stock of every product (inactive ones included), their value at cost,
+  `unitsWithoutCost`, and the same split `byKind`.
+- `deposits` — exactly the summary's prepayments block.
+- `cash` — `cashIn` / `cashOut` / `operationsCount`: cash register operations of the period. Shifts **closed** in the
+  period: `shiftsClosed`, `closingDifference` = Σ (`closingCash − expectedCash`), its negative part `shortage` (≤ 0)
+  and positive part `surplus` (≥ 0); `openingDifference` = Σ (`openingCash` − `closingCash` of the shift before).
+  `shifts` — those shifts with any discrepancy, newest first (≤ 20): `openingDifference` is `null` for the very first
+  shift.
+- `masters` — masters with completed appointments or no-shows in the period, or with kept sales linked to their
+  appointments: `revenue` / `salesCount` / `averageCheck` of those sales, `appointmentsCompleted`, `noShows`,
+  `servicesCount` (service lines of completed appointments; an appointment without lines counts once). Sorted by
+  revenue, then completed appointments.
+- `clients` — `newClients`: cards created in the period; `buyers`: clients with kept sales; `firstTime` / `returning`
+  split them (`count`, `revenue`) — returning means a completed sale or a completed appointment before `from`
+  (history imported from another CRM counts); `anonymous` — kept sales without a client; `top` — up to 10 clients by
+  revenue with their `salesCount` and `visits` (completed appointments in the period). Apps open the client card from it.
+- `appointments` — appointments **starting** in the period: `total`, `open` (`scheduled` + `confirmed`),
+  `completed`, `cancelled`, `noShow`; `noShowLoss` = Σ `price` of no-shows, `cancelledValue` = Σ `price` of cancelled.
 
 ### Bot (Telegram + AI)
 | Method | Path | Body | Response |

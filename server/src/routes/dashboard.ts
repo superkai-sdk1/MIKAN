@@ -6,6 +6,7 @@ import { sales } from '../db/schema.js';
 import { listAppointments } from '../domain/appointments.js';
 import { getOpenShift, serializeShift } from '../domain/cash.js';
 import { serializeAppointments } from '../domain/refs.js';
+import { reportAnalytics } from '../domain/analytics.js';
 import { badges, reportSummary } from '../domain/reports.js';
 import { studioTimezone } from '../domain/settings.js';
 import { badRequest } from '../lib/errors.js';
@@ -14,6 +15,14 @@ import { instant, parse } from '../lib/validation.js';
 
 const MAX_REPORT_DAYS = 400;
 const reportQuery = z.object({ from: instant, to: instant });
+
+/** `[from, to)` of a report request; the same rules and messages for the summary and the analytics. */
+function reportRange(query: unknown): { from: number; to: number } {
+  const q = parse(reportQuery, query);
+  if (q.to <= q.from) throw badRequest('Конец периода должен быть позже начала');
+  if (q.to - q.from > MAX_REPORT_DAYS * DAY_MS) throw badRequest(`Период отчёта — не больше ${MAX_REPORT_DAYS} дней`);
+  return q;
+}
 
 export function dashboardRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { db } = ctx;
@@ -45,9 +54,12 @@ export function dashboardRoutes(app: FastifyInstance, ctx: AppContext): void {
   });
 
   app.get('/reports/summary', async (request) => {
-    const q = parse(reportQuery, request.query);
-    if (q.to <= q.from) throw badRequest('Конец периода должен быть позже начала');
-    if (q.to - q.from > MAX_REPORT_DAYS * DAY_MS) throw badRequest(`Период отчёта — не больше ${MAX_REPORT_DAYS} дней`);
+    const q = reportRange(request.query);
     return reportSummary(db, q.from, q.to);
+  });
+
+  app.get('/reports/analytics', async (request) => {
+    const q = reportRange(request.query);
+    return reportAnalytics(db, q.from, q.to);
   });
 }
