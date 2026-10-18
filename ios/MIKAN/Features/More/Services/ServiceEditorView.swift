@@ -215,16 +215,19 @@ struct ServiceEditorView: View {
 
     private var aftercareSection: some View {
         Section {
-            Picker("Шаблон ухода", selection: $draft.aftercareTemplateId) {
-                Text("Без памятки").tag(Int?.none)
-                ForEach(reference.templates) { template in
-                    Text(template.name).tag(Int?.some(template.id))
+            Toggle(draft.category.freshProcedureTitle, isOn: $draft.freshProcedure.animation(.snappy))
+            if draft.freshProcedure {
+                Picker("Шаблон ухода", selection: $draft.aftercareTemplateId) {
+                    Text("Без памятки").tag(Int?.none)
+                    ForEach(reference.templates) { template in
+                        Text(template.name).tag(Int?.some(template.id))
+                    }
                 }
             }
         } header: {
             Text("Памятка")
         } footer: {
-            Text("Памятка по умолчанию при завершении записи с этой услугой.")
+            Text(draft.aftercareHint)
         }
     }
 

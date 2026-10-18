@@ -29,7 +29,10 @@ struct CompleteAppointmentSheet: View {
         _sendsAftercare = State(initialValue: appointment.client.telegramLinked)
     }
 
-    private var canSendAftercare: Bool { appointment.client.telegramLinked }
+    private var isTelegramLinked: Bool { appointment.client.telegramLinked }
+    /// Some service of the visit is a fresh piercing / tattoo: only then the server sends a memo.
+    private var hasFreshProcedure: Bool { AftercareDefaults.sendsMemo(for: appointment, services: reference.services) }
+    private var canSendAftercare: Bool { isTelegramLinked && hasFreshProcedure }
 
     var body: some View {
         NavigationStack {
@@ -73,7 +76,7 @@ struct CompleteAppointmentSheet: View {
             Section {
                 Toggle("Отправить памятку по уходу", isOn: $sendsAftercare)
                     .disabled(!canSendAftercare)
-                if sendsAftercare {
+                if sendsAftercare && canSendAftercare {
                     Picker("Шаблон", selection: $templateId) {
                         Text("Не выбран").tag(Int?.none)
                         ForEach(reference.templates) { template in
@@ -84,8 +87,10 @@ struct CompleteAppointmentSheet: View {
             } header: {
                 Text("Уход")
             } footer: {
-                if !canSendAftercare {
+                if !isTelegramLinked {
                     Text("У клиента не подключён Telegram — памятку отправить нельзя. Подключите бота в карточке клиента.")
+                } else if !hasFreshProcedure {
+                    Text(AftercareDefaults.noFreshProcedureHint)
                 } else if sendsAftercare && templateId == nil {
                     Text("Выберите шаблон, иначе памятка не будет отправлена.").foregroundStyle(.orange)
                 } else {
@@ -148,6 +153,9 @@ struct CompleteAppointmentSheet: View {
             if templateId == nil {
                 templateId = defaultTemplateId()
             }
+            if !hasFreshProcedure {
+                sendsAftercare = false
+            }
         } catch {
             errorMessage = error.userMessage
         }
@@ -186,24 +194,51 @@ struct CompleteAppointmentSheet: View {
     }
 }
 
-/// Default aftercare template of an appointment, mirroring the server's choice.
+/// Aftercare memo of an appointment, mirroring the server: memos go out only for services marked «Свежий прокол» /
+/// «Свежее тату» (`Service.freshProcedure`).
 nonisolated enum AftercareDefaults {
-    /// The template of the first line whose catalog service has one; else the first template of the category
-    /// of the first line with a category; then the legacy single `service`.
+    static let noFreshProcedureHint =
+        "В записи нет услуги со «Свежим проколом» или «Свежим тату» — памятка по уходу не отправляется. " +
+        "Переключатель — в карточке услуги."
+
+    /// A catalog service of the visit: its template and category, when it may send a memo.
+    private struct Candidate {
+        let templateId: Int?
+        let category: ServiceCategory?
+    }
+
+    /// The visit's catalog services in line order (the legacy single service when it has no lines) that may send a memo:
+    /// fresh ones, plus ones missing from `services` (not loaded yet — the server decides for those).
+    private static func candidates(for appointment: Appointment, services: [Service]) -> [Candidate] {
+        let refs: [(id: Int, category: ServiceCategory?)] = appointment.services.isEmpty
+            ? [appointment.service].compactMap { $0.map { ($0.id, $0.category) } }
+            : appointment.services.compactMap { line in line.serviceId.map { ($0, line.category) } }
+        return refs.compactMap { ref in
+            guard let service = services.first(where: { $0.id == ref.id }) else {
+                return Candidate(templateId: nil, category: ref.category)
+            }
+            return service.freshProcedure ? Candidate(templateId: service.aftercareTemplateId, category: service.category) : nil
+        }
+    }
+
+    /// Completing the appointment can send a memo: one of its services is a fresh procedure.
+    static func sendsMemo(for appointment: Appointment, services: [Service]) -> Bool {
+        !candidates(for: appointment, services: services).isEmpty
+    }
+
+    /// The template of the first fresh service that has one; else the first template of that service's category.
     static func templateId(
         for appointment: Appointment,
         services: [Service],
         templates: [AftercareTemplate]
     ) -> Int? {
-        let serviceIds = appointment.services.compactMap(\.serviceId) + [appointment.service?.id].compactMap(\.self)
-        for serviceId in serviceIds {
-            let templateId = services.first { $0.id == serviceId }?.aftercareTemplateId
-            if let templateId, templates.contains(where: { $0.id == templateId }) {
+        let fresh = candidates(for: appointment, services: services)
+        for candidate in fresh {
+            if let templateId = candidate.templateId, templates.contains(where: { $0.id == templateId }) {
                 return templateId
             }
         }
-        let category = appointment.services.lazy.compactMap(\.category).first ?? appointment.service?.category
-        guard let category else { return nil }
+        guard let category = fresh.lazy.compactMap(\.category).first else { return nil }
         return templates.first { $0.category == category }?.id
     }
 }

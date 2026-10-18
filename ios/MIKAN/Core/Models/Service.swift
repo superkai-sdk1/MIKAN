@@ -22,6 +22,15 @@ nonisolated enum ServiceCategory: String, Codable, CaseIterable, Identifiable, S
         case .other: "square.grid.2x2"
         }
     }
+
+    /// Name of the service switch that sends aftercare memos (`Service.freshProcedure`).
+    var freshProcedureTitle: String {
+        switch self {
+        case .piercing: "Свежий прокол"
+        case .tattoo: "Свежее тату"
+        case .other: "Нужна памятка по уходу"
+        }
+    }
 }
 
 /// A priced option of a service («Один» / «Два»). Booking it books `"<service> — <variant>"` at the variant price.
@@ -56,6 +65,8 @@ nonisolated struct Service: Codable, Hashable, Identifiable, Sendable {
     /// Prepayment required to book this service; 0 — none.
     var depositAmount = 0
     var aftercareTemplateId: Int?
+    /// «Свежий прокол» / «Свежее тату»: completing an appointment sends aftercare memos only for such services.
+    var freshProcedure = true
     var active: Bool
     var sort: Int
 
@@ -86,10 +97,11 @@ nonisolated struct Service: Codable, Hashable, Identifiable, Sendable {
 nonisolated extension Service {
     private enum CodingKeys: String, CodingKey {
         case id, name, category, group, price, priceMax, priceFrom, durationMin, description
-        case imageUrl, imagePrompt, photos, variants, depositAmount, aftercareTemplateId, active, sort
+        case imageUrl, imagePrompt, photos, variants, depositAmount, aftercareTemplateId, freshProcedure, active, sort
     }
 
-    /// Tolerates servers that predate service cards (no group, photos, variants, cover) or prepayments.
+    /// Tolerates servers that predate service cards (no group, photos, variants, cover), prepayments or the
+    /// fresh-procedure switch (such a server sends memos for any service: read as `true`).
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
@@ -107,6 +119,7 @@ nonisolated extension Service {
         variants = try c.decodeIfPresent([ServiceVariant].self, forKey: .variants) ?? []
         depositAmount = try c.decodeIfPresent(Int.self, forKey: .depositAmount) ?? 0
         aftercareTemplateId = try c.decodeIfPresent(Int.self, forKey: .aftercareTemplateId)
+        freshProcedure = try c.decodeIfPresent(Bool.self, forKey: .freshProcedure) ?? true
         active = try c.decode(Bool.self, forKey: .active)
         sort = try c.decode(Int.self, forKey: .sort)
     }

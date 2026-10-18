@@ -266,6 +266,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
     var description: String
     var deposit: ServiceDepositDraft
     var aftercareTemplateId: Int?
+    /// «Свежий прокол» / «Свежее тату» (new services: on).
+    var freshProcedure: Bool
     var active: Bool
     var sort: Int
 
@@ -286,6 +288,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
         description = service?.description ?? ""
         deposit = ServiceDepositDraft(depositAmount: service?.depositAmount ?? 0)
         aftercareTemplateId = service?.aftercareTemplateId
+        freshProcedure = service?.freshProcedure ?? true
         active = service?.active ?? true
         sort = service?.sort ?? max(0, nextSort)
     }
@@ -329,9 +332,17 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
             variants: ServiceVariantDrafts.variants(from: variants),
             depositAmount: deposit.amount,
             aftercareTemplateId: Nullable(aftercareTemplateId),
+            freshProcedure: freshProcedure,
             active: active,
             sort: sort
         )
+    }
+
+    /// Footer of the memo section: whether completing an appointment with this service sends the memo.
+    var aftercareHint: String {
+        freshProcedure
+            ? "Клиенту с подключённым Telegram придёт памятка по уходу после записи с этой услугой. Шаблон — памятка по умолчанию."
+            : "Памятка по уходу по этой услуге не отправляется — например, для замены украшения, чистки или консультации."
     }
 }
 
@@ -353,6 +364,7 @@ nonisolated extension ServiceBody {
             variants: service.variants,
             depositAmount: service.depositAmount,
             aftercareTemplateId: Nullable(service.aftercareTemplateId),
+            freshProcedure: service.freshProcedure,
             active: service.active,
             sort: service.sort
         )

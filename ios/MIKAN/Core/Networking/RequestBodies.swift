@@ -74,6 +74,8 @@ nonisolated struct ServiceBody: Encodable, Sendable {
     /// Prepayment required to book the service; 0 — none.
     var depositAmount = 0
     var aftercareTemplateId: Nullable<Int>
+    /// «Свежий прокол» / «Свежее тату»: aftercare memos are sent only for such services.
+    var freshProcedure: Bool
     var active: Bool
     var sort: Int
 }

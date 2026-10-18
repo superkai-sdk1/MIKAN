@@ -122,6 +122,7 @@ struct ServiceDetailView: View {
 
     private var settingsSection: some View {
         Section {
+            LabeledContent(service.category.freshProcedureTitle, value: service.freshProcedure ? "Да" : "Нет")
             LabeledContent("Памятка", value: aftercareTitle)
             LabeledContent("Статус", value: service.active ? "Активна" : "Скрыта")
             LabeledContent("Порядок в списке", value: "\(service.sort)")
@@ -133,6 +134,7 @@ struct ServiceDetailView: View {
     }
 
     private var aftercareTitle: String {
+        guard service.freshProcedure else { return "Не отправляется" }
         guard let id = service.aftercareTemplateId else { return "Без памятки" }
         return reference.template(id: id)?.name ?? "—"
     }

@@ -162,6 +162,7 @@
 		F95908F597DC94E2B63FF655 /* MovementType+UI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 779DD3D5E35FF4CAB90448CC /* MovementType+UI.swift */; };
 		FAF9117E60DDE65C266DEC29 /* ClientDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D4036D5DC76AA0A3BDB2121 /* ClientDetailView.swift */; };
 		FCD1299D34E8A6A727596C9D /* IdempotencyKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CAE2DA0C18EE332E5CC7165 /* IdempotencyKey.swift */; };
+		FE46B5572095C7298913B390 /* FreshProcedureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745FE6898BFE3E2FD49448C7 /* FreshProcedureTests.swift */; };
 		FFFFC646C27DE1309E7D030E /* POSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 982A2AC33D35C05CE3052EEB /* POSView.swift */; };
 /* End PBXBuildFile section */
 
@@ -242,6 +243,7 @@
 		705848123118608EBD4CCD2D /* ReportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportsView.swift; sourceTree = "<group>"; };
 		731F62CB33852CE670C1FB05 /* MovementSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovementSheet.swift; sourceTree = "<group>"; };
 		7434591F5D261CAEDF661C4F /* ShiftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftStore.swift; sourceTree = "<group>"; };
+		745FE6898BFE3E2FD49448C7 /* FreshProcedureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreshProcedureTests.swift; sourceTree = "<group>"; };
 		746967D67D1810D8CB174909 /* PeriodPager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodPager.swift; sourceTree = "<group>"; };
 		749AB51EC820CA7479A93445 /* Deposit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Deposit.swift; sourceTree = "<group>"; };
 		74B5D97E811139747860E958 /* QrPayment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QrPayment.swift; sourceTree = "<group>"; };
@@ -478,6 +480,7 @@
 				18F34C3978768DA8286763D5 /* DepositTests.swift */,
 				1BD9DE19F1FFCC9B1B0E8ECE /* Fixtures.swift */,
 				EA2E8F65999E7CF1200D3B2D /* FormattingTests.swift */,
+				745FE6898BFE3E2FD49448C7 /* FreshProcedureTests.swift */,
 				A999F395F10C25D1E24C69CF /* GridScrollStateTests.swift */,
 				F498EE4CE44C49F3DDBB2B08 /* IdempotencyTests.swift */,
 				836825577E80C15BA76F849E /* ImagePreparerTests.swift */,
@@ -1005,6 +1008,7 @@
 				999C3B80C019D5F8D769DD5F /* DepositTests.swift in Sources */,
 				013DDB4EF7422F71A5576C65 /* Fixtures.swift in Sources */,
 				63874B65F2F5776D0450BAD5 /* FormattingTests.swift in Sources */,
+				FE46B5572095C7298913B390 /* FreshProcedureTests.swift in Sources */,
 				A23AECA870D9EAC00573329F /* GridScrollStateTests.swift in Sources */,
 				9079E2544302ACD60787C47A /* IdempotencyTests.swift in Sources */,
 				AE6DC2EB506F3B90E50C6AB4 /* ImagePreparerTests.swift in Sources */,
