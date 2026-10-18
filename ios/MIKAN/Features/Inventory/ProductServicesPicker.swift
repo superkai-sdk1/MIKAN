@@ -33,7 +33,7 @@ struct ProductServicesPicker: View {
                     ContentUnavailableView(
                         "Услуг пока нет",
                         systemImage: "sparkle",
-                        description: Text("Добавьте услуги пирсинга в разделе «Ещё» → «Услуги».")
+                        description: Text("Добавьте услуги пирсинга на складе в разделе «Услуги».")
                     )
                 }
             }

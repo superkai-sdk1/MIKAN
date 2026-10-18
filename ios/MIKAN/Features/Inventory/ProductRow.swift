@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Stock list row: cover, name, material / thickness, price, size chips with their stock, total stock.
+/// Stock list row: cover, name, material / thickness, price, size chips with their stock, total stock — or the
+/// availability of a consumable tracked as «есть / нет».
 struct ProductRow: View {
     let product: Product
     /// The size the list is filtered by; its chip is outlined.
@@ -35,10 +36,14 @@ struct ProductRow: View {
                     }
                 }
                 Spacer(minLength: 8)
-                QuantityBadge(quantity: product.quantity, unit: product.unitLabel, isLow: product.lowStock)
+                if product.isPresenceTracked {
+                    PresenceBadge(status: product.presenceStatus ?? .ok)
+                } else {
+                    QuantityBadge(quantity: product.quantity, unit: product.unitLabel, isLow: product.lowStock)
+                }
             }
             // Under the text column and the stock badge: room for more sizes per line.
-            if product.hasSeveralSizes {
+            if product.hasSeveralSizes && !product.isPresenceTracked {
                 StockSizeChips(product: product, highlightedSize: highlightedSize)
                     .padding(.leading, Self.thumbnailSize + Self.spacing)
             }
@@ -198,6 +203,8 @@ struct InventoryFlowLayout: Layout {
         ProductRow(product: PreviewData.labret, highlightedSize: "8 мм")
         ProductRow(product: PreviewData.ring)
         ProductRow(product: PreviewData.needles)
+        ProductRow(product: PreviewData.antiseptic)
+        ProductRow(product: PreviewData.spray)
     }
     .previewEnvironment()
 }

@@ -60,4 +60,34 @@ enum InventoryFixtures {
             size(5, "10 мм", quantity: 0, min: 0, sku: "LB-12-10", price: 1_700, cost: 700),
         ]
     )
+
+    /// A consumable tracked as «есть / нет» with the given status; `quantity` is the counted stock kept aside.
+    static func presence(
+        id: Int,
+        name: String,
+        status: PresenceStatus,
+        category: String? = nil,
+        cost: Int? = 100,
+        active: Bool = true,
+        quantity: Int = 0
+    ) -> Product {
+        var item = product(
+            id: id, kind: .consumable, name: name, category: category, price: 0, cost: cost, active: active,
+            variants: [size(id * 100, "", quantity: quantity)]
+        )
+        item.stockMode = .presence
+        item.presenceStatus = status
+        return item
+    }
+
+    static func category(
+        _ id: Int,
+        _ name: String,
+        section: CatalogSection = .jewelry,
+        serviceCategory: ServiceCategory? = nil,
+        position: Int,
+        count: Int = 0
+    ) -> CatalogCategory {
+        CatalogCategory(id: id, section: section, serviceCategory: serviceCategory, name: name, position: position, itemCount: count)
+    }
 }

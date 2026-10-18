@@ -36,9 +36,6 @@ struct MoreView: View {
                     NavigationLink { ReportsView() } label: {
                         Label("Отчёты", systemImage: "chart.bar.xaxis")
                     }
-                    NavigationLink { ServicesListView() } label: {
-                        Label("Услуги", systemImage: "list.bullet.rectangle")
-                    }
                     NavigationLink { EmployeesListView() } label: {
                         Label("Сотрудники", systemImage: "person.3")
                     }

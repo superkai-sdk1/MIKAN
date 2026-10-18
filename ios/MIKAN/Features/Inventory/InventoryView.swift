@@ -1,116 +1,212 @@
-import Observation
 import SwiftUI
 
-@Observable
-final class InventoryModel {
-    var filter = InventoryFilter(kind: .jewelry)
-    /// Each kind is loaded whole (inactive included) and filtered on the device; switching kinds shows the
-    /// last loaded list at once while it refreshes.
-    let jewelry = Remote<[Product]>()
-    let consumables = Remote<[Product]>()
-    /// Categories seen across loads, used as suggestions in the product editor.
-    private(set) var knownCategories: Set<String> = []
-
-    var kind: ProductKind { filter.kind ?? .jewelry }
-
-    var remote: Remote<[Product]> { remote(for: kind) }
-
-    private func remote(for kind: ProductKind) -> Remote<[Product]> {
-        kind == .jewelry ? jewelry : consumables
-    }
-
-    /// What the list shows.
-    var products: [Product] { filter.apply(remote.value ?? []) }
-
-    var categoryOptions: [String] { InventoryFilter.categories(in: remote.value ?? []) }
-    var materialOptions: [String] { InventoryFilter.materials(in: remote.value ?? []) }
-    var sizeOptions: [String] { InventoryFilter.sizes(in: remote.value ?? []) }
-
-    func load(api: APIClient) async {
-        let kind = kind
-        await remote(for: kind).load { try await api.products(kind: kind, includeInactive: true) }
-        knownCategories.formUnion((remote(for: kind).value ?? []).compactMap(\.category.nonEmpty))
-    }
-
-    /// Puts a saved product into the list of its kind (and out of the other one, when its kind changed).
-    func upsert(_ product: Product) {
-        if let category = product.category.nonEmpty { knownCategories.insert(category) }
-        for kind in ProductKind.allCases where kind != product.kind {
-            remote(for: kind).remove(id: product.id)
-        }
-        remote(for: product.kind).upsert(product)
-    }
+/// Screens pushed from the warehouse toolbar.
+enum WarehouseRoute: Hashable {
+    case movements
+    case revisions
 }
 
+/// «Склад» — the unified warehouse: Украшения · Услуги · Расходники · Товары. Product sections list their products by
+/// category in the staff order; «Услуги» shows the services catalog.
 struct InventoryView: View {
     @Environment(APIClient.self) private var api
     @Environment(AppState.self) private var appState
+    @Environment(ReferenceStore.self) private var reference
     @State private var model = InventoryModel()
     @State private var showsEditor = false
+    @State private var showsCategories = false
+    @State private var showsRevision = false
+    @State private var categoriesChanged = false
+    @State private var route: WarehouseRoute?
+    @State private var errorMessage: String?
+    /// Recreates the services catalog after its categories changed, so it reloads with the new names.
+    @State private var servicesGeneration = 0
 
     var body: some View {
-        @Bindable var model = model
         NavigationStack {
-            List {
-                ForEach(model.products) { product in
-                    NavigationLink {
-                        ProductDetailView(product: product, categories: model.knownCategories) { updated in
-                            model.upsert(updated)
-                            Task { await appState.refreshBadges() }
+            content
+                .safeAreaBar(edge: .top) {
+                    InventoryFilterBar(model: model, categoryOptions: categoryOptions) { section in
+                        model.select(section)
+                    }
+                }
+                .navigationTitle("Склад")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbar }
+                .navigationDestination(item: $route) { route in
+                    switch route {
+                    case .movements: MovementsListView()
+                    case .revisions: RevisionHistoryView()
+                    }
+                }
+                .sheet(isPresented: $showsEditor) {
+                    ProductEditorView(product: nil, defaultKind: model.kind ?? .jewelry, categories: model.knownCategories) { saved in
+                        model.upsert(saved)
+                        Task { await appState.refreshBadges() }
+                    }
+                }
+                .sheet(isPresented: $showsCategories, onDismiss: categoriesClosed) {
+                    CategoriesEditorView(section: model.section) { categoriesChanged = true }
+                }
+                .sheet(isPresented: $showsRevision) {
+                    RevisionFlowView(initialSection: model.kind.map(CatalogSection.init(kind:))) { _ in
+                        Task {
+                            await model.reloadLoaded(api: api)
+                            await appState.refreshBadges()
                         }
-                    } label: {
-                        ProductRow(product: product, highlightedSize: model.filter.size)
                     }
                 }
-            }
-            .auraBackground()
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .safeAreaBar(edge: .top) { InventoryFilterBar(model: model) }
-            // Keep the top chrome a fixed height: a collapsing large title plus an auto-hiding search
-            // drawer above the pinned filter bar fed back into the list's insets and made it shake at the top.
-            .searchable(
-                text: $model.filter.search,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "Название, артикул, размер, материал"
-            )
-            .overlay {
-                RemoteStateOverlay(
-                    remote: model.remote,
-                    isEmpty: { model.filter.apply($0).isEmpty },
-                    retry: { await model.load(api: api) }
-                ) {
-                    emptyState
-                }
-            }
-            .refreshable {
-                await model.load(api: api)
-                await appState.refreshBadges()
-            }
-            .task(id: model.kind) { await model.load(api: api) }
-            .remoteErrorAlert(model.remote)
-            .navigationTitle("Склад")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        MovementsListView()
-                    } label: {
-                        Label("Движения", systemImage: "arrow.left.arrow.right")
+                // Only orders the groups; without the registry they fall back to alphabetical order.
+                .task { try? await reference.ensureCategories() }
+                .errorAlert($errorMessage)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if model.section == .service {
+            ServicesListView()
+                .id(servicesGeneration)
+        } else {
+            productList
+        }
+    }
+
+    private var categoryOptions: [String] { model.categoryOptions(categories: reference.categories) }
+
+    // MARK: - Products
+
+    private var productList: some View {
+        @Bindable var bindable = model
+        return List {
+            ForEach(model.groups(categories: reference.categories)) { group in
+                Section {
+                    ForEach(group.items) { product in
+                        productLink(product)
                     }
-                }
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Добавить товар", systemImage: "plus") { showsEditor = true }
+                } header: {
+                    WarehouseGroupHeader(title: group.title, products: group.items)
                 }
             }
-            .sheet(isPresented: $showsEditor) {
-                ProductEditorView(product: nil, defaultKind: model.kind, categories: model.knownCategories) { saved in
-                    model.upsert(saved)
-                    Task { await appState.refreshBadges() }
+        }
+        .auraBackground()
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        // Keep the top chrome a fixed height: a collapsing large title plus an auto-hiding search
+        // drawer above the pinned filter bar fed back into the list's insets and made it shake at the top.
+        .searchable(
+            text: $bindable.filter.search,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: searchPrompt
+        )
+        .overlay {
+            RemoteStateOverlay(
+                remote: model.remote,
+                isEmpty: { model.filter.apply($0).isEmpty },
+                retry: { await model.load(api: api) }
+            ) {
+                emptyState
+            }
+        }
+        .refreshable {
+            async let products: Void = model.load(api: api)
+            async let categories: Void = refreshCategories()
+            _ = await (products, categories)
+            await appState.refreshBadges()
+        }
+        .task(id: model.section) { await model.load(api: api) }
+        .remoteErrorAlert(model.remote)
+    }
+
+    private func productLink(_ product: Product) -> some View {
+        NavigationLink {
+            ProductDetailView(product: product, categories: model.knownCategories) { updated in
+                model.upsert(updated)
+                Task { await appState.refreshBadges() }
+            }
+        } label: {
+            ProductRow(product: product, highlightedSize: model.filter.size)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if product.isPresenceTracked {
+                ForEach(PresenceStatus.allCases.reversed().filter { $0 != product.presenceStatus }) { status in
+                    Button(status.shortTitle, systemImage: status.symbol) { setPresence(status, of: product) }
+                        .tint(status.color)
                 }
             }
         }
     }
+
+    private var searchPrompt: String {
+        switch model.kind {
+        case .consumable: "Название, артикул, поставщик"
+        case .goods: "Название, артикул, размер, поставщик"
+        default: "Название, артикул, размер, материал"
+        }
+    }
+
+    private func setPresence(_ status: PresenceStatus, of product: Product) {
+        Task {
+            if let message = await model.setPresence(status, of: product, api: api) {
+                errorMessage = message
+            }
+            await appState.refreshBadges()
+        }
+    }
+
+    private func refreshCategories() async {
+        try? await reference.ensureCategories(force: true)
+    }
+
+    /// Renames, merges and deletions moved items between categories: reload what is on screen.
+    private func categoriesClosed() {
+        guard categoriesChanged else { return }
+        categoriesChanged = false
+        Task {
+            if model.section == .service {
+                try? await reference.ensureServices(force: true)
+                servicesGeneration += 1
+            } else {
+                await model.reloadLoaded(api: api)
+            }
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        if model.section == .service {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Категории услуг", systemImage: "folder") { showsCategories = true }
+            }
+        } else {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Категории \(model.section.genitiveTitle)", systemImage: "folder") { showsCategories = true }
+                    Divider()
+                    Button("Провести ревизию", systemImage: "checklist") { showsRevision = true }
+                    Button("История ревизий", systemImage: "clock.arrow.circlepath") { route = .revisions }
+                    Button("Движения", systemImage: "arrow.left.arrow.right") { route = .movements }
+                } label: {
+                    Label("Склад", systemImage: "ellipsis")
+                }
+            }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(addTitle, systemImage: "plus") { showsEditor = true }
+            }
+        }
+    }
+
+    private var addTitle: String {
+        switch model.kind {
+        case .goods: "Добавить товар"
+        case .consumable: "Добавить расходник"
+        default: "Добавить украшение"
+        }
+    }
+
+    // MARK: - Empty states
 
     @ViewBuilder
     private var emptyState: some View {
@@ -132,129 +228,56 @@ struct InventoryView: View {
             ContentUnavailableView(
                 "Всего достаточно",
                 systemImage: "checkmark.seal",
-                description: Text("Нет позиций, остаток которых ниже минимального.")
+                description: Text("Нет позиций, которые заканчиваются.")
             )
         } else {
-            ContentUnavailableView(
-                model.kind == .jewelry ? "Украшений пока нет" : "Расходников пока нет",
-                systemImage: "shippingbox",
-                description: Text("Нажмите «+», чтобы добавить позицию и указать начальный остаток.")
-            )
+            ContentUnavailableView {
+                Label(emptyTitle, systemImage: model.section.symbol)
+            } description: {
+                Text(emptyDescription)
+            } actions: {
+                Button(addTitle) { showsEditor = true }
+                    .buttonStyle(.glassProminent)
+            }
+        }
+    }
+
+    private var emptyTitle: String {
+        switch model.kind {
+        case .goods: "Товаров пока нет"
+        case .consumable: "Расходников пока нет"
+        default: "Украшений пока нет"
+        }
+    }
+
+    private var emptyDescription: String {
+        switch model.kind {
+        case .goods: "Спреи для ухода, сертификаты и всё, что продаётся в кассе помимо украшений."
+        case .consumable: "Иглы, перчатки, антисептики — то, что уходит на процедуры. Одни считаются поштучно, другие — «есть / нет»."
+        default: "Добавьте украшение с размерами и начальным остатком — оно появится в кассе и у бота."
         }
     }
 }
 
-/// Pinned bar over the list: kind, «Мало», the facet menu and the chips of chosen facets.
-private struct InventoryFilterBar: View {
-    @Bindable var model: InventoryModel
+/// Category title with the number of positions and how many of them run low.
+private struct WarehouseGroupHeader: View {
+    let title: String
+    let products: [Product]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Picker("Тип", selection: kindBinding) {
-                    ForEach(ProductKind.allCases) { kind in
-                        Text(kind.title).tag(kind)
-                    }
-                }
-                .pickerStyle(.segmented)
-                Toggle(isOn: $model.filter.lowOnly.animation(.snappy)) {
-                    Label("Мало", systemImage: "exclamationmark.triangle")
-                }
-                .toggleStyle(.button)
-                .buttonStyle(.glass)
-                .accessibilityHint("Показать только товары с низким остатком")
-                facetMenu
+        let low = products.filter(\.lowStock).count
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+            Spacer()
+            if low > 0 {
+                Text("мало: \(low)")
+                    .foregroundStyle(.orange)
             }
-            if model.filter.facetCount > 0 {
-                activeFacets
-            }
+            Text("\(products.count)")
+                .monospacedDigit()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-
-    private var kindBinding: Binding<ProductKind> {
-        Binding(
-            get: { model.kind },
-            set: { kind in model.filter = model.filter.switching(to: kind) }
-        )
-    }
-
-    private var facetMenu: some View {
-        Menu {
-            facetPicker("Категория", options: model.categoryOptions, selection: $model.filter.category)
-            facetPicker("Материал", options: model.materialOptions, selection: $model.filter.material)
-            facetPicker("Размер", options: model.sizeOptions, selection: $model.filter.size)
-            if model.filter.facetCount > 0 {
-                Divider()
-                Button("Сбросить фильтры", systemImage: "xmark.circle", role: .destructive) { resetFacets() }
-            }
-        } label: {
-            Label(
-                "Фильтры",
-                systemImage: model.filter.facetCount > 0
-                    ? "line.3.horizontal.decrease.circle.fill"
-                    : "line.3.horizontal.decrease.circle"
-            )
-            .labelStyle(.iconOnly)
-        }
-        .buttonStyle(.glass)
-        .accessibilityValue(model.filter.facetCount > 0 ? "Выбрано: \(model.filter.facetCount)" : "")
-    }
-
-    @ViewBuilder
-    private func facetPicker(_ title: String, options: [String], selection: Binding<String?>) -> some View {
-        Picker(title, selection: selection.animation(.snappy)) {
-            Text("Все").tag(String?.none)
-            ForEach(options, id: \.self) { option in
-                Text(option).tag(String?.some(option))
-            }
-        }
-        .pickerStyle(.menu)
-        .disabled(options.isEmpty)
-    }
-
-    private var activeFacets: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                facetChip("Категория", value: model.filter.category) { model.filter.category = nil }
-                facetChip("Материал", value: model.filter.material) { model.filter.material = nil }
-                facetChip("Размер", value: model.filter.size) { model.filter.size = nil }
-                if model.filter.facetCount > 1 {
-                    Button("Сбросить", action: resetFacets)
-                        .font(.footnote.weight(.medium))
-                        .buttonStyle(.borderless)
-                }
-            }
-            .padding(.vertical, 1)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    @ViewBuilder
-    private func facetChip(_ title: String, value: String?, remove: @escaping () -> Void) -> some View {
-        if let value = value.nonEmpty {
-            Button {
-                withAnimation(.snappy) { remove() }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(value).lineLimit(1)
-                    Image(systemName: "xmark").imageScale(.small)
-                }
-                .font(.footnote.weight(.medium))
-            }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .controlSize(.small)
-            .accessibilityLabel("\(title): \(value)")
-            .accessibilityHint("Убрать фильтр")
-        }
-    }
-
-    private func resetFacets() {
-        withAnimation(.snappy) {
-            model.filter = model.filter.withoutFacets
-        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

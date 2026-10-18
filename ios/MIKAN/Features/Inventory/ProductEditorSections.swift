@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Jewelry parts of the product editor: characteristics and sizes.
+// Parts of the product editor: jewelry characteristics, and sizes (jewelry and goods).
 
 /// Material (with presets), thread type, thickness with the gauge hint, colour, stone.
 struct ProductCharacteristicsSection: View {
@@ -62,7 +62,8 @@ struct ProductCharacteristicsSection: View {
     }
 }
 
-/// Sizes of the jewelry: a section per size (name, stock, minimum, own article and price) and the add buttons.
+/// Sizes of jewelry or goods (lengths, diameters, volumes): a section per size (name, stock, minimum, own article and
+/// price) and the add buttons.
 struct ProductSizesEditor: View {
     @Binding var draft: ProductDraft
 
@@ -74,7 +75,7 @@ struct ProductSizesEditor: View {
         ForEach($draft.sizes) { $size in
             Section {
                 TextField(
-                    draft.hasSeveralSizes ? "Название, например «8 мм»" : "Размер, если есть (необязательно)",
+                    draft.hasSeveralSizes ? "Название, например «\(exampleSize)»" : "Размер, если есть (необязательно)",
                     text: $size.name
                 )
                 .focused($focusedSize, equals: size.id)
@@ -102,7 +103,7 @@ struct ProductSizesEditor: View {
             Button("Добавить размеры списком…", systemImage: "text.badge.plus") { showsBulkAdd = true }
                 .disabled(draft.sizes.count >= ProductLimits.maxSizes)
                 .alert("Добавить размеры", isPresented: $showsBulkAdd) {
-                    TextField("6, 8, 10 мм", text: $bulkText)
+                    TextField(draft.kind == .goods ? "50, 100, 200 мл" : "6, 8, 10 мм", text: $bulkText)
                     Button("Добавить", action: addBulk)
                     Button("Отмена", role: .cancel) { bulkText = "" }
                 } message: {
@@ -113,11 +114,15 @@ struct ProductSizesEditor: View {
                 Text(message).foregroundStyle(.red)
             } else if draft.hasSeveralSizes {
                 Text("Остаток считается по каждому размеру; в кассе при продаже выбирают размер.")
+            } else if draft.kind == .goods {
+                Text("Если товар бывает разного объёма или размера (50 мл, 100 мл), добавьте их — остаток будет считаться по каждому.")
             } else {
                 Text("Если украшение бывает разной длины или диаметра, добавьте размеры — остаток будет считаться по каждому.")
             }
         }
     }
+
+    private var exampleSize: String { draft.kind == .goods ? "100 мл" : "8 мм" }
 
     private func header(for size: SizeDraft) -> some View {
         let index = draft.sizes.firstIndex { $0.id == size.id } ?? 0

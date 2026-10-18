@@ -17,11 +17,13 @@ struct ProductDetailView: View {
     @State private var movementRequest: StockMovementRequest?
     @State private var showsEditor = false
     @State private var viewer: ServicePhotoViewerItem?
+    @State private var isSavingPresence = false
+    @State private var errorMessage: String?
 
     private static let historyLimit = 30
     private static let purchasesPreviewLimit = 5
 
-    init(product: Product, categories: Set<String>, onChange: @escaping (Product) -> Void) {
+    init(product: Product, categories: Set<String> = [], onChange: @escaping (Product) -> Void) {
         _product = State(initialValue: product)
         self.categories = categories
         self.onChange = onChange
@@ -35,14 +37,21 @@ struct ProductDetailView: View {
                 }
                 VStack(alignment: .leading, spacing: 16) {
                     titleBlock
-                    quantityCard
-                    actions
-                    if showsSizesCard {
-                        ProductSizesCard(product: product) { type, variant in
-                            movementRequest = StockMovementRequest(type: type, variantId: variant.id)
+                    if product.isPresenceTracked {
+                        ProductPresenceCard(status: product.presenceStatus ?? .ok, isSaving: isSavingPresence, onSelect: setPresence)
+                    } else {
+                        quantityCard
+                        actions
+                        if showsSizesCard {
+                            ProductSizesCard(product: product) { type, variant in
+                                movementRequest = StockMovementRequest(type: type, variantId: variant.id)
+                            }
                         }
                     }
                     ProductCharacteristicsCard(product: product, serviceNames: serviceNames)
+                    if product.kind == .consumable {
+                        ConsumableUsageCard(product: product, services: reference.services)
+                    }
                     if let description = product.description.nonEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Описание").font(.headline)
@@ -74,6 +83,7 @@ struct ProductDetailView: View {
         // Only names the suitable services; without them the row is simply hidden.
         .task { try? await reference.ensureServices() }
         .remoteErrorAlert(movements)
+        .errorAlert($errorMessage)
         .sheet(item: $movementRequest) { request in
             MovementSheet(product: product, initialType: request.type, variantId: request.variantId) { result in
                 apply(result.product)
@@ -110,7 +120,7 @@ struct ProductDetailView: View {
                 Text(product.detailLine).font(.subheadline).foregroundStyle(.secondary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                if product.kind == .jewelry, product.priceRange.upperBound > 0 {
+                if product.kind.isSold, product.priceRange.upperBound > 0 {
                     Text(product.priceText)
                         .font(.title3.weight(.semibold))
                         .monospacedDigit()
@@ -232,8 +242,8 @@ struct ProductDetailView: View {
         .accessibilityLabel("Размер для истории")
     }
 
-    /// Jewelry is sold at the POS; consumables only show buyers when someone actually bought one.
-    private var showsPurchases: Bool { product.kind == .jewelry || purchasesTotal > 0 }
+    /// Jewelry and goods are sold at the POS; consumables only show buyers when someone actually bought one.
+    private var showsPurchases: Bool { product.kind.isSold || purchasesTotal > 0 }
 
     // MARK: - Data
 
@@ -275,6 +285,23 @@ struct ProductDetailView: View {
         movements.update { Array(shown.reversed()) + $0 }
     }
 
+    /// Shows the new status at once and sends it; the old one comes back when the server refuses.
+    private func setPresence(_ status: PresenceStatus) {
+        guard status != product.presenceStatus, !isSavingPresence else { return }
+        let previous = product
+        product.presenceStatus = status
+        isSavingPresence = true
+        Task {
+            defer { isSavingPresence = false }
+            do {
+                apply(try await api.updateProduct(id: previous.id, .presence(status, of: previous)))
+            } catch {
+                product = previous
+                errorMessage = error.userMessage
+            }
+        }
+    }
+
     private func apply(_ updated: Product) {
         product = updated
         if let id = movementsVariantId, updated.variant(id: id) == nil { movementsVariantId = nil }
@@ -293,6 +320,13 @@ struct ProductDetailView: View {
 #Preview("Без размеров") {
     NavigationStack {
         ProductDetailView(product: PreviewData.needles, categories: ["Иглы"]) { _ in }
+    }
+    .previewEnvironment()
+}
+
+#Preview("Есть / нет") {
+    NavigationStack {
+        ProductDetailView(product: PreviewData.antiseptic) { _ in }
     }
     .previewEnvironment()
 }

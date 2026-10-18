@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// Product card editor: photos, main fields, jewelry characteristics, sizes, prices, suitable services.
+/// Product card editor for every kind. Jewelry: characteristics, sizes, prices, suitable services. Goods: sizes or
+/// volumes, prices, supplier. Consumables: counted or «есть / нет», and the services that use them.
 struct ProductEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
     @Environment(ReferenceStore.self) private var reference
 
     let product: Product?
+    /// Category names seen on the warehouse; offered only while the categories registry is not loaded.
     let categories: Set<String>
     let onSaved: (Product) -> Void
 
@@ -15,7 +17,7 @@ struct ProductEditorView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
-    init(product: Product?, defaultKind: ProductKind, categories: Set<String>, onSaved: @escaping (Product) -> Void) {
+    init(product: Product?, defaultKind: ProductKind, categories: Set<String> = [], onSaved: @escaping (Product) -> Void) {
         self.product = product
         self.categories = categories
         self.onSaved = onSaved
@@ -27,10 +29,14 @@ struct ProductEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                kindSection
                 ProductPhotosEditorSection(draft: $draft, isUploading: $isUploading, errorMessage: $errorMessage)
                 mainSection
                 if draft.isJewelry {
                     ProductCharacteristicsSection(draft: $draft)
+                }
+                if draft.isConsumable {
+                    ConsumableStockSection(draft: $draft)
                 }
                 if draft.showsSizesEditor {
                     ProductSizesEditor(draft: $draft)
@@ -39,11 +45,14 @@ struct ProductEditorView: View {
                 if draft.isJewelry {
                     servicesSection
                 }
+                if draft.isConsumable {
+                    ConsumableUsageSection(draft: draft)
+                }
                 descriptionSection
                 Section {
                     Toggle("Активен", isOn: $draft.active)
                 } footer: {
-                    Text("Неактивные позиции скрыты из кассы и от бота, но остаются на складе.")
+                    Text(activeFooter)
                 }
             }
             .disabled(isSaving)
@@ -60,15 +69,16 @@ struct ProductEditorView: View {
                 }
             }
             .interactiveDismissDisabled(isSaving || isUploading)
-            // Only names the linked services in the summary row; the picker reports its own load errors.
+            // Only names the linked services and orders the categories; pickers report their own load errors.
             .task { try? await reference.ensureServices() }
+            .task { try? await reference.ensureCategories() }
             .errorAlert($errorMessage)
         }
     }
 
     // MARK: - Sections
 
-    private var mainSection: some View {
+    private var kindSection: some View {
         Section {
             Picker("Тип", selection: $draft.kind.animation()) {
                 ForEach(ProductKind.allCases) { kind in
@@ -76,27 +86,32 @@ struct ProductEditorView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+        } footer: {
+            Text(kindHint)
+        }
+    }
+
+    private var kindHint: String {
+        switch draft.kind {
+        case .jewelry: "Продаётся в кассе, бот предлагает его клиентам."
+        case .goods: "Спреи, сертификаты и другое, что продаётся в кассе. Бот называет их «Товары»."
+        case .consumable: "Уходит на процедуры по нормам услуг, не продаётся."
+        }
+    }
+
+    private var mainSection: some View {
+        Section {
             TextField("Название", text: $draft.name)
             TextField("Артикул", text: $draft.sku)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
-            HStack {
-                TextField("Категория, например «Лабрет»", text: $draft.category)
-                if !categories.isEmpty {
-                    Menu {
-                        ForEach(categories.sorted { $0.localizedStandardCompare($1) == .orderedAscending }, id: \.self) { option in
-                            Button(option) { draft.category = option }
-                        }
-                    } label: {
-                        Image(systemName: "list.bullet.circle")
-                            .accessibilityLabel("Выбрать категорию")
-                    }
-                }
-            }
-            if !draft.isJewelry {
+            CategoryField(options: categoryOptions, selection: $draft.category)
+            if draft.isConsumable {
                 TextField("Материал", text: $draft.material)
-                if !draft.showsSizesEditor {
-                    TextField("Размер (необязательно)", text: firstSize(\.name, fallback: ""))
+                if !draft.showsSizesEditor && !draft.isPresenceTracked {
+                    TextField("Размер (необязательно)", text: firstSizeName)
                 }
             }
         } header: {
@@ -111,57 +126,26 @@ struct ProductEditorView: View {
 
     private var accountingSection: some View {
         Section {
-            if draft.isJewelry {
+            if draft.isSold {
                 NumberField.money("Цена продажи", value: $draft.price)
             }
             NumberField.optionalMoney("Себестоимость", value: $draft.cost)
-            if draft.isJewelry, let markup = ProductMarkup.text(price: draft.price, cost: draft.cost) {
+            if draft.isSold, let markup = ProductMarkup.text(price: draft.price, cost: draft.cost) {
                 LabeledContent("Наценка", value: markup).monospacedDigit()
             }
-            if !draft.showsSizesEditor {
-                singleSizeStockRows
+            if !draft.isPresenceTracked {
+                ProductUnitRow(unit: $draft.unit)
             }
-            unitRow
             TextField("Поставщик", text: $draft.supplier)
         } header: {
-            Text("Цена и учёт")
+            Text(draft.isSold ? "Цена и учёт" : "Закупка")
         } footer: {
             if let message = draft.unitMessage ?? draft.supplierMessage {
                 Text(message).foregroundStyle(.red)
-            } else if draft.isJewelry && draft.hasSeveralSizes {
+            } else if draft.isSold && draft.hasSeveralSizes {
                 Text("Цена и себестоимость — для всех размеров; у размера могут быть свои.")
-            }
-        }
-    }
-
-    /// A consumable has one size: its stock fields live here instead of the sizes editor.
-    @ViewBuilder
-    private var singleSizeStockRows: some View {
-        if let size = draft.sizes.first {
-            if size.isNew {
-                NumberField.integer("Начальный остаток", value: firstSize(\.initialQuantity, fallback: 0), unit: draft.unitLabel)
-            } else {
-                LabeledContent("На складе", value: InventoryText.quantity(size.quantity, unit: draft.unitLabel))
-                    .monospacedDigit()
-            }
-            NumberField.integer("Минимальный остаток", value: firstSize(\.minQuantity, fallback: 0), unit: draft.unitLabel)
-        }
-    }
-
-    private var unitRow: some View {
-        HStack {
-            Text("Единица")
-            Spacer()
-            TextField(ProductLimits.defaultUnit, text: $draft.unit)
-                .multilineTextAlignment(.trailing)
-                .frame(maxWidth: 80)
-            Menu {
-                ForEach(ProductLimits.unitSuggestions, id: \.self) { option in
-                    Button(option) { draft.unit = option }
-                }
-            } label: {
-                Image(systemName: "chevron.up.chevron.down")
-                    .accessibilityLabel("Выбрать единицу")
+            } else if draft.isConsumable {
+                Text("По себестоимости считается стоимость расхождений в ревизии.")
             }
         }
     }
@@ -201,10 +185,18 @@ struct ProductEditorView: View {
         } header: {
             Text("Описание")
         } footer: {
-            if draft.isJewelry {
-                Text("Описание видит бот, когда рассказывает клиентам об украшениях.")
+            switch draft.kind {
+            case .jewelry: Text("Описание видит бот, когда рассказывает клиентам об украшениях.")
+            case .goods: Text("Описание видит бот, когда рассказывает клиентам о товарах.")
+            case .consumable: EmptyView()
             }
         }
+    }
+
+    private var activeFooter: String {
+        draft.isConsumable
+            ? "Неактивные расходники остаются на складе; в ревизию попадают, только пока есть остаток."
+            : "Неактивные позиции скрыты из кассы и от бота, но остаются на складе."
     }
 
     /// Why «Сохранить» is disabled when the reason is a field the user already touched or cannot see.
@@ -226,13 +218,24 @@ struct ProductEditorView: View {
 
     // MARK: - Helpers
 
-    /// A field of the only size (consumables and products without sizes).
-    private func firstSize<Value>(_ keyPath: WritableKeyPath<SizeDraft, Value>, fallback: Value) -> Binding<Value> {
+    /// The kind's categories in the staff order (with the current one, even when it is new).
+    private var categoryOptions: [String] {
+        let extra = reference.categories.isEmpty ? Array(categories) : []
+        return WarehouseGrouping.categoryOptions(
+            section: CatalogSection(kind: draft.kind),
+            categories: reference.categories,
+            products: [],
+            extra: extra + [draft.category]
+        )
+    }
+
+    /// The name of the only size (a consumable without sizes).
+    private var firstSizeName: Binding<String> {
         Binding(
-            get: { draft.sizes.first?[keyPath: keyPath] ?? fallback },
+            get: { draft.sizes.first?.name ?? "" },
             set: { value in
                 guard !draft.sizes.isEmpty else { return }
-                draft.sizes[0][keyPath: keyPath] = value
+                draft.sizes[0].name = value
             }
         )
     }
@@ -260,6 +263,29 @@ struct ProductEditorView: View {
     }
 }
 
+/// «Единица» with the studio's usual units in a menu.
+struct ProductUnitRow: View {
+    @Binding var unit: String
+
+    var body: some View {
+        HStack {
+            Text("Единица")
+            Spacer()
+            TextField(ProductLimits.defaultUnit, text: $unit)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 80)
+            Menu {
+                ForEach(ProductLimits.unitSuggestions, id: \.self) { option in
+                    Button(option) { unit = option }
+                }
+            } label: {
+                Image(systemName: "chevron.up.chevron.down")
+                    .accessibilityLabel("Выбрать единицу")
+            }
+        }
+    }
+}
+
 #if DEBUG
 #Preview("Новое украшение") {
     ProductEditorView(product: nil, defaultKind: .jewelry, categories: ["Лабрет", "Кольцо"]) { _ in }
@@ -268,6 +294,16 @@ struct ProductEditorView: View {
 
 #Preview("Лабрет с размерами") {
     ProductEditorView(product: PreviewData.labret, defaultKind: .jewelry, categories: ["Лабрет", "Кольцо"]) { _ in }
+        .previewEnvironment()
+}
+
+#Preview("Расходник «есть / нет»") {
+    ProductEditorView(product: PreviewData.antiseptic, defaultKind: .consumable) { _ in }
+        .previewEnvironment()
+}
+
+#Preview("Товар") {
+    ProductEditorView(product: PreviewData.spray, defaultKind: .goods) { _ in }
         .previewEnvironment()
 }
 #endif
