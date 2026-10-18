@@ -7,6 +7,7 @@ import { BotController } from '../src/bot/index.js';
 import { STAFF_KEYBOARD } from '../src/bot/keyboards.js';
 import { BotPipeline } from '../src/bot/pipeline.js';
 import { issueStaffCode } from '../src/bot/staff.js';
+import { linkTelegram } from '../src/domain/clients.js';
 import { setCachedBotUsername } from '../src/domain/settings.js';
 import { createTestApp, make, message, ScriptedAi, text, type TestApp } from './helpers.js';
 
@@ -58,6 +59,13 @@ describe('grammY handlers (no network)', () => {
       },
     }) as unknown as Update;
   const replies = () => calls.filter((c) => c.method === 'sendMessage').map((c) => c.payload);
+  /** The chat belongs to a client already (it shared the phone earlier), so the bot talks to it. */
+  const linkChat = async () => {
+    const client = await make(t, '/api/clients', { name: 'Ольга', phone: '+79990009999' });
+    linkTelegram(t.ctx.db, client.id, USER, 'olga');
+  };
+  const keyboardOf = (reply: Record<string, unknown>) =>
+    (reply.reply_markup as { keyboard: Array<Array<{ text: string; request_contact?: boolean }>> }).keyboard;
 
   beforeEach(async () => {
     ai = new ScriptedAi();
@@ -76,16 +84,58 @@ describe('grammY handlers (no network)', () => {
     await t.close();
   });
 
-  it('answers /start with the greeting and a keyboard offering to share the phone', async () => {
+  it('answers /start of a new chat with the greeting and only the button that shares the phone', async () => {
     await bot.handleUpdate(command('/start'));
     const [reply] = replies();
     expect(reply!.text).toMatch(/^Здравствуйте!/);
-    expect(reply!.text).toMatch(/Нажмите «📱 Поделиться номером» внизу, чтобы я вас узнал 🙂 Сотрудников студии узнаю по номеру/);
+    expect(reply!.text).toMatch(/Чтобы начать, нажмите «📱 Поделиться номером» внизу 👇/);
     expect(reply!.reply_markup).toMatchObject({ resize_keyboard: true, is_persistent: true });
-    const keyboard = (reply!.reply_markup as { keyboard: Array<Array<{ text: string; request_contact?: boolean }>> }).keyboard;
-    expect(keyboard.flat().map((b) => b.text)).toEqual(['💉 Услуги и цены', '💎 Украшения', '📅 Записаться', '🩹 Уход после процедуры', '📱 Поделиться номером']);
-    expect(keyboard[2]![0]!.request_contact).toBe(true);
-    expect(mainKeyboard(true).build().flat()).toHaveLength(4);
+    expect(keyboardOf(reply!)).toEqual([[{ text: '📱 Поделиться номером', request_contact: true }]]);
+    expect(mainKeyboard(true).build().flat().map((b) => b.text)).toEqual(['💉 Услуги и цены', '💎 Украшения', '📅 Записаться', '🩹 Уход после процедуры']);
+  });
+
+  it('nothing works until a new chat shares its phone; then the earlier question gets its answer', async () => {
+    ai.push(message([text('Мочка — 1 600 ₽ 🙂')]));
+    await bot.handleUpdate(privateMsg({ text: 'Сколько стоит прокол мочки?' }));
+    await bot.handleUpdate(privateMsg({ text: '💎 Украшения' }));
+    await bot.handleUpdate(privateMsg({ voice: { file_id: 'v', file_unique_id: 'v', duration: 3 } }));
+    await pipeline.idle();
+    expect(ai.calls).toHaveLength(0);
+    const asked = t.gateway.sent.filter((m) => m.chatId === USER);
+    expect(asked.map((m) => m.text)).toEqual(Array(3).fill('Чтобы я мог помочь, нажмите «📱 Поделиться номером» внизу 👇 Это нужно сделать один раз.'));
+    expect(asked[0]!.replyKeyboard).toEqual([[{ text: '📱 Поделиться номером', requestContact: true }]]);
+    expect(calls.some((c) => c.method === 'sendPhoto')).toBe(false);
+
+    await bot.handleUpdate(privateMsg({ contact: { phone_number: '79990001122', first_name: 'Ольга', last_name: 'Ли', user_id: USER } }));
+    await pipeline.idle();
+    expect(replies().map((r) => r.text)).toEqual(['Спасибо, Ольга! Номер сохранён ✅ Чем могу помочь?']);
+    expect(keyboardOf(replies()[0]!).flat().map((b) => b.text)).toContain('💎 Украшения');
+    expect(t.gateway.textsTo(USER).at(-1)).toBe('Мочка — 1 600 ₽ 🙂');
+    // The AI saw the question asked before the phone.
+    expect(JSON.stringify(ai.calls[0]!.messages)).toContain('Сколько стоит прокол мочки?');
+    const client = (await t.api('GET', '/api/clients?search=79990001122')).json().items[0];
+    expect(client).toMatchObject({ name: 'Ольга', lastName: 'Ли', phone: '+79990001122', telegramLinked: true });
+  });
+
+  it('a shared phone that is already in the base links that client to the chat', async () => {
+    const existing = await make(t, '/api/clients', { name: 'Ирина', phone: '+79990007777' });
+    await bot.handleUpdate(privateMsg({ contact: { phone_number: '+7 999 000-77-77', first_name: 'Ира', user_id: USER } }));
+    expect(replies()[0]!.text).toMatch(/^Спасибо, Ирина! Номер подтверждён ✅/);
+    expect((await t.api('GET', `/api/clients/${existing.id}`)).json()).toMatchObject({ name: 'Ирина', telegramLinked: true });
+    expect((await t.api('GET', '/api/clients?search=Ира')).json().items.filter((c: { name: string }) => c.name === 'Ира')).toHaveLength(0);
+  });
+
+  it('inline buttons of a chat without the phone ask for it too', async () => {
+    await bot.handleUpdate({
+      update_id: ++updateId,
+      callback_query: {
+        id: 'cb', chat_instance: 'ci', data: 'jc:0',
+        from: { id: USER, is_bot: false, first_name: 'Ольга' },
+        message: { message_id: 5, date: 1_760_000_000, chat: { id: USER, type: 'private', first_name: 'Ольга' }, text: 'Каталог' },
+      },
+    } as unknown as Update);
+    expect(calls.find((c) => c.method === 'answerCallbackQuery')!.payload).toMatchObject({ text: 'Сначала поделитесь номером — кнопка внизу 👇' });
+    expect(replies()[0]!.text).toMatch(/^Чтобы я мог помочь/);
   });
 
   it('links the chat from a deep-link payload and from a shared contact', async () => {
@@ -107,6 +157,7 @@ describe('grammY handlers (no network)', () => {
   });
 
   it('routes text, photos, image documents, other files, stickers and voice into the pipeline', async () => {
+    await linkChat();
     ai.push(message([text('Ответ 1')]), message([text('Ответ 2')]), message([text('Ответ 3')]), message([text('Ответ 4')]), message([text('😊')]));
     await bot.handleUpdate(privateMsg({ text: 'Привет' }));
     await pipeline.idle();
@@ -145,6 +196,7 @@ describe('grammY handlers (no network)', () => {
   });
 
   it('does not block update handling while a photo downloads (#3)', async () => {
+    await linkChat();
     let release!: (b: Buffer) => void;
     const slow = new Promise<Buffer>((resolve) => (release = resolve));
     const slowBot = new Bot('123:test', { botInfo });
@@ -166,6 +218,7 @@ describe('grammY handlers (no network)', () => {
   });
 
   it('opens catalogs from the keyboard buttons and /catalog without the AI, and answers inline button presses', async () => {
+    await linkChat();
     const helix = await make(t, '/api/services', { name: 'Хеликс', category: 'piercing', price: 3000, durationMin: 30 });
     await make(t, '/api/products', { kind: 'jewelry', name: 'Лабрет', price: 1500, serviceIds: [helix.id], variants: [{ name: '6 мм', initialQuantity: 2 }] });
 

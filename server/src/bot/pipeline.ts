@@ -10,8 +10,10 @@ import { HOUR_MS, localDayBounds } from '../lib/time.js';
 import { runAi, type AiRunInput, type AiRunResult } from './ai.js';
 import { jewelryPage, sendPage } from './catalog.js';
 import type { PhotoSource } from './gateway.js';
+import { PHONE_KEYBOARD } from './keyboards.js';
 import { productCaption, sizesInStock } from './jewelry.js';
 import { photoMessageText, photoSourceFor, serviceCaption, servicePhotoSource } from './media.js';
+import { CONTACT_NOTE, PHONE_REQUIRED } from './onboarding.js';
 import { buildClientContext, buildHistory, buildStablePrompt, buildSystem, type PendingImage } from './prompt.js';
 import { clientLabel, notifyStaff } from './staff.js';
 import { buildStaffContext, buildStaffStablePrompt } from './staff-prompt.js';
@@ -142,6 +144,28 @@ export class BotPipeline {
     if (nothingPending) this.handledUpTo.set(from.chatId, message.id);
     if (typeof answer === 'string') await this.deliver(from.chatId, answer);
     else await answer();
+  }
+
+  /**
+   * A chat that has not shared its phone yet: the message is kept for staff and left unanswered (the AI answers it
+   * once the phone is shared, see `answerPending`); the bot only asks for the phone — no AI call.
+   */
+  async receiveWithoutPhone(from: IncomingFrom, text: string): Promise<void> {
+    upsertChat(this.ctx.db, from.chatId, { telegramName: from.telegramName, username: from.username });
+    this.pinBaseline(from.chatId);
+    storeMessage(this.ctx.db, from.chatId, 'user', text, { bumpUnread: true });
+    try {
+      await this.ctx.gateway.sendText(from.chatId, PHONE_REQUIRED, { replyKeyboard: PHONE_KEYBOARD });
+      storeMessage(this.ctx.db, from.chatId, 'assistant', PHONE_REQUIRED);
+    } catch (err) {
+      this.ctx.log.warn({ chatId: from.chatId, err: errorMessage(err) }, 'failed to ask for the phone');
+    }
+  }
+
+  /** After a chat shared its phone: answers what it asked before that, if anything. */
+  answerPending(chatId: number): void {
+    this.pinBaseline(chatId);
+    if (this.unhandledUserMessages(chatId).some((m) => !m.text.startsWith(CONTACT_NOTE))) this.schedule(chatId);
   }
 
   /** Resolves when all queued work has finished (tests, graceful shutdown). */

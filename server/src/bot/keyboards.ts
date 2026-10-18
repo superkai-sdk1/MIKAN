@@ -33,11 +33,14 @@ export function staffKeyboard(): Keyboard {
   return toGrammyKeyboard(STAFF_KEYBOARD);
 }
 
-/** Keyboard of a client chat; until the chat is linked to a client it also offers to share the phone. */
+/** The only keyboard of a chat that has not shared its phone yet: nothing else works until it does. */
+export const PHONE_KEYBOARD: ReplyKeyboard = [[{ text: BUTTONS.contact, requestContact: true }]];
+
+/** Keyboard of a client chat; until the chat is linked to a client — only the button that shares the phone. */
 export function mainKeyboard(linked: boolean): Keyboard {
-  const rows: ReplyKeyboard = [
+  if (!linked) return toGrammyKeyboard(PHONE_KEYBOARD);
+  return toGrammyKeyboard([
     [{ text: BUTTONS.services }, { text: BUTTONS.jewelry }],
     [{ text: BUTTONS.booking }, { text: BUTTONS.aftercare }],
-  ];
-  return toGrammyKeyboard(linked ? rows : [...rows, [{ text: BUTTONS.contact, requestContact: true }]]);
+  ]);
 }

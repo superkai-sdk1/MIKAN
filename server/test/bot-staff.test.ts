@@ -153,7 +153,7 @@ describe('bot: staff recognised by phone, staff mode', () => {
     const greeting = (await t.api('GET', '/api/settings/bot')).json().greeting as string;
     expect(handleStart(t.ctx, from, '')).toEqual({ text: `${greeting}\n\n${SHARE_PHONE_HINT}`, linked: false });
     expect(SHARE_PHONE_HINT).toBe(
-      'Нажмите «📱 Поделиться номером» внизу, чтобы я вас узнал 🙂 Сотрудников студии узнаю по номеру из профиля в MIKAN.',
+      'Чтобы начать, нажмите «📱 Поделиться номером» внизу 👇 Так я найду вас в нашей базе или запишу как нового клиента. Сотрудников студии узнаю по номеру из профиля в MIKAN.',
     );
 
     await share('79990001122');

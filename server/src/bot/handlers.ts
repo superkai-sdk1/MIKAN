@@ -4,7 +4,7 @@ import { errorMessage } from '../lib/errors.js';
 import { handleCallback } from './callbacks.js';
 import { jewelryCategoriesMenu, sendMenu, serviceSectionsMenu } from './catalog.js';
 import { BUTTONS, mainKeyboard, staffKeyboard } from './keyboards.js';
-import { handleContact, handleStaffCommand, handleStart } from './onboarding.js';
+import { handleContact, handleStaffCommand, handleStart, needsPhone, PHONE_REQUIRED } from './onboarding.js';
 import type { BotPipeline, IncomingFrom } from './pipeline.js';
 import type { PendingImage } from './prompt.js';
 
@@ -42,6 +42,20 @@ async function fetchImage(deps: HandlerDeps, fileId: string, mediaType: PendingI
   }
 }
 
+/** What a message is, for the chat history: its text, or a label of the attachment with its caption. */
+export function describeMessage(message: Context['message']): string {
+  if (!message) return '[Сообщение]';
+  if (message.text) return message.text;
+  const caption = message.caption?.trim();
+  const withCaption = (label: string) => (caption ? `${label} ${caption}` : label);
+  if (message.photo) return withCaption('[Фото]');
+  if (message.document) return withCaption(`[Файл «${message.document.file_name ?? 'без названия'}»]`);
+  if (message.voice || message.audio) return '[Голосовое сообщение]';
+  if (message.video || message.video_note) return '[Видео]';
+  if (message.sticker) return `[Стикер ${message.sticker.emoji ?? ''}]`.replace(' ]', ']');
+  return withCaption('[Сообщение]');
+}
+
 /** Opens a catalog menu; when there is nothing to show, the message goes to the AI like any other. */
 async function openCatalog(deps: HandlerDeps, from: IncomingFrom, text: string, which: 'jewelry' | 'services'): Promise<void> {
   const menu = which === 'jewelry' ? jewelryCategoriesMenu(deps.ctx.db) : serviceSectionsMenu(deps.ctx.db);
@@ -75,6 +89,22 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
       { userId: contact.user_id, phone: contact.phone_number, firstName: contact.first_name, lastName: contact.last_name },
     );
     await c.reply(reply.text, { reply_markup: keyboardFor(reply) });
+    // What the person asked before sharing the phone gets its answer now.
+    if (reply.linked || reply.staff) pipeline.answerPending(c.chat.id);
+  });
+
+  // Until a new chat shares its phone nothing else works: every message is answered with the request for the phone
+  // (staff chats and chats linked to a client pass).
+  pm.use(async (c, next) => {
+    if (!c.message && !c.callbackQuery) return next();
+    const from = sender(c);
+    if (!needsPhone(ctx.db, from.chatId)) return next();
+    if (c.callbackQuery) {
+      await c.answerCallbackQuery({ text: 'Сначала поделитесь номером — кнопка внизу 👇' }).catch(() => undefined);
+      await c.reply(PHONE_REQUIRED, { reply_markup: mainKeyboard(false) });
+      return;
+    }
+    await pipeline.receiveWithoutPhone(from, describeMessage(c.message));
   });
 
   // Interactive catalogs: the keyboard buttons and /catalog open menus with inline buttons (no AI call).

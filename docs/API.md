@@ -1036,9 +1036,19 @@ removed: «Эта запись уже неактуальна»). A button under 
   binding is never affected.
 - Phones are compared normalized (see `normalizePhone`): Telegram's `phone_number` comes as `79931234567` or
   `+79931234567`, the profile phone may be written `8 (993) 123-45-67`, `+7 993 123 45 67`, `9931234567` — all match.
-- Telegram never gives a bot the user's phone by itself, so the bot asks for it: `/start` in a private chat that is
-  neither linked to a client nor a staff chat appends to the greeting «Нажмите кнопку «📱 Поделиться номером» внизу —
-  так я вас узнаю. Если вы сотрудник студии, узнаю вас по номеру из вашего профиля в MIKAN.» The client AI, when
+- **Sharing the phone is required.** Telegram never gives a bot the user's phone by itself, so a private chat that is
+  neither linked to a client nor a staff chat can do nothing else until it shares its own contact:
+  - `/start` appends to the greeting «Чтобы начать, нажмите «📱 Поделиться номером» внизу 👇 Так я найду вас в нашей
+    базе или запишу как нового клиента. Сотрудников студии узнаю по номеру из профиля в MIKAN.»; the keyboard under
+    the input field has only that button until the phone is shared.
+  - Any other message (text, keyboard buttons, photos, files, voice, stickers) is stored for staff and answered — with
+    no AI call — «Чтобы я мог помочь, нажмите «📱 Поделиться номером» внизу 👇 Это нужно сделать один раз.»; inline
+    buttons answer «Сначала поделитесь номером — кнопка внизу 👇».
+  - The shared phone of a client in the base links that client to the chat (and stores the Telegram nick); a new
+    phone creates a client with the Telegram name (first / last name from the contact), the phone, the nick and source
+    `telegram`. The client keyboard appears, and what the person asked before sharing the phone is answered by the AI
+    right away. A deep link from the client card (`/start c…`) links the chat without the phone.
+- The client AI, when
   someone says they work at the studio or asks to be recognised, points to the same button (a typed number does not
   count; a chat already linked to a client has no such button — staff then bind it in the app) and never claims to
   have recognised them.

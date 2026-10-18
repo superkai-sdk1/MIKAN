@@ -15,8 +15,19 @@ import { bindStaffChat, notifyStaff } from './staff.js';
 
 /** Appended to the /start greeting of a chat that is neither a client's nor an employee's yet. */
 export const SHARE_PHONE_HINT =
-  `Нажмите «${BUTTONS.contact}» внизу, чтобы я вас узнал 🙂 ` +
+  `Чтобы начать, нажмите «${BUTTONS.contact}» внизу 👇 Так я найду вас в нашей базе или запишу как нового клиента. ` +
   'Сотрудников студии узнаю по номеру из профиля в MIKAN.';
+
+/** Marks the shared contact in the chat history. */
+export const CONTACT_NOTE = '[Контакт]';
+
+/** The answer to anything a chat sends before it has shared its phone. */
+export const PHONE_REQUIRED = `Чтобы я мог помочь, нажмите «${BUTTONS.contact}» внизу 👇 Это нужно сделать один раз.`;
+
+/** A private chat must share its phone before the bot helps: true until it is a client's or an active employee's. */
+export function needsPhone(db: DbOrTx, chatId: number): boolean {
+  return findClientByChat(db, chatId) === null && chatEmployee(db, findChat(db, chatId)) === null;
+}
 
 /** Longest raw phone quoted in the note about an unreadable contact. */
 const MAX_NOTE_PHONE = 40;
@@ -114,7 +125,7 @@ export async function handleContact(
     );
     return { text: 'Не получилось распознать номер. Напишите его, пожалуйста, сообщением.', linked: linkedNow() };
   }
-  storeMessage(db, from.chatId, 'user', `[Контакт] ${phone}`);
+  storeMessage(db, from.chatId, 'user', `${CONTACT_NOTE} ${phone}`);
   const employee = findActiveEmployeeByPhone(db, phone);
   if (employee) {
     const wasStaff = findChat(db, from.chatId)?.employeeId === employee.id;
