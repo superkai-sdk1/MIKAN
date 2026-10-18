@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { products } from '../db/schema.js';
 import { createProduct, hasLowStock, serializeProduct, serializeProducts, updateProduct } from '../domain/products.js';
-import { getProductRow, listMovements, recordBatchMovement, recordManualMovement, serializeMovements } from '../domain/stock.js';
+import { getProductRow, listMovements, recordBatchMovement, recordManualMovement, recordPurchase, serializeMovements } from '../domain/stock.js';
 import { createRevision, getRevision, listRevisions } from '../domain/revisions.js';
 import { idempotent } from '../lib/idempotency.js';
 import { THREAD_TYPES } from '../lib/jewelry.js';
@@ -92,7 +92,12 @@ const listQuery = z.object({
   lowStock: queryBool,
   includeInactive: queryBool,
 });
-const movementTypes = z.enum(['receipt', 'sale', 'return', 'writeoff', 'usage', 'adjustment']);
+const purchaseBody = z.object({
+  amount: z.number().int().min(1).max(100_000_000),
+  note: nullableText(500),
+  presenceStatus: z.enum(['ok', 'low', 'out']).nullish(),
+});
+const movementTypes = z.enum(['receipt', 'sale', 'return', 'writeoff', 'usage', 'adjustment', 'purchase']);
 const revisionBody = z.object({
   section: z.enum(['jewelry', 'goods', 'consumable']).nullish(),
   note: nullableText(500),
@@ -141,6 +146,15 @@ export function productRoutes(app: FastifyInstance, ctx: AppContext): void {
     const input = parse(movementBody, request.body);
     return idempotent(db, request, reply, (tx) => {
       const { product, movement } = recordManualMovement(tx, id, input, request.employee.id);
+      return { product: serializeProduct(tx, product), movement: serializeMovements(tx, [movement])[0] };
+    });
+  });
+
+  app.post('/products/:id/purchases', async (request, reply) => {
+    const { id } = parse(idParams, request.params);
+    const input = parse(purchaseBody, request.body);
+    return idempotent(db, request, reply, (tx) => {
+      const { product, movement } = recordPurchase(tx, id, input, request.employee.id);
       return { product: serializeProduct(tx, product), movement: serializeMovements(tx, [movement])[0] };
     });
   });

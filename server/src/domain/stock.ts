@@ -8,7 +8,7 @@ import { normalizeSearchTerm } from '../lib/text.js';
 import { refreshProductSearch } from './product-search.js';
 import { employeeRefOrMissing, employeesByIds, productsByIds, variantsByIds } from './refs.js';
 
-export type MovementType = 'receipt' | 'sale' | 'return' | 'writeoff' | 'usage' | 'adjustment';
+export type MovementType = 'receipt' | 'sale' | 'return' | 'writeoff' | 'usage' | 'adjustment' | 'purchase';
 export type ManualMovementType = 'receipt' | 'writeoff' | 'usage' | 'adjustment';
 
 export interface MovementInput {
@@ -135,6 +135,52 @@ export interface ManualMovement {
   quantity: number;
   variantId?: number | null;
   note?: string | null;
+}
+
+export interface PurchaseInput {
+  /** Rubles paid. */
+  amount: number;
+  note?: string | null;
+  /** The status after the restock; `ok` by default. */
+  presenceStatus?: 'ok' | 'low' | 'out' | null;
+}
+
+/**
+ * `POST /products/:id/purchases`: a restock of a presence consumable with what it cost — a `purchase` movement on its
+ * only size (`delta` 0) carrying the amount, and the new status. The analytics counts the amount as an expense.
+ */
+export function recordPurchase(db: DbOrTx, productId: number, input: PurchaseInput, employeeId: number) {
+  return db.transaction((tx) => {
+    const product = getProductRow(tx, productId);
+    if (product.stockMode !== 'presence') {
+      throw badRequest('Сумму покупки записывают для расходников «есть / нет». Для остальных — приход количеством.');
+    }
+    const variant = currentVariants(tx, product.id)[0];
+    if (!variant) throw badRequest(`У «${product.name}» нет размера для записи покупки`);
+    const now = Date.now();
+    const movement = tx
+      .insert(stockMovements)
+      .values({
+        productId,
+        variantId: variant.id,
+        delta: 0,
+        quantityAfter: variant.quantity,
+        type: 'purchase',
+        note: input.note ?? null,
+        amount: input.amount,
+        employeeId,
+        createdAt: now,
+      })
+      .returning()
+      .get();
+    const updated = tx
+      .update(products)
+      .set({ presenceStatus: input.presenceStatus ?? 'ok', updatedAt: now })
+      .where(eq(products.id, productId))
+      .returning()
+      .get()!;
+    return { product: updated, movement };
+  });
 }
 
 /** `POST /products/:id/movements`: one operation on one size. */

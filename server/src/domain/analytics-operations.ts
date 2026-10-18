@@ -20,7 +20,10 @@ interface ExpenseSums {
   unitsWithoutCost: number;
 }
 
-/** Write-offs and consumables used in procedures during the period, valued at the current unit cost. */
+/**
+ * Write-offs and consumables used in procedures during the period, valued at the current unit cost, plus the restocks
+ * of presence consumables at what they cost (they have no quantity to value).
+ */
 export function stockExpenses(db: DbOrTx, from: number, to: number) {
   const removed = sql<number>`-${stockMovements.delta}`;
   const rows = db
@@ -48,12 +51,30 @@ export function stockExpenses(db: DbOrTx, from: number, to: number) {
       );
   const writeoffs = totals('writeoff');
   const usage = totals('usage');
+  const bought = db
+    .select({
+      productId: stockMovements.productId,
+      name: products.name,
+      kind: products.kind,
+      count: count(),
+      value: sql<number>`coalesce(sum(${stockMovements.amount}), 0)`,
+    })
+    .from(stockMovements)
+    .innerJoin(products, eq(stockMovements.productId, products.id))
+    .where(and(eq(stockMovements.type, 'purchase'), gte(stockMovements.createdAt, from), lt(stockMovements.createdAt, to)))
+    .groupBy(stockMovements.productId)
+    .all();
+  const purchases = bought.reduce((s, r) => ({ count: s.count + r.count, value: s.value + r.value }), { count: 0, value: 0 });
   return {
     writeoffs,
     usage,
-    expenses: writeoffs.value + usage.value,
-    top: rows
-      .map((r) => ({ productId: r.productId, name: r.name, kind: r.kind, type: r.type, quantity: r.quantity, value: r.value }))
+    purchases,
+    expenses: writeoffs.value + usage.value + purchases.value,
+    top: [
+      ...rows.map((r) => ({ productId: r.productId, name: r.name, kind: r.kind, type: r.type, quantity: r.quantity, value: r.value })),
+      // A purchase has no units: `quantity` is how many times it was bought.
+      ...bought.map((r) => ({ productId: r.productId, name: r.name, kind: r.kind, type: 'purchase', quantity: r.count, value: r.value })),
+    ]
       .sort((a, b) => b.value - a.value || b.quantity - a.quantity || a.productId - b.productId)
       .slice(0, ANALYTICS_TOP_LIMIT),
   };

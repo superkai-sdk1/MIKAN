@@ -495,6 +495,8 @@ export const stockMovements = sqliteTable(
     appointmentId: integer('appointment_id').references(() => appointments.id),
     /** The stock count this adjustment came from. */
     revisionId: integer('revision_id').references(() => stockRevisions.id),
+    /** Rubles paid: set on `purchase` (a restock of a presence consumable), null otherwise. */
+    amount: integer('amount'),
     employeeId: integer('employee_id').references(() => employees.id),
     createdAt: ms('created_at').notNull(),
   },
