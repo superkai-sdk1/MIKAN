@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Completes an appointment: aftercare message, consumables used, then offers to take payment.
+/// Completes an appointment: aftercare message, consumables used (prefilled from the services' norms),
+/// then shows what was taken from the warehouse and offers to take payment.
 struct CompleteAppointmentSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
@@ -13,7 +14,12 @@ struct CompleteAppointmentSheet: View {
     @State private var sendsAftercare: Bool
     @State private var templateId: Int?
     @State private var consumables = Remote<[Product]>()
+    /// The visit's norms; prefilled once the services and the consumables are loaded.
+    @State private var norms: [ServiceConsumable] = []
+    @State private var presence: [Product] = []
     @State private var usage: [Int: Int] = [:]
+    @State private var shownConsumables: [Int] = []
+    @State private var didPrefill = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var result: CompleteAppointmentResult?
@@ -38,7 +44,12 @@ struct CompleteAppointmentSheet: View {
         NavigationStack {
             Group {
                 if let result {
-                    CompletionSuccessView(appointment: result.appointment, scheduledMessages: result.scheduledMessages) {
+                    CompletionSuccessView(
+                        appointment: result.appointment,
+                        scheduledMessages: result.scheduledMessages,
+                        consumption: result.consumption,
+                        units: units
+                    ) {
                         onPay(result.appointment)
                         dismiss()
                     } onDone: {
@@ -101,48 +112,19 @@ struct CompleteAppointmentSheet: View {
         }
     }
 
-    @ViewBuilder
     private var consumablesSection: some View {
-        Section {
-            if let products = consumables.value {
-                if products.isEmpty {
-                    Text("Расходников на складе нет").foregroundStyle(.secondary)
-                }
-                ForEach(products) { product in
-                    Stepper(value: usageBinding(for: product.id), in: 0...max(0, product.quantity)) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(product.name)
-                                Text("На складе: \(product.quantity) \(product.unitLabel)")
-                                    .font(.caption)
-                                    .foregroundStyle(product.lowStock ? Color.red : Color.secondary)
-                            }
-                            Spacer()
-                            Text("\(usage[product.id] ?? 0)")
-                                .monospacedDigit()
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .disabled(product.quantity <= 0)
-                }
-            } else if let failure = consumables.failure {
-                Text(failure).foregroundStyle(.red)
-                Button("Повторить") { Task { await loadConsumables() } }
-            } else {
-                ProgressView()
-            }
-        } header: {
-            Text("Расходники")
-        } footer: {
-            Text("Будут списаны со склада как расход на процедуру.")
-        }
+        CompleteConsumablesSection(
+            products: consumables,
+            norms: norms,
+            presence: presence,
+            usage: $usage,
+            shown: $shownConsumables,
+            retry: loadConsumables
+        )
     }
 
-    private func usageBinding(for productId: Int) -> Binding<Int> {
-        Binding(
-            get: { usage[productId] ?? 0 },
-            set: { usage[productId] = $0 }
-        )
+    private var units: [Int: String] {
+        Dictionary((consumables.value ?? []).map { ($0.id, $0.unitLabel) }, uniquingKeysWith: { first, _ in first })
     }
 
     private func load() async {
@@ -160,10 +142,25 @@ struct CompleteAppointmentSheet: View {
             errorMessage = error.userMessage
         }
         await consumablesLoad
+        prefillIfNeeded()
     }
 
+    /// Inactive ones too, so every norm of the visit's services resolves.
     private func loadConsumables() async {
-        await consumables.load { try await api.products(kind: .consumable) }
+        await consumables.load { try await api.products(kind: .consumable, includeInactive: true) }
+        prefillIfNeeded()
+    }
+
+    /// Fills the steppers from the norms once, when both the services and the consumables are there.
+    /// Anything staff already added keeps its count.
+    private func prefillIfNeeded() {
+        guard !didPrefill, let products = consumables.value, !reference.services.isEmpty else { return }
+        didPrefill = true
+        norms = VisitConsumption.norms(for: appointment, services: reference.services, products: products)
+        presence = VisitConsumption.presenceProducts(for: appointment, services: reference.services, products: products)
+        usage = VisitConsumption.usage(from: norms).merging(usage) { _, typed in typed }
+        let normIds = norms.map(\.productId)
+        shownConsumables = normIds + shownConsumables.filter { !normIds.contains($0) }
     }
 
     private func defaultTemplateId() -> Int? {
@@ -171,14 +168,11 @@ struct CompleteAppointmentSheet: View {
     }
 
     private func submit() {
-        let used = usage
-            .filter { $0.value > 0 }
-            .map { ConsumableUse(productId: $0.key, quantity: $0.value) }
-            .sorted { $0.productId < $1.productId }
         let body = CompleteBody(
             sendAftercare: sendsAftercare && canSendAftercare,
             aftercareTemplateId: sendsAftercare ? templateId : nil,
-            consumables: used
+            // Untouched norms: no list, the server deducts them without blocking and reports shortages.
+            consumables: VisitConsumption.consumables(usage: usage, norms: norms)
         )
         isSubmitting = true
         Task {
@@ -240,50 +234,6 @@ nonisolated enum AftercareDefaults {
         }
         guard let category = fresh.lazy.compactMap(\.category).first else { return nil }
         return templates.first { $0.category == category }?.id
-    }
-}
-
-private struct CompletionSuccessView: View {
-    let appointment: Appointment
-    let scheduledMessages: Int
-    let onPay: () -> Void
-    let onDone: () -> Void
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(.green)
-                .symbolEffect(.bounce, value: true)
-                .accessibilityHidden(true)
-            Text("Запись завершена")
-                .font(.title2.weight(.bold))
-            if scheduledMessages > 0 {
-                Text("Запланировано сообщений по уходу: \(scheduledMessages)")
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            VStack(spacing: 12) {
-                if !appointment.isPaid {
-                    Button(action: onPay) {
-                        Label("Принять оплату · \(Money.format(appointment.price))", systemImage: "creditcard.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.large)
-                } else {
-                    Label("Оплачено", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
-                }
-                Button(action: onDone) {
-                    Text("Готово").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.glass)
-                .controlSize(.large)
-            }
-        }
-        .padding(24)
     }
 }
 

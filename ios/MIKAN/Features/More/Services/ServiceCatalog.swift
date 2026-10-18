@@ -14,8 +14,8 @@ nonisolated struct ServiceCatalogSection: Identifiable, Hashable, Sendable {
 
 /// Pure catalog logic of the services screens: order, search, sections, group suggestions.
 nonisolated enum ServiceCatalog {
-    /// Title `Service.groupTitle` uses for services without a group; that section goes last.
-    static let ungroupedTitle = "Другое"
+    /// Section of the services without a group; it goes last in its category.
+    static let ungroupedTitle = "Без группы"
 
     /// Catalog order, as the server sorts: `sort`, then name.
     static func sorted(_ services: [Service]) -> [Service] {
@@ -39,32 +39,35 @@ nonisolated enum ServiceCatalog {
         }
     }
 
-    /// Sections by category (tattoo, piercing, other), then by group in catalog order; ungrouped services last.
-    static func sections(_ services: [Service]) -> [ServiceCatalogSection] {
+    /// Sections by category (tattoo, piercing, other), then by group in the order of the warehouse categories
+    /// (`categories`; groups the registry lacks follow alphabetically), «Без группы» last. Catalog order inside a group.
+    static func sections(_ services: [Service], categories: [CatalogCategory] = []) -> [ServiceCatalogSection] {
         ServiceCategory.allCases.flatMap { category in
-            sections(of: category, sorted(services.filter { $0.category == category }))
+            sections(of: category, sorted(services.filter { $0.category == category }), categories: categories)
         }
     }
 
-    private static func sections(of category: ServiceCategory, _ items: [Service]) -> [ServiceCatalogSection] {
-        let titles = orderedGroupTitles(items)
-        let hasNamedGroups = items.contains { $0.group.nonEmpty != nil }
-        return titles.enumerated().map { index, title in
-            ServiceCatalogSection(
-                category: category,
-                group: hasNamedGroups ? title : nil,
-                isFirstInCategory: index == 0,
-                services: items.filter { $0.groupTitle == title }
-            )
+    private static func sections(
+        of category: ServiceCategory,
+        _ items: [Service],
+        categories: [CatalogCategory]
+    ) -> [ServiceCatalogSection] {
+        // A group literally named «Без группы» means the same as no group.
+        let named = items.compactMap(\.group.nonEmpty).filter { $0 != ungroupedTitle }
+        guard !named.isEmpty else {
+            guard !items.isEmpty else { return [] }
+            return [ServiceCatalogSection(category: category, group: nil, isFirstInCategory: true, services: items)]
         }
-    }
-
-    /// Group titles in order of first appearance, with the ungrouped title moved to the end.
-    private static func orderedGroupTitles(_ items: [Service]) -> [String] {
-        let unique = items.map(\.groupTitle).reduce(into: [String]()) { titles, title in
-            if !titles.contains(title) { titles.append(title) }
+        let present = Set(named)
+        let titles = categories
+            .orderedNames(.service, serviceCategory: category, including: named)
+            .filter(present.contains)
+        var groups = titles.map { title in (title, items.filter { $0.group.nonEmpty == title }) }
+        let ungrouped = items.filter { !present.contains($0.group.nonEmpty ?? "") }
+        if !ungrouped.isEmpty { groups.append((ungroupedTitle, ungrouped)) }
+        return groups.enumerated().map { index, group in
+            ServiceCatalogSection(category: category, group: group.0, isFirstInCategory: index == 0, services: group.1)
         }
-        return unique.filter { $0 != ungroupedTitle } + unique.filter { $0 == ungroupedTitle }
     }
 
     /// Existing group names per category, for the editor's suggestions.

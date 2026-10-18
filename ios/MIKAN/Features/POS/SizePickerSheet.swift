@@ -54,7 +54,7 @@ nonisolated struct SizePickerOption: Identifiable, Equatable, Sendable {
     }
 }
 
-/// Picks the size of a jewelry piece for the receipt: every size with its price and stock.
+/// Picks the size of a jewelry piece or goods for the receipt: every size with its price and stock.
 /// A tap adds one of that size and closes the sheet.
 struct SizePickerSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -86,7 +86,9 @@ struct SizePickerSheet: View {
                 } header: {
                     Text(ProductTileText.sizes(product.variants.count))
                 } footer: {
-                    Text("Нажмите на размер — одно украшение добавится в чек.")
+                    Text(product.kind == .goods
+                        ? "Нажмите на размер — один товар добавится в чек."
+                        : "Нажмите на размер — одно украшение добавится в чек.")
                 }
             }
             .navigationTitle("Выберите размер")

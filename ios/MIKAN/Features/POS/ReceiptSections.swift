@@ -115,7 +115,7 @@ struct ReceiptLinesSection: View {
         @Bindable var cart = cart
         Section {
             if cart.lines.isEmpty {
-                Label("Добавьте украшение из каталога ниже или услугу кнопкой «Услуга».", systemImage: "cart")
+                Label("Добавьте украшение или товар из каталога ниже, услугу — кнопкой «Услуга».", systemImage: "cart")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
@@ -158,7 +158,7 @@ private struct ReceiptLineRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: line.productId == nil ? "hands.and.sparkles" : "sparkles")
+                Image(systemName: line.symbol)
                     .foregroundStyle(Color.accentColor)
                     .accessibilityHidden(true)
                 SizedItemTitle(name: line.name, size: line.sizeName)

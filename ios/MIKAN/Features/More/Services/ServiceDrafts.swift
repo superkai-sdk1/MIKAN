@@ -268,6 +268,10 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
     var aftercareTemplateId: Int?
     /// «Свежий прокол» / «Свежее тату» (new services: on).
     var freshProcedure: Bool
+    /// Compatible catalog jewelry, in the order staff linked it.
+    var jewelryIds: [Int]
+    /// Consumables one procedure uses.
+    var consumables: [ServiceConsumable]
     var active: Bool
     var sort: Int
 
@@ -289,6 +293,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
         deposit = ServiceDepositDraft(depositAmount: service?.depositAmount ?? 0)
         aftercareTemplateId = service?.aftercareTemplateId
         freshProcedure = service?.freshProcedure ?? true
+        jewelryIds = service?.jewelryIds ?? []
+        consumables = service?.consumables ?? []
         active = service?.active ?? true
         sort = service?.sort ?? max(0, nextSort)
     }
@@ -300,6 +306,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
     var photosMessage: String? {
         photos.count > ServiceLimits.maxPhotos ? "Не больше \(ServiceLimits.maxPhotos) фото работ." : nil
     }
+    var jewelryMessage: String? { ServiceJewelryLinks.validationMessage(jewelryIds) }
+    var consumablesMessage: String? { ServiceConsumptionNorms.validationMessage(consumables) }
 
     /// Why «Сохранить» is disabled (the first problem), or `nil` when the card can be saved.
     /// Each part is also shown next to its own field.
@@ -311,6 +319,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
             ?? imagePromptMessage
             ?? photosMessage
             ?? deposit.validationMessage
+            ?? jewelryMessage
+            ?? consumablesMessage
     }
 
     var canSave: Bool { validationMessage == nil }
@@ -333,6 +343,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
             depositAmount: deposit.amount,
             aftercareTemplateId: Nullable(aftercareTemplateId),
             freshProcedure: freshProcedure,
+            jewelryIds: jewelryIds,
+            consumables: consumables,
             active: active,
             sort: sort
         )

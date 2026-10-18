@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// «Чек»: the appointment or client it is for, editable lines, the jewelry / service catalog, «Услуга»
+/// «Чек»: the appointment or client it is for, editable lines, the jewelry / service / goods catalog, «Услуга»
 /// and «Оплатить · N ₽».
 /// Checkout itself is the `CheckoutView` sheet on the POS root (bound to `cart.isCheckoutPresented`).
 struct ReceiptView: View {
     @Environment(APIClient.self) private var api
     @Environment(CartStore.self) private var cart
     @Environment(ReferenceStore.self) private var reference
-    /// Owned by the POS hub, so the catalog stays loaded between receipts.
+    /// Jewelry and goods; owned by the POS hub, so the catalog stays loaded between receipts.
     let catalog: Remote<[Product]>
 
     @State private var catalogKind = POSCatalog.jewelry
@@ -15,9 +15,10 @@ struct ReceiptView: View {
     @State private var serviceCatalog = Remote<Void>()
     @State private var hint: CatalogHint?
     @State private var search = ""
-    @State private var category: String?
+    /// The category chip chosen in each product segment.
+    @State private var categories: [ProductKind: String] = [:]
     @State private var showsServiceSheet = false
-    /// Jewelry with several sizes whose size is being picked.
+    /// A product with several sizes whose size is being picked.
     @State private var sizePickerProduct: Product?
     @State private var addCount = 0
 
@@ -26,8 +27,18 @@ struct ReceiptView: View {
 
     private var isSearching: Bool { !search.trimmed.isEmpty }
     private var products: [Product] { catalog.value ?? [] }
-    private var categories: [String] { ProductCatalogFilter.categories(of: products) }
-    private var filtered: [Product] { ProductCatalogFilter.apply(products, query: search, category: category) }
+
+    private func categoryNames(_ kind: ProductKind) -> [String] {
+        ProductCatalogFilter.categories(of: products, kind: kind, registry: reference.categories)
+    }
+
+    private func filtered(_ kind: ProductKind) -> [Product] {
+        ProductCatalogFilter.apply(products, kind: kind, query: search, category: categories[kind])
+    }
+
+    private func categoryBinding(_ kind: ProductKind) -> Binding<String?> {
+        Binding(get: { categories[kind] }, set: { categories[kind] = $0 })
+    }
 
     var body: some View {
         List {
@@ -49,6 +60,8 @@ struct ReceiptView: View {
             if catalogKind == .services { await loadServices(force: true) }
         }
         .task { await loadCatalog() }
+        // Only orders the category chips; without it they are alphabetical.
+        .task { try? await reference.ensureCategories() }
         .task(id: catalogKind) {
             if catalogKind == .services, serviceCatalog.value == nil { await loadServices() }
         }
@@ -70,14 +83,17 @@ struct ReceiptView: View {
         Section {
             catalogPicker
             switch catalogKind {
-            case .jewelry:
-                if !categories.isEmpty {
-                    CategoryChips(categories: categories, selection: $category)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
+            case .jewelry, .goods:
+                if let kind = catalogKind.productKind {
+                    let names = categoryNames(kind)
+                    if !names.isEmpty {
+                        CategoryChips(categories: names, selection: categoryBinding(kind))
+                            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                    catalogContent(kind)
                 }
-                catalogContent
             case .services:
                 POSServiceCatalogSection(
                     state: serviceCatalog,
@@ -110,13 +126,14 @@ struct ReceiptView: View {
     }
 
     @ViewBuilder
-    private var catalogContent: some View {
+    private func catalogContent(_ kind: ProductKind) -> some View {
         if catalog.value != nil {
-            if filtered.isEmpty {
-                emptyState
+            let items = filtered(kind)
+            if items.isEmpty {
+                emptyState(kind)
                     .listRowBackground(Color.clear)
             } else {
-                ForEach(ProductCatalogFilter.rows(filtered, columns: Self.gridColumns), id: \.self) { row in
+                ForEach(ProductCatalogFilter.rows(items, columns: Self.gridColumns), id: \.self) { row in
                     tileRow(row)
                         .listRowInsets(EdgeInsets(top: Self.tileSpacing / 2, leading: 0, bottom: Self.tileSpacing / 2, trailing: 0))
                         .listRowBackground(Color.clear)
@@ -148,22 +165,38 @@ struct ReceiptView: View {
     }
 
     @ViewBuilder
-    private var emptyState: some View {
+    private func emptyState(_ kind: ProductKind) -> some View {
+        let symbol = CatalogSection(kind: kind).symbol
         if isSearching {
             ContentUnavailableView.search(text: search)
-        } else if category != nil {
-            ContentUnavailableView("В этой категории пусто", systemImage: "sparkles")
+        } else if categories[kind] != nil, !segmentProducts(kind).isEmpty {
+            ContentUnavailableView("В этой категории пусто", systemImage: symbol)
+        } else if kind == .goods {
+            ContentUnavailableView(
+                "Нет товаров",
+                systemImage: symbol,
+                description: Text("Добавьте товары — спреи для ухода, сертификаты — на вкладке «Склад» → «Товары». Они появятся здесь.")
+            )
         } else {
             ContentUnavailableView(
                 "Нет украшений",
-                systemImage: "sparkles",
+                systemImage: symbol,
                 description: Text("Добавьте украшения на вкладке «Склад» — они появятся здесь. Услугу можно добавить кнопкой «Услуга».")
             )
         }
     }
 
+    private func segmentProducts(_ kind: ProductKind) -> [Product] {
+        ProductCatalogFilter.products(products, kind: kind)
+    }
+
+    /// Jewelry and goods in one go: both segments come from the same catalog.
     private func loadCatalog() async {
-        await catalog.load { try await api.products(kind: .jewelry) }
+        await catalog.load {
+            async let jewelry = api.products(kind: .jewelry)
+            async let goods = api.products(kind: .goods)
+            return try await jewelry + goods
+        }
     }
 
     private func loadServices(force: Bool = false) async {
@@ -198,14 +231,14 @@ struct ReceiptView: View {
     state.cart.add(product: PreviewData.labret, variant: PreviewData.labret.variants[1])
     state.cart.add(product: PreviewData.ring)
     return NavigationStack {
-        ReceiptView(catalog: Remote(PreviewData.products.filter { $0.kind == .jewelry }))
+        ReceiptView(catalog: Remote(PreviewData.products.filter(\.kind.isSold) + [PreviewData.aftercareSpray]))
     }
     .appEnvironment(state)
 }
 
 #Preview("Без записи") {
     NavigationStack {
-        ReceiptView(catalog: Remote(PreviewData.products.filter { $0.kind == .jewelry }))
+        ReceiptView(catalog: Remote(PreviewData.products.filter(\.kind.isSold) + [PreviewData.aftercareSpray]))
     }
     .previewEnvironment()
 }

@@ -1,16 +1,22 @@
 import SwiftUI
 
+/// The service card editor: main data, price and variants, time and prepayment, compatible jewelry, the consumption
+/// norm, pictures, the text the bot reads, the aftercare memo and visibility.
 struct ServiceEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
     @Environment(ReferenceStore.self) private var reference
 
     let service: Service?
-    /// Existing group names per category, offered next to the group field.
+    /// Group names services already carry per category; offered after the warehouse categories.
     let groupSuggestions: [ServiceCategory: [String]]
     let onSaved: (Service) -> Void
 
     @State private var draft: ServiceEditorDraft
+    /// Jewelry and consumables the service can link to.
+    @State private var stock = Remote<[Product]>()
+    /// The group typed in each category, so switching the category back and forth does not lose it.
+    @State private var stashedGroups: [ServiceCategory: String] = [:]
     @State private var isUploadingCover = false
     @State private var isUploadingPhotos = false
     @State private var isSaving = false
@@ -36,14 +42,16 @@ struct ServiceEditorView: View {
             Form {
                 mainSection
                 priceSection
-                depositSection
-                durationSection
                 ServiceVariantsEditor(
                     variants: $draft.variants,
                     serviceName: draft.name,
                     defaultPrice: draft.price.amount,
                     defaultDuration: draft.durationMin
                 )
+                durationSection
+                depositSection
+                ServiceJewelryEditorSection(jewelryIds: $draft.jewelryIds, stock: stock, retry: loadStock)
+                ServiceNormsEditorSection(consumables: $draft.consumables, stock: stock, retry: loadStock)
                 ServiceCoverEditorSection(
                     imageUrl: $draft.imageUrl,
                     imagePrompt: $draft.imagePrompt,
@@ -77,6 +85,10 @@ struct ServiceEditorView: View {
             .task {
                 do { try await reference.ensureTemplates() } catch { errorMessage = error.userMessage }
             }
+            .task { await loadStock() }
+            // Only orders the group menu; names services carry are offered anyway.
+            .task { try? await reference.ensureCategories() }
+            .onChange(of: draft.category) { old, new in switchGroup(from: old, to: new) }
             .errorAlert($errorMessage)
         }
     }
@@ -85,33 +97,25 @@ struct ServiceEditorView: View {
 
     private var mainSection: some View {
         Section {
-            TextField("Название", text: $draft.name)
+            HStack(spacing: 14) {
+                ProductThumbnail(
+                    path: draft.imageUrl.nonEmpty ?? draft.photos.first,
+                    size: Self.headerThumbnailSize,
+                    placeholderSymbol: draft.category.symbol
+                )
+                TextField("Название услуги", text: $draft.name, axis: .vertical)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1...3)
+            }
+            .padding(.vertical, 4)
             Picker("Категория", selection: $draft.category) {
                 ForEach(ServiceCategory.allCases) { category in
-                    Label(category.title, systemImage: category.symbol).tag(category)
+                    Text(category.title).tag(category)
                 }
             }
-            HStack {
-                TextField("Группа, например «Ухо»", text: $draft.group)
-                if !groupOptions.isEmpty {
-                    Menu {
-                        ForEach(groupOptions, id: \.self) { option in
-                            Button {
-                                draft.group = option
-                            } label: {
-                                if option == draft.group.trimmed {
-                                    Label(option, systemImage: "checkmark")
-                                } else {
-                                    Text(option)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "list.bullet.circle")
-                            .accessibilityLabel("Выбрать группу")
-                    }
-                }
-            }
+            .pickerStyle(.segmented)
+            .listRowSeparator(.hidden, edges: .top)
+            CategoryField(title: "Группа", options: groupOptions(for: draft.category), selection: $draft.group)
         } header: {
             Text("Основное")
         } footer: {
@@ -120,12 +124,25 @@ struct ServiceEditorView: View {
                 if let message = draft.nameMessage {
                     Text(message)
                 }
-                Text("Группа объединяет услуги категории в списке: «Ухо», «Лицо», «Доп. услуги».")
+                Text("Группа — категория услуг на складе: «Ухо», «Лицо», «Доп. услуги». Список услуг и бот идут в порядке групп.")
             }
         }
     }
 
-    private var groupOptions: [String] { groupSuggestions[draft.category] ?? [] }
+    private static let headerThumbnailSize: CGFloat = 56
+
+    /// Warehouse categories of the service category in staff order, then group names services carry.
+    private func groupOptions(for category: ServiceCategory) -> [String] {
+        reference.categories.orderedNames(.service, serviceCategory: category, including: groupSuggestions[category] ?? [])
+    }
+
+    /// A group belongs to one service category: switching the category puts away the typed group
+    /// and brings back the one typed there before (none when it was never visited).
+    private func switchGroup(from old: ServiceCategory, to new: ServiceCategory) {
+        stashedGroups[old] = draft.group
+        guard !groupOptions(for: new).contains(draft.group.trimmed) else { return }
+        draft.group = stashedGroups[new] ?? ""
+    }
 
     private var priceSection: some View {
         Section {
@@ -259,10 +276,15 @@ struct ServiceEditorView: View {
         }
     }
 
-    // MARK: - Save
+    // MARK: - Data
+
+    private func loadStock() async {
+        await stock.load { try await api.serviceLinkProducts() }
+    }
 
     private func save() {
         let body = draft.body
+        let createsGroup = draft.group.nonEmpty.map { !groupOptions(for: draft.category).contains($0) } ?? false
         isSaving = true
         Task {
             defer { isSaving = false }
@@ -274,6 +296,8 @@ struct ServiceEditorView: View {
                 }
                 onSaved(saved)
                 dismiss()
+                // A new group name created a warehouse category on the server; a moved service changed the counts.
+                if createsGroup || saved.group != service?.group { try? await reference.ensureCategories(force: true) }
             } catch {
                 errorMessage = error.userMessage
             }
@@ -304,7 +328,10 @@ struct ServiceDurationStepper: View {
 
 #if DEBUG
 #Preview("Редактирование") {
-    ServiceEditorView(service: PreviewData.nipple, nextSort: 3, groupSuggestions: [.piercing: ["Лицо", "Тело", "Ухо"]]) { _ in }
+    var nipple = PreviewData.nipple
+    nipple.jewelryIds = [1, 2]
+    nipple.consumables = [ServiceConsumable(productId: 3, quantity: 2)]
+    return ServiceEditorView(service: nipple, nextSort: 3, groupSuggestions: [.piercing: ["Лицо", "Тело", "Ухо"]]) { _ in }
         .previewEnvironment()
 }
 

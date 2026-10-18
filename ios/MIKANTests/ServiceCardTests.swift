@@ -338,10 +338,10 @@ final class ServiceCardTests: XCTestCase {
     func testSectionsByCategoryThenGroup() {
         let sections = ServiceCatalog.sections(catalog)
         XCTAssertEqual(sections.map(\.category), [.tattoo, .piercing, .piercing, .piercing])
-        XCTAssertEqual(sections.map(\.group), [nil, "Лицо", "Ухо", "Другое"], "ungrouped services go last")
+        XCTAssertEqual(sections.map(\.group), [nil, "Лицо", "Ухо", "Без группы"], "ungrouped services go last")
         XCTAssertEqual(sections.map(\.isFirstInCategory), [true, true, false, false])
         XCTAssertEqual(sections[2].services.map(\.id), [2, 1], "catalog order inside a group")
-        XCTAssertEqual(sections.map(\.id), ["tattoo|", "piercing|Лицо", "piercing|Ухо", "piercing|Другое"])
+        XCTAssertEqual(sections.map(\.id), ["tattoo|", "piercing|Лицо", "piercing|Ухо", "piercing|Без группы"])
     }
 
     func testCategoryWithoutGroupsHasOneUntitledSection() {
