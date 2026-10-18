@@ -432,7 +432,8 @@ The token lives 90 days. On first start, if there are no employees, the server c
   `initialQuantity > 0` gets a `receipt` movement «Начальный остаток».
 - PATCH with `variants` replaces the list (the new order is kept): an item with `id` (a size of this product) updates
   that size (`initialQuantity` is ignored), an item without `id` adds a size, and a size left out is removed — deleted
-  when it has no movements or sales, archived otherwise. Removing a size that still has stock → `409 conflict`
+  when it has no movements or sales, archived otherwise. A size added without `id` under the name of an archived size
+  of the product brings that size back (same `id`, its history kept). Removing a size that still has stock → `409 conflict`
   («Размер «8 мм»: на складе 3 шт — спишите остаток, прежде чем удалять размер»); an unknown `id` → `400`.
 - Validation (`400`): a duplicate size name, an empty name when there are two or more sizes, more than one size for a
   consumable.
@@ -496,7 +497,8 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 - The studio's working hours (`StudioSettings.workdayStart` / `workdayEnd`) do not restrict `startsAt` / `endsAt`:
   appointments before opening or after closing are accepted.
 - `complete`: sets `status = completed`, `completedAt = now`; writes `usage` movements for `consumables` (the only
-  size of the product unless `variantId` is given; a product with several sizes needs `variantId`, `400` otherwise); when
+  size of the product unless `variantId` is given; a product with several sizes needs `variantId`: `409 conflict` asking
+  to update the app otherwise); when
   `sendAftercare`, the client has Telegram linked and `botEnabled`, **and at least one of the appointment's catalog
   services has `freshProcedure`**, schedules the aftercare template steps (template = `aftercareTemplateId` ?? the
   template of the first such service that has one). An appointment without a fresh procedure (only a jewelry change,
@@ -606,7 +608,8 @@ the background.
   or "Лабрет (осталось 0)" for a product without sizes). Whole sale is one transaction.
 - With `appointmentId`, the appointment gets `saleId` (and is marked `completed` if not already, without aftercare).
 - Refund: marks `refunded`, returns product stock to the sold size (`return` movements; an archived size comes back to
-  the list) when `restock`; a cash refund is attributed
+  the list — unless the product now has a current size with the same name, which then gets the stock) when `restock`;
+  a cash refund is attributed
   to the currently open shift (`summary.cashRefunds`). The `payments.deposit` part is not paid out: it becomes the
   appointment's held prepayment again (`unapply`).
 

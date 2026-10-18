@@ -9,7 +9,7 @@ import { getOpenShift } from './cash.js';
 import { applyDeposit, cancelPendingDepositCodes, heldDeposit, unapplyDeposit } from './deposits.js';
 import { getAppointmentRow, getSaleRow, serializeSales } from './refs.js';
 import { cancelPendingForAppointment } from './scheduling.js';
-import { applyMovement, getProductRow, insufficientMessage, resolveVariant } from './stock.js';
+import { applyMovement, getProductRow, insufficientMessage, resolveVariant, returnVariantId } from './stock.js';
 
 export interface SaleItemInput {
   type: 'product' | 'service';
@@ -258,7 +258,7 @@ export function refundSale(db: DbOrTx, id: number, input: { reason: string; rest
         if (item.type !== 'product' || item.productId == null) continue;
         applyMovement(tx, {
           productId: item.productId,
-          variantId: soldVariantId(tx, item.productId, item),
+          variantId: returnVariantId(tx, soldVariantId(tx, item.productId, item)),
           delta: item.quantity,
           type: 'return',
           saleId: id,

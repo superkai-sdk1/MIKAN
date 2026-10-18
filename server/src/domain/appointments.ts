@@ -16,7 +16,7 @@ import { cancelPendingDepositCodes } from './deposits.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
-import { applyMovement, getProductRow, resolveVariant } from './stock.js';
+import { applyMovement, getProductRow, resolveVariant, severalSizesForMovement } from './stock.js';
 
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
@@ -343,7 +343,7 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
         .get() !== undefined;
     for (const item of consumablesRecorded ? [] : input.consumables) {
       const product = getProductRow(tx, item.productId);
-      const variant = resolveVariant(tx, product, item.variantId, () => badRequest(`«${product.name}»: выберите размер`));
+      const variant = resolveVariant(tx, product, item.variantId, severalSizesForMovement(product));
       applyMovement(tx, {
         productId: item.productId,
         variantId: variant.id,

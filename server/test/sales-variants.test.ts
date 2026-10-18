@@ -106,6 +106,29 @@ describe('jewelry sizes: selling, refunds, QR, history and reports', () => {
     expect(moves[0]).toMatchObject({ type: 'return', delta: 1, quantityAfter: 1, note: 'Не подошёл размер' });
   });
 
+  it('a size added back under its old name reuses the archived row; a refund never brings back a duplicate', async () => {
+    // 8 мм is sold out and archived, then added back with new stock: the same row returns.
+    const sold = (await sell([{ type: 'product', productId: labret.id, variantId: eight, quantity: 1 }], { transfer: 1700 })).json();
+    await t.api('PATCH', `/api/products/${labret.id}`, { variants: [{ id: six }] });
+    const back = (await t.api('PATCH', `/api/products/${labret.id}`, { variants: [{ id: six }, { name: ' 8 ММ ', initialQuantity: 2 }] })).json();
+    expect(back.variants.map((v: Size) => [v.id, v.name, v.quantity])).toEqual([
+      [six, '6 мм', 2],
+      [eight, '8 ММ', 2],
+    ]);
+    expect((await t.api('GET', `/api/products?search=8%20%D0%BC%D0%BC`)).json().items.map((p: { id: number }) => p.id)).toEqual([labret.id]);
+
+    // An archived size whose name is taken by another current size: the refund goes to the current one.
+    const ring = await make(t, '/api/products', { kind: 'jewelry', name: 'Кольцо', price: 900, variants: [{ name: '8 мм', initialQuantity: 1 }, { name: '10 мм', initialQuantity: 1 }] });
+    const [ringEight, ringTen] = (ring.variants as Size[]).map((v) => v.id);
+    const ringSale = (await sell([{ type: 'product', productId: ring.id, variantId: ringEight, quantity: 1 }], { transfer: 900 })).json();
+    await t.api('PATCH', `/api/products/${ring.id}`, { variants: [{ id: ringTen, name: '8 мм' }] });
+    await t.api('POST', `/api/sales/${ringSale.id}/refund`, { reason: 'Возврат', restock: true });
+    const after = (await t.api('GET', `/api/products/${ring.id}`)).json();
+    expect(after.variants.map((v: Size) => [v.id, v.name, v.quantity])).toEqual([[ringTen, '8 мм', 2]]);
+    expect(after.size).toBe('8 мм');
+    expect(sold.id).toBeGreaterThan(0);
+  });
+
   it('QR: the stored cart keeps the size and price even if sizes change before the client pays', async () => {
     const ring = await make(t, '/api/products', { kind: 'jewelry', name: 'Кольцо', price: 900, initialQuantity: 2 });
     const created = await t.api('POST', '/api/qr-payments', {
@@ -190,8 +213,8 @@ describe('jewelry sizes: selling, refunds, QR, history and reports', () => {
       sendAftercare: false,
       consumables: [{ productId: labret.id, quantity: 1 }],
     });
-    expect(noSize.statusCode).toBe(400);
-    expect(noSize.json().error.message).toBe('«Лабрет»: выберите размер');
+    expect(noSize.statusCode).toBe(409);
+    expect(noSize.json().error.message).toBe('У «Лабрет» несколько размеров — обновите приложение MIKAN, чтобы провести операцию по размеру');
     const done = await t.api('POST', `/api/appointments/${appt.id}/complete`, {
       sendAftercare: false,
       consumables: [

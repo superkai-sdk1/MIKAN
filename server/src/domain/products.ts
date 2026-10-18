@@ -4,8 +4,11 @@ import { products, productServices, productVariants, services } from '../db/sche
 import { badRequest, conflict } from '../lib/errors.js';
 import type { ThreadType } from '../lib/jewelry.js';
 import { parsePhotos, productOut, type ProductOut, type ProductRow, type VariantRow } from '../lib/serialize.js';
-import { normalizeSearchTerm, searchKey } from '../lib/text.js';
+import { normalizeSearchTerm } from '../lib/text.js';
+import { productSearchFields } from './product-search.js';
 import { applyMovement, currentVariants, getProductRow, variantsWithHistory } from './stock.js';
+
+export { productSearchFields } from './product-search.js';
 
 export type ProductKind = 'jewelry' | 'consumable';
 
@@ -55,17 +58,6 @@ export interface NewProduct extends ProductFields {
 }
 
 const CONSUMABLE_ONE_SIZE = 'У расходника не может быть нескольких размеров — заведите отдельные позиции';
-
-type SearchSource = Pick<ProductRow, 'name' | 'sku' | 'category' | 'material' | 'color' | 'stone' | 'supplier'>;
-
-/** Sort and search columns derived from the product's text fields and its sizes. */
-export function productSearchFields(p: SearchSource, sizes: Array<Pick<VariantRow, 'name' | 'sku'>>) {
-  return {
-    nameSort: searchKey(p.name),
-    categorySort: searchKey(p.category),
-    searchText: searchKey(p.name, p.sku, p.category, p.material, p.color, p.stone, p.supplier, ...sizes.flatMap((v) => [v.name, v.sku])),
-  };
-}
 
 /** SQL: the product has a current size in stock. */
 export const hasSizeInStock = sql`exists (select 1 from ${productVariants} where ${productVariants.productId} = ${products.id} and ${productVariants.archived} = 0 and ${productVariants.quantity} > 0)`;
@@ -252,6 +244,7 @@ function syncSizes(db: DbOrTx, product: ProductRow, kind: string, inputs: Varian
   checkSizeList(kind, sizes);
 
   const removed = [...existing.values()].filter((v) => !keptIds.includes(v.id));
+  const archivedByName = archivedSizesByName(db, product.id);
   const withStock = removed.find((v) => v.quantity > 0);
   if (withStock) {
     throw conflict(`${sizeLabel(withStock)}: на складе ${withStock.quantity} ${product.unit} — спишите остаток, прежде чем удалять размер`);
@@ -262,13 +255,34 @@ function syncSizes(db: DbOrTx, product: ProductRow, kind: string, inputs: Varian
     if (withHistory.has(v.id)) db.update(productVariants).set({ archived: true, updatedAt: now }).where(eq(productVariants.id, v.id)).run();
     else db.delete(productVariants).where(eq(productVariants.id, v.id)).run();
   }
+  for (const v of removed) {
+    if (withHistory.has(v.id)) archivedByName.set(normalizeSearchTerm(v.name), v.id);
+  }
   sizes.forEach(({ id, initialQuantity, ...fields }, position) => {
-    if (id == null) {
+    // A size added back under a name it had before reuses that row, so its history stays with one size.
+    const revivedId = id == null ? archivedByName.get(normalizeSearchTerm(fields.name)) : undefined;
+    if (revivedId !== undefined) archivedByName.delete(normalizeSearchTerm(fields.name));
+    const rowId = id ?? revivedId;
+    if (rowId == null) {
       insertSize(db, product.id, { ...fields, initialQuantity }, position, employeeId, 'Начальный остаток');
-    } else {
-      db.update(productVariants).set({ ...fields, position, updatedAt: now }).where(eq(productVariants.id, id)).run();
+      return;
+    }
+    db.update(productVariants).set({ ...fields, archived: false, position, updatedAt: now }).where(eq(productVariants.id, rowId)).run();
+    if (revivedId !== undefined && initialQuantity > 0) {
+      applyMovement(db, { productId: product.id, variantId: revivedId, delta: initialQuantity, type: 'receipt', note: 'Начальный остаток', employeeId });
     }
   });
+}
+
+/** Archived sizes of the product by normalized name (the newest one wins). */
+function archivedSizesByName(db: DbOrTx, productId: number): Map<string, number> {
+  const rows = db
+    .select({ id: productVariants.id, name: productVariants.name })
+    .from(productVariants)
+    .where(and(eq(productVariants.productId, productId), eq(productVariants.archived, true)))
+    .orderBy(asc(productVariants.id))
+    .all();
+  return new Map(rows.map((r) => [normalizeSearchTerm(r.name), r.id]));
 }
 
 /**

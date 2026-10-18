@@ -4,6 +4,8 @@ import { products, productVariants, saleItems, stockMovements } from '../db/sche
 import { badRequest, conflict, insufficientStock, notFound } from '../lib/errors.js';
 import { sizedName } from '../lib/jewelry.js';
 import { movementOut, type MovementRow, type ProductRow, type VariantRow } from '../lib/serialize.js';
+import { normalizeSearchTerm } from '../lib/text.js';
+import { refreshProductSearch } from './product-search.js';
 import { employeeRefOrMissing, employeesByIds, productsByIds, variantsByIds } from './refs.js';
 
 export type MovementType = 'receipt' | 'sale' | 'return' | 'writeoff' | 'usage' | 'adjustment';
@@ -82,6 +84,7 @@ export function applyMovement(db: DbOrTx, input: MovementInput): { product: Prod
     .where(eq(productVariants.id, variant.id))
     .returning()
     .get();
+  if (variant.archived && !updatedVariant.archived) refreshProductSearch(db, product.id);
   const updatedProduct = db.update(products).set({ updatedAt: now }).where(eq(products.id, product.id)).returning().get();
   const movement = db
     .insert(stockMovements)
@@ -206,6 +209,17 @@ export function listMovements(
     .all();
   const total = db.select({ n: count() }).from(stockMovements).where(where).get()?.n ?? 0;
   return { items: serializeMovements(db, rows), total };
+}
+
+/**
+ * Where returned stock goes: the sold size, or — when that size was archived and the product now has a current size
+ * with the same name — that current size, so a refund never brings back a duplicate.
+ */
+export function returnVariantId(db: DbOrTx, soldVariantId: number): number {
+  const sold = db.select().from(productVariants).where(eq(productVariants.id, soldVariantId)).get();
+  if (!sold?.archived) return soldVariantId;
+  const twin = currentVariants(db, sold.productId).find((v) => normalizeSearchTerm(v.name) === normalizeSearchTerm(sold.name));
+  return twin?.id ?? soldVariantId;
 }
 
 /** Sizes that have any stock history (movements or sold items) — they are archived, never deleted. */
