@@ -47,16 +47,23 @@ nonisolated struct BotSettings: Codable, Hashable, Sendable {
     var remindersEnabled: Bool
     /// Minutes before the appointment at which the bot sends a reminder, earliest first (1–6 values).
     var reminderOffsets: [Int]
+    /// Studio-local "HH:MM" of the morning summary to staff chats, `nil` = off.
+    var morningDigestAt: String?
+    /// Studio-local "HH:MM" of the evening summary to staff chats, `nil` = off.
+    var eveningDigestAt: String?
     // Read-only (ignored by PUT).
     let botUsername: String?
     let staffChatBound: Bool
     let aiConfigured: Bool
     /// The server knows `reminderOffsets`; older servers keep a single `reminderHoursBefore`. Not sent.
     var supportsReminderOffsets = true
+    /// The server knows the staff digests (sends their keys, `null` included). Not sent.
+    var supportsStaffDigests = true
 
     private enum CodingKeys: String, CodingKey {
         case enabled, aiEnabled, greeting, extraInstructions, aftercareHour, remindersEnabled
         case reminderOffsets, reminderHoursBefore
+        case morningDigestAt, eveningDigestAt
         case botUsername, staffChatBound, aiConfigured
     }
 
@@ -72,7 +79,7 @@ nonisolated struct BotSettings: Codable, Hashable, Sendable {
 }
 
 extension BotSettings {
-    /// Servers without `reminderOffsets` get `[reminderHoursBefore * 60]`.
+    /// Servers without `reminderOffsets` get `[reminderHoursBefore * 60]`; servers without digests leave them off.
     nonisolated init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let offsets = try container.decodeIfPresent([Int].self, forKey: .reminderOffsets)
@@ -87,15 +94,19 @@ extension BotSettings {
                 decoded: offsets,
                 legacyHours: try container.decodeIfPresent(Int.self, forKey: .reminderHoursBefore)
             ),
+            morningDigestAt: try container.decodeIfPresent(String.self, forKey: .morningDigestAt),
+            eveningDigestAt: try container.decodeIfPresent(String.self, forKey: .eveningDigestAt),
             botUsername: try container.decodeIfPresent(String.self, forKey: .botUsername),
             staffChatBound: try container.decodeIfPresent(Bool.self, forKey: .staffChatBound) ?? false,
             aiConfigured: try container.decodeIfPresent(Bool.self, forKey: .aiConfigured) ?? false,
-            supportsReminderOffsets: offsets != nil
+            supportsReminderOffsets: offsets != nil,
+            supportsStaffDigests: container.contains(.morningDigestAt) || container.contains(.eveningDigestAt)
         )
     }
 
     /// The `PUT /settings/bot` body: editable fields only. New servers get `reminderOffsets`;
     /// older ones also get `reminderHoursBefore` (the earliest reminder), the only value they keep.
+    /// The digest times go only to servers that sent them, with an explicit `null` for a summary turned off.
     nonisolated func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(enabled, forKey: .enabled)
@@ -107,6 +118,10 @@ extension BotSettings {
         try container.encode(reminderOffsets, forKey: .reminderOffsets)
         if !supportsReminderOffsets {
             try container.encode(reminderSchedule.legacyHoursBefore, forKey: .reminderHoursBefore)
+        }
+        if supportsStaffDigests {
+            try container.encode(Nullable(morningDigestAt), forKey: .morningDigestAt)
+            try container.encode(Nullable(eveningDigestAt), forKey: .eveningDigestAt)
         }
     }
 }
