@@ -1,48 +1,46 @@
 import SwiftUI
 
-/// Приход / Списание / Расход / Инвентаризация (adjustment = new absolute count).
+/// What the movement sheet opens with: the operation and, from a size row, that size.
+struct StockMovementRequest: Identifiable, Hashable {
+    let id = UUID()
+    let type: MovementType
+    var variantId: Int?
+}
+
+/// Приход / Списание / Расход / Инвентаризация over one or several sizes, as one operation
+/// (`POST /products/:id/movements/batch`; a count takes the new absolute stock of each size).
 struct MovementSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
-    let product: Product
-    let onDone: (MovementResult) -> Void
+    let productId: Int
+    let onDone: (BatchMovementResult) -> Void
 
-    @State private var type: MovementType
-    @State private var quantity: Int?
-    @State private var note = ""
+    @State private var draft: StockBatchDraft
+    @State private var showsAllSizes = false
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var retryMessage: String?
     @State private var movementKey = IdempotencyKey()
 
-    init(product: Product, initialType: MovementType, onDone: @escaping (MovementResult) -> Void) {
-        self.product = product
+    init(
+        product: Product,
+        initialType: MovementType,
+        variantId: Int? = nil,
+        onDone: @escaping (BatchMovementResult) -> Void
+    ) {
+        productId = product.id
         self.onDone = onDone
-        _type = State(initialValue: initialType)
-        _quantity = State(initialValue: initialType == .adjustment ? product.quantity : nil)
+        _draft = State(initialValue: StockBatchDraft(product: product, type: initialType, preselected: variantId))
     }
 
-    private var resulting: Int? {
-        guard let quantity else { return nil }
-        switch type {
-        case .receipt: return product.quantity + quantity
-        case .writeoff, .usage: return product.quantity - quantity
-        case .adjustment: return quantity
-        case .sale, .returned: return nil
-        }
-    }
-
-    private var isValid: Bool {
-        guard let quantity, let resulting else { return false }
-        if type == .adjustment { return quantity >= 0 && quantity != product.quantity }
-        return quantity > 0 && resulting >= 0
-    }
+    private var visibleSizes: [StockSize] { draft.visibleSizes(showingAll: showsAllSizes) }
+    private var canSave: Bool { draft.canSubmit && !isSaving }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Операция", selection: $type) {
+                    Picker("Операция", selection: typeBinding) {
                         ForEach(MovementType.manual) { type in
                             Text(type.shortTitle).tag(type)
                         }
@@ -51,63 +49,124 @@ struct MovementSheet: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
                 }
-                Section {
-                    NumberField.optionalInteger(
-                        type == .adjustment ? "Фактически" : "Количество",
-                        value: $quantity,
-                        unit: product.unitLabel
-                    )
-                    LabeledContent("Сейчас", value: "\(product.quantity) \(product.unitLabel)")
-                    if let resulting {
-                        LabeledContent("Станет") {
-                            Text("\(resulting) \(product.unitLabel)")
-                                .fontWeight(.semibold)
-                                .foregroundStyle(resulting < 0 ? Color.red : Color.primary)
-                        }
-                        .monospacedDigit()
-                    }
-                } header: {
-                    Text(product.name)
-                } footer: {
-                    if let resulting, resulting < 0 {
-                        Text("Нельзя списать больше, чем есть на складе.").foregroundStyle(.red)
-                    } else {
-                        Text(type.hint)
-                    }
+                if draft.hasSeveralSizes {
+                    sizesSection
+                } else if let size = draft.sizes.first {
+                    singleSizeSection(size)
                 }
                 Section("Комментарий") {
-                    TextField("Поставщик, причина списания…", text: $note, axis: .vertical)
+                    TextField("Поставщик, причина списания…", text: $draft.note, axis: .vertical)
                         .lineLimit(1...4)
                 }
             }
-            .navigationTitle(type.title)
+            .navigationTitle(draft.type.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Отмена", role: .cancel) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if isSaving { ProgressView() } else { Button("Провести", action: save).disabled(!isValid) }
+                    if isSaving { ProgressView() } else { Button("Провести", action: save).disabled(!canSave) }
                 }
             }
-            .onChange(of: type) { _, newType in
-                quantity = newType == .adjustment ? product.quantity : nil
-            }
+            .interactiveDismissDisabled(isSaving)
             .errorAlert($errorMessage)
             .retryAlert($retryMessage, title: "Операция могла пройти", retry: save)
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(draft.hasSeveralSizes ? [.large] : [.medium, .large])
     }
 
+    // MARK: - Sections
+
+    /// A product without sizes: one amount, as before sizes existed.
+    private func singleSizeSection(_ size: StockSize) -> some View {
+        Section {
+            NumberField.optionalInteger(
+                draft.type == .adjustment ? "Фактически" : "Количество",
+                value: amountBinding(for: size),
+                unit: draft.unit
+            )
+            LabeledContent("Сейчас", value: InventoryText.quantity(size.quantity, unit: draft.unit))
+                .monospacedDigit()
+            if let after = displayedResult(for: size) {
+                LabeledContent("Станет") {
+                    Text(InventoryText.quantity(after, unit: draft.unit))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(after < 0 ? Color.red : Color.primary)
+                }
+                .monospacedDigit()
+            }
+        } header: {
+            Text(size.name.nonEmpty.map { "\(draft.productName) — \($0)" } ?? draft.productName)
+        } footer: {
+            footer(hint: draft.type.hint)
+        }
+    }
+
+    private var sizesSection: some View {
+        Section {
+            ForEach(visibleSizes) { size in
+                StockSizeAmountRow(
+                    size: size,
+                    unit: draft.unit,
+                    amount: amountBinding(for: size),
+                    resulting: displayedResult(for: size)
+                )
+            }
+            if visibleSizes.count < draft.sizes.count {
+                Button("Все размеры (\(draft.sizes.count))", systemImage: "list.bullet") {
+                    withAnimation(.snappy) { showsAllSizes = true }
+                }
+            }
+        } header: {
+            Text(draft.productName)
+        } footer: {
+            footer(hint: draft.type.sizesHint)
+        }
+    }
+
+    @ViewBuilder
+    private func footer(hint: String) -> some View {
+        if let message = draft.validationMessage, !draft.isBlank {
+            Text(message).foregroundStyle(.red)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(hint)
+                if draft.hasSeveralSizes, draft.totalDelta != 0 {
+                    Text("Итого: \(draft.totalDelta > 0 ? "+" : "")\(draft.totalDelta) \(draft.unit)")
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                }
+            }
+        }
+    }
+
+    // MARK: - Bindings
+
+    private var typeBinding: Binding<MovementType> {
+        Binding(get: { draft.type }, set: { draft = draft.switching(to: $0) })
+    }
+
+    private func amountBinding(for size: StockSize) -> Binding<Int?> {
+        Binding(get: { draft.amount(for: size.id) }, set: { draft = draft.settingAmount($0, for: size.id) })
+    }
+
+    /// «Станет»: the result of a touched size; a count shows the typed number even when it equals the stock.
+    private func displayedResult(for size: StockSize) -> Int? {
+        draft.resulting(for: size) ?? (draft.type == .adjustment ? draft.amount(for: size.id) : nil)
+    }
+
+    // MARK: - Save
+
     private func save() {
-        guard let quantity else { return }
-        let body = MovementBody(type: type, quantity: quantity, note: Nullable(note.nonEmpty))
+        guard draft.canSubmit else { return }
+        let body = draft.body
         let key = movementKey.key(for: body)
         isSaving = true
         Task {
             defer { isSaving = false }
             do {
-                let result = try await api.addMovement(productId: product.id, body, idempotencyKey: key)
+                let result = try await api.addMovements(productId: productId, body, idempotencyKey: key)
                 onDone(result)
                 dismiss()
             } catch let error as APIError where error.isOutcomeUnknown {
@@ -119,9 +178,59 @@ struct MovementSheet: View {
     }
 }
 
+/// One size of a several-size operation: the amount field and «Сейчас → Станет».
+private struct StockSizeAmountRow: View {
+    let size: StockSize
+    let unit: String
+    @Binding var amount: Int?
+    let resulting: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            NumberField.optionalInteger(size.title, value: $amount, unit: unit)
+            HStack(spacing: 4) {
+                Text("Сейчас \(InventoryText.quantity(size.quantity, unit: unit))")
+                if let resulting {
+                    Image(systemName: "arrow.right").imageScale(.small)
+                    Text("станет \(InventoryText.quantity(resulting, unit: unit))")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(resultColor(resulting))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func resultColor(_ value: Int) -> Color {
+        if value < 0 { return .red }
+        return value <= size.minQuantity ? .orange : .primary
+    }
+}
+
+extension MovementType {
+    /// Footer of the several-size sheet.
+    var sizesHint: String {
+        switch self {
+        case .receipt: "Сколько единиц каждого размера поступило. Размеры без количества не меняются."
+        case .writeoff: "Брак, потеря, истёк срок — сколько списать по каждому размеру."
+        case .usage: "Сколько ушло на процедуры по каждому размеру (не через завершение записи)."
+        case .adjustment: "Пересчитайте остатки и исправьте те размеры, где фактическое количество другое."
+        case .sale, .returned: ""
+        }
+    }
+}
+
 #if DEBUG
-#Preview {
+#Preview("Несколько размеров") {
     MovementSheet(product: PreviewData.labret, initialType: .receipt) { _ in }
+        .previewEnvironment()
+}
+
+#Preview("Один размер") {
+    MovementSheet(product: PreviewData.needles, initialType: .writeoff) { _ in }
         .previewEnvironment()
 }
 #endif

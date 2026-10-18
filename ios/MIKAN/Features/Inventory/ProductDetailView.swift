@@ -2,15 +2,21 @@ import SwiftUI
 
 struct ProductDetailView: View {
     @Environment(APIClient.self) private var api
+    @Environment(ReferenceStore.self) private var reference
     let categories: Set<String>
     let onChange: (Product) -> Void
 
     @State private var product: Product
     @State private var movements = Remote<[StockMovement]>()
+    /// History of one size, or of all of them.
+    @State private var movementsVariantId: Int?
+    /// The size the shown movements belong to.
+    @State private var loadedMovementsVariantId: Int?
     @State private var purchases = Remote<[HistoryEntry]>()
     @State private var purchasesTotal = 0
-    @State private var movementType: MovementType?
+    @State private var movementRequest: StockMovementRequest?
     @State private var showsEditor = false
+    @State private var viewer: ServicePhotoViewerItem?
 
     private static let historyLimit = 30
     private static let purchasesPreviewLimit = 5
@@ -24,13 +30,31 @@ struct ProductDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                ProductHero(path: product.photoUrl)
+                ProductGallery(paths: product.photos) { index in
+                    viewer = ServicePhotoViewerItem(paths: product.photos, index: index)
+                }
                 VStack(alignment: .leading, spacing: 16) {
                     titleBlock
                     quantityCard
                     actions
-                    infoCard
-                    if showsPurchases { purchasesCard }
+                    if showsSizesCard {
+                        ProductSizesCard(product: product) { type, variant in
+                            movementRequest = StockMovementRequest(type: type, variantId: variant.id)
+                        }
+                    }
+                    ProductCharacteristicsCard(product: product, serviceNames: serviceNames)
+                    if let description = product.description.nonEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Описание").font(.headline)
+                            Text(description).font(.subheadline)
+                        }
+                        .cardStyle()
+                    }
+                    if showsPurchases {
+                        ProductPurchasesCard(product: product, purchases: purchases, total: purchasesTotal) {
+                            await loadPurchases()
+                        }
+                    }
                     historyCard
                 }
                 .padding(.horizontal, 16)
@@ -47,11 +71,13 @@ struct ProductDetailView: View {
         }
         .refreshable { await reload() }
         .task { await reload() }
+        // Only names the suitable services; without them the row is simply hidden.
+        .task { try? await reference.ensureServices() }
         .remoteErrorAlert(movements)
-        .sheet(item: $movementType) { type in
-            MovementSheet(product: product, initialType: type) { result in
+        .sheet(item: $movementRequest) { request in
+            MovementSheet(product: product, initialType: request.type, variantId: request.variantId) { result in
                 apply(result.product)
-                movements.update { [result.movement] + $0 }
+                prependMovements(result.movements)
             }
         }
         .sheet(isPresented: $showsEditor) {
@@ -59,7 +85,12 @@ struct ProductDetailView: View {
                 apply(saved)
             }
         }
+        .fullScreenCover(item: $viewer) { item in
+            ServicePhotoViewer(item: item)
+        }
     }
+
+    // MARK: - Header
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -74,8 +105,19 @@ struct ProductDetailView: View {
             }
             Text(product.name)
                 .font(.title.weight(.bold))
-            if let sku = product.sku.nonEmpty {
-                Text("Артикул \(sku)").font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
+                .textSelection(.enabled)
+            if !product.detailLine.isEmpty {
+                Text(product.detailLine).font(.subheadline).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                if product.kind == .jewelry, product.priceRange.upperBound > 0 {
+                    Text(product.priceText)
+                        .font(.title3.weight(.semibold))
+                        .monospacedDigit()
+                }
+                if let sku = product.sku.nonEmpty {
+                    Text("Артикул \(sku)").font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
+                }
             }
         }
     }
@@ -83,8 +125,10 @@ struct ProductDetailView: View {
     private var quantityCard: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Остаток").font(.subheadline).foregroundStyle(.secondary)
-                Text("\(product.quantity) \(product.unitLabel)")
+                Text(product.hasSeveralSizes ? "Остаток всех размеров" : "Остаток")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(InventoryText.quantity(product.quantity, unit: product.unitLabel))
                     .font(.system(.largeTitle, design: .rounded).weight(.bold))
                     .monospacedDigit()
                     .foregroundStyle(product.lowStock ? Color.red : Color.primary)
@@ -93,9 +137,9 @@ struct ProductDetailView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 if product.lowStock {
-                    StatusBadge(text: "Мало", color: .red, systemImage: "exclamationmark.triangle.fill")
+                    StatusBadge(text: lowStockTitle, color: .red, systemImage: "exclamationmark.triangle.fill")
                 }
-                Text("Минимум: \(product.minQuantity) \(product.unitLabel)")
+                Text("Минимум: \(InventoryText.quantity(product.minQuantity, unit: product.unitLabel))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -104,12 +148,21 @@ struct ProductDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// «Мало», or «Мало: 8 мм, 10 мм» for a product with sizes.
+    private var lowStockTitle: String {
+        guard product.hasSeveralSizes else { return "Мало" }
+        let names = product.lowVariants.map { InventoryText.sizeTitle($0.name) }
+        guard names.count > 2 else { return "Мало: " + names.joined(separator: ", ") }
+        return "Мало: " + Plural.count(names.count, one: "размер", few: "размера", many: "размеров")
+    }
+
+    /// The operations for all sizes at once.
     private var actions: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
                 ForEach(MovementType.manual) { type in
                     Button {
-                        movementType = type
+                        movementRequest = StockMovementRequest(type: type)
                     } label: {
                         ActionLabel(title: type.shortTitle, systemImage: type.symbol)
                     }
@@ -120,36 +173,26 @@ struct ProductDetailView: View {
         }
     }
 
-    private var infoCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            infoRow("Цена продажи", product.price > 0 ? Money.format(product.price) : nil)
-            infoRow("Себестоимость", product.cost.map(Money.format))
-            if let cost = product.cost, product.price > 0 {
-                infoRow("Наценка", Money.format(product.price - cost))
-            }
-            infoRow("Материал", product.material.nonEmpty)
-            infoRow("Размер", product.size.nonEmpty)
-            if let description = product.description.nonEmpty {
-                Divider()
-                Text(description).font(.subheadline)
-            }
-        }
-        .cardStyle()
+    /// A product without sizes is covered by the stock card.
+    private var showsSizesCard: Bool { product.hasSeveralSizes || !product.namedVariants.isEmpty }
+
+    private var serviceNames: [String] {
+        product.kind == .jewelry ? ProductServiceOptions.names(of: product.serviceIds, in: reference.services) : []
     }
 
-    @ViewBuilder
-    private func infoRow(_ title: String, _ value: String?) -> some View {
-        if let value {
-            LabeledContent(title, value: value).monospacedDigit()
-        }
-    }
+    // MARK: - History
 
     private var historyCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("История движений").font(.headline)
+            HStack {
+                Text("История движений").font(.headline)
+                Spacer()
+                if product.hasSeveralSizes { sizeFilterMenu }
+            }
             if let items = movements.value {
                 if items.isEmpty {
-                    Text("Движений пока не было").foregroundStyle(.secondary)
+                    Text(movementsVariantId == nil ? "Движений пока не было" : "По этому размеру движений не было")
+                        .foregroundStyle(.secondary)
                 }
                 ForEach(items) { movement in
                     MovementRow(movement: movement)
@@ -163,48 +206,36 @@ struct ProductDetailView: View {
             }
         }
         .cardStyle()
+        .task(id: movementsVariantId) {
+            // The first load runs in `reload()`; another size shows the spinner instead of the previous rows.
+            guard loadedMovementsVariantId != movementsVariantId else { return }
+            movements.reset()
+            await loadMovements()
+        }
+    }
+
+    private var sizeFilterMenu: some View {
+        Menu {
+            Picker("Размер", selection: $movementsVariantId) {
+                Text("Все размеры").tag(Int?.none)
+                ForEach(product.variants) { variant in
+                    Text(InventoryText.sizeTitle(variant.name)).tag(Int?.some(variant.id))
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(movementsVariantId.flatMap { product.variant(id: $0) }.map { InventoryText.sizeTitle($0.name) } ?? "Все размеры")
+                Image(systemName: "chevron.up.chevron.down").imageScale(.small)
+            }
+            .font(.subheadline)
+        }
+        .accessibilityLabel("Размер для истории")
     }
 
     /// Jewelry is sold at the POS; consumables only show buyers when someone actually bought one.
     private var showsPurchases: Bool { product.kind == .jewelry || purchasesTotal > 0 }
 
-    /// Last buyers with a link to the full list.
-    private var purchasesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Кто покупал").font(.headline)
-            if let items = purchases.value {
-                if items.isEmpty {
-                    Text("Покупок пока не было").foregroundStyle(.secondary)
-                }
-                ForEach(items) { entry in
-                    HistoryEntryLink(entry: entry, showsClient: true)
-                        .buttonStyle(.plain)
-                    if entry.id != items.last?.id || purchasesTotal > items.count { Divider() }
-                }
-                if purchasesTotal > items.count {
-                    NavigationLink {
-                        ProductPurchasesView(product: product)
-                    } label: {
-                        HStack {
-                            Text("Все покупки (\(purchasesTotal))")
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .contentShape(.rect)
-                    }
-                }
-            } else if let failure = purchases.failure {
-                Text(failure).foregroundStyle(.secondary)
-                Button("Повторить") { Task { await loadPurchases() } }
-            } else {
-                ProgressView().frame(maxWidth: .infinity)
-            }
-        }
-        .cardStyle()
-        .remoteErrorAlert(purchases)
-    }
+    // MARK: - Data
 
     private func reload() async {
         do {
@@ -221,7 +252,12 @@ struct ProductDetailView: View {
 
     private func loadMovements() async {
         let id = product.id
-        await movements.load { try await api.productMovements(productId: id, limit: Self.historyLimit).items }
+        let variantId = movementsVariantId
+        await movements.load {
+            let items = try await api.productMovements(productId: id, variantId: variantId, limit: Self.historyLimit).items
+            loadedMovementsVariantId = variantId
+            return items
+        }
     }
 
     private func loadPurchases() async {
@@ -233,58 +269,30 @@ struct ProductDetailView: View {
         }
     }
 
+    /// Batch movements come in line order; the history is newest first.
+    private func prependMovements(_ new: [StockMovement]) {
+        let shown = new.filter { movementsVariantId == nil || $0.variantId == movementsVariantId }
+        movements.update { Array(shown.reversed()) + $0 }
+    }
+
     private func apply(_ updated: Product) {
         product = updated
+        if let id = movementsVariantId, updated.variant(id: id) == nil { movementsVariantId = nil }
         onChange(updated)
     }
 }
 
-/// Top photo that extends under the navigation bar.
-private struct ProductHero: View {
-    @Environment(APIClient.self) private var api
-    let path: String?
-
-    private static let height: CGFloat = 320
-
-    var body: some View {
-        Group {
-            if let url = api.mediaURL(for: path) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        placeholder
-                    }
-                }
-            } else {
-                placeholder
-            }
-        }
-        .frame(height: Self.height)
-        .frame(maxWidth: .infinity)
-        .clipped()
-        .backgroundExtensionEffect()
-        .accessibilityHidden(true)
+#if DEBUG
+#Preview("Размеры") {
+    NavigationStack {
+        ProductDetailView(product: PreviewData.labret, categories: ["Лабрет", "Кольцо"]) { _ in }
     }
-
-    private var placeholder: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Theme.mandarinLight.opacity(0.5), Theme.mandarin.opacity(0.35)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Image(systemName: "sparkles")
-                .font(.system(size: 56))
-                .foregroundStyle(.white.opacity(0.9))
-        }
-    }
+    .previewEnvironment()
 }
 
-#if DEBUG
-#Preview {
+#Preview("Без размеров") {
     NavigationStack {
-        ProductDetailView(product: PreviewData.ring, categories: ["Лабрет", "Кольцо"]) { _ in }
+        ProductDetailView(product: PreviewData.needles, categories: ["Иглы"]) { _ in }
     }
     .previewEnvironment()
 }
