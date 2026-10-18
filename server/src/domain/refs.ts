@@ -1,6 +1,6 @@
 import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, appointmentServices, clients, employees, products, productVariants, saleItems, sales, services } from '../db/schema.js';
+import { appointments, appointmentServices, clients, employees, openReceipts, products, productVariants, saleItems, sales, services } from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
 import { depositLedgerByAppointment, depositStatusOf, heldAmount, latestDepositCodes } from './deposit-ledger.js';
 import {
@@ -79,6 +79,18 @@ export function serviceLinesByAppointment(db: DbOrTx, appointmentIds: number[]):
   return result;
 }
 
+/** The open receipt of each appointment that has one (an appointment has at most one). */
+function openReceiptIdsByAppointment(db: DbOrTx, appointmentIds: number[]): Map<number, number> {
+  const ids = unique(appointmentIds);
+  if (ids.length === 0) return new Map();
+  const rows = db
+    .select({ id: openReceipts.id, appointmentId: openReceipts.appointmentId })
+    .from(openReceipts)
+    .where(inArray(openReceipts.appointmentId, ids))
+    .all();
+  return new Map(rows.map((r) => [r.appointmentId!, r.id]));
+}
+
 const missingEmployee = (id: number) => ({ id, name: 'Удалённый сотрудник', color: '#8E8E93' });
 const missingClient = (id: number) => ({ id, name: 'Удалённый клиент', lastName: null, phone: null, telegramLinked: false });
 
@@ -91,6 +103,7 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
   const lines = serviceLinesByAppointment(db, ids);
   const ledgers = depositLedgerByAppointment(db, ids);
   const links = latestDepositCodes(db, ids);
+  const receipts = openReceiptIdsByAppointment(db, ids);
   const em = employeesByIds(db, [
     ...rows.map((r) => r.masterId),
     ...[...ledgers.values()].flat().map((op) => op.employeeId),
@@ -119,6 +132,7 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
         operations: ledger.map((op) => depositOperationOut(op, employeeRefOrMissing(em, op.employeeId))),
         link: link ? qrPaymentOut(link, null) : null,
       },
+      receipts.get(a.id) ?? null,
     );
   });
 }

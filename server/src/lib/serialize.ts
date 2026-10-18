@@ -22,6 +22,7 @@ export type BotMessageRow = Row<typeof s.botMessages>;
 export type ScheduledRow = Row<typeof s.scheduledMessages>;
 export type BookingRow = Row<typeof s.bookingRequests>;
 export type KnowledgeRow = Row<typeof s.knowledgeEntries>;
+export type OpenReceiptRow = Row<typeof s.openReceipts>;
 
 export interface EmployeeRef {
   id: number;
@@ -289,6 +290,8 @@ export const appointmentOut = (
   service: ServiceRef | null,
   services: AppointmentServiceOut[],
   deposit: AppointmentDepositOut,
+  /** Its open receipt in the POS (the visit has started). */
+  receiptId: number | null,
 ) => ({
   id: a.id,
   client,
@@ -307,6 +310,7 @@ export const appointmentOut = (
   depositLink: deposit.link,
   notes: a.notes,
   saleId: a.saleId,
+  receiptId,
   completedAt: toIso(a.completedAt),
   createdAt: toIso(a.createdAt),
   updatedAt: toIso(a.updatedAt),

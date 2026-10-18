@@ -9,6 +9,7 @@ import { getOpenShift } from './cash.js';
 import { applyDeposit, cancelPendingDepositCodes, heldDeposit, unapplyDeposit } from './deposits.js';
 import { getAppointmentRow, getSaleRow, serializeSales } from './refs.js';
 import { applyConsumptionNorms, usageRecorded } from './consumption.js';
+import { closeReceipts } from './receipts.js';
 import { cancelPendingForAppointment } from './scheduling.js';
 import { applyMovement, getProductRow, insufficientMessage, resolveVariant, returnVariantId } from './stock.js';
 
@@ -43,6 +44,8 @@ export interface SaleInput {
   discount: number;
   payments: SalePayments;
   note?: string | null;
+  /** The open receipt being paid: deleted with the sale. */
+  receiptId?: number | null;
 }
 
 interface ResolvedItem {
@@ -228,6 +231,7 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
       if (completing && !usageRecorded(tx, appointment.id)) applyConsumptionNorms(tx, appointment, employeeId);
       cancelPendingDepositCodes(tx, appointment.id, now);
     }
+    closeReceipts(tx, input.receiptId, appointment?.id);
     return sale;
   });
 }

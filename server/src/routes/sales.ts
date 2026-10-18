@@ -8,7 +8,7 @@ import { idempotent } from '../lib/idempotency.js';
 import { idParams, money, nonNull, nullableText, pagination, parse, queryId, queryInstant, requiredText } from '../lib/validation.js';
 
 const id = z.number().int().positive();
-const item = z.object({
+export const saleItem = z.object({
   type: z.enum(['product', 'service']),
   productId: id.nullish(),
   variantId: id.nullish(),
@@ -20,7 +20,7 @@ const item = z.object({
 export const saleBody = z.object({
   clientId: id.nullish(),
   appointmentId: id.nullish(),
-  items: z.array(item).min(1).max(100),
+  items: z.array(saleItem).min(1).max(100),
   discount: nonNull(money),
   payments: z.object({
     cash: nonNull(money),
@@ -30,6 +30,7 @@ export const saleBody = z.object({
     deposit: nonNull(money),
   }),
   note: nullableText(1000),
+  receiptId: id.nullish(),
 });
 export type SaleBody = z.infer<typeof saleBody>;
 
@@ -49,6 +50,7 @@ export function saleInputOf(input: SaleBody): SaleInput {
       deposit: input.payments.deposit,
     },
     note: input.note,
+    receiptId: input.receiptId,
   };
 }
 

@@ -12,6 +12,7 @@ import { badRequest, conflict, scheduleConflict } from '../lib/errors.js';
 import { clientFullName, parseSteps, type AppointmentRow, type AppointmentServiceRow, type ServiceRow } from '../lib/serialize.js';
 import { formatShortDate, formatTime, MINUTE_MS } from '../lib/time.js';
 import { cancelPendingDepositCodes } from './deposits.js';
+import { deleteReceiptOfAppointment } from './receipts.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
@@ -299,6 +300,7 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
       .get();
     if (replaced) writeLines(tx, id, replaced);
     if (next.status !== current.status && CLOSED_FOR_DEPOSIT.includes(next.status)) cancelPendingDepositCodes(tx, id, now);
+    if (next.status !== current.status && INACTIVE_FOR_OVERLAP.includes(next.status)) deleteReceiptOfAppointment(tx, id);
     if (repriced) {
       tx.update(appointmentServices).set({ price: repriced.price }).where(eq(appointmentServices.id, repriced.id)).run();
     }

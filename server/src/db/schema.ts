@@ -350,6 +350,31 @@ export const saleItems = sqliteTable(
 );
 
 /**
+ * An open receipt (открытый чек): a sale being put together before payment — at a visit started in the POS or for a
+ * walk-in. Nothing is sold yet (no stock movement, a prepayment stays held); paying it creates a `sales` row and
+ * deletes this one. `itemsJson` holds the lines as the app saved them (`ReceiptItem[]` in domain/receipts.ts).
+ */
+export const openReceipts = sqliteTable(
+  'open_receipts',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    appointmentId: integer('appointment_id').references(() => appointments.id),
+    clientId: integer('client_id').references(() => clients.id),
+    /** Who opened it. */
+    employeeId: integer('employee_id')
+      .notNull()
+      .references(() => employees.id),
+    itemsJson: text('items_json').notNull().default('[]'),
+    discount: integer('discount').notNull().default(0),
+    note: text('note'),
+    createdAt: ms('created_at').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  // One open receipt per appointment (receipts without one are unlimited: NULLs never collide).
+  (t) => [uniqueIndex('open_receipts_appointment_unique').on(t.appointmentId)],
+);
+
+/**
  * A dynamic SBP QR code: the QR part of a checkout (`kind = sale`) or an appointment's prepayment (`kind = deposit`).
  * A sale is created on the server only once the bank confirms the payment, from the cart stored in `saleInputJson`,
  * so a paid QR maps to exactly one sale; a paid prepayment code records one `receive` deposit operation.
