@@ -153,7 +153,7 @@ describe('bot: staff recognised by phone, staff mode', () => {
     const greeting = (await t.api('GET', '/api/settings/bot')).json().greeting as string;
     expect(handleStart(t.ctx, from, '')).toEqual({ text: `${greeting}\n\n${SHARE_PHONE_HINT}`, linked: false });
     expect(SHARE_PHONE_HINT).toBe(
-      'Нажмите кнопку «📱 Поделиться номером» внизу — так я вас узнаю. Если вы сотрудник студии, узнаю вас по номеру из вашего профиля в MIKAN.',
+      'Нажмите «📱 Поделиться номером» внизу, чтобы я вас узнал 🙂 Сотрудников студии узнаю по номеру из профиля в MIKAN.',
     );
 
     await share('79990001122');
@@ -169,7 +169,7 @@ describe('bot: staff recognised by phone, staff mode', () => {
     pipeline.receive(from, 'Я мастер этой студии, узнай меня');
     await pipeline.idle();
     const rules = (ai.calls[0]!.system as Anthropic.TextBlockParam[])[0]!.text;
-    expect(rules).toContain('12. Сотрудники студии: если человек пишет, что он работает в студии');
+    expect(rules).toContain('11. Сотрудники студии: если человек пишет, что работает в студии');
     expect(rules).toContain('нужно нажать кнопку «📱 Поделиться номером» внизу: бот сверит номер с профилями сотрудников в MIKAN');
     expect(rules).toContain('Никогда не говори, что узнал человека или что он сотрудник');
     expect(toolNames(0).some((name) => STAFF_TOOL_NAMES.includes(name))).toBe(false);

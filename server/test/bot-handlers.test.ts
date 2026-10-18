@@ -80,7 +80,7 @@ describe('grammY handlers (no network)', () => {
     await bot.handleUpdate(command('/start'));
     const [reply] = replies();
     expect(reply!.text).toMatch(/^Здравствуйте!/);
-    expect(reply!.text).toMatch(/Нажмите кнопку «📱 Поделиться номером» внизу — так я вас узнаю\. Если вы сотрудник студии/);
+    expect(reply!.text).toMatch(/Нажмите «📱 Поделиться номером» внизу, чтобы я вас узнал 🙂 Сотрудников студии узнаю по номеру/);
     expect(reply!.reply_markup).toMatchObject({ resize_keyboard: true, is_persistent: true });
     const keyboard = (reply!.reply_markup as { keyboard: Array<Array<{ text: string; request_contact?: boolean }>> }).keyboard;
     expect(keyboard.flat().map((b) => b.text)).toEqual(['💉 Услуги и цены', '💎 Украшения', '📅 Записаться', '🩹 Уход после процедуры', '📱 Поделиться номером']);

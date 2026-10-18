@@ -15,8 +15,8 @@ import { bindStaffChat, notifyStaff } from './staff.js';
 
 /** Appended to the /start greeting of a chat that is neither a client's nor an employee's yet. */
 export const SHARE_PHONE_HINT =
-  `Нажмите кнопку «${BUTTONS.contact}» внизу — так я вас узнаю. ` +
-  'Если вы сотрудник студии, узнаю вас по номеру из вашего профиля в MIKAN.';
+  `Нажмите «${BUTTONS.contact}» внизу, чтобы я вас узнал 🙂 ` +
+  'Сотрудников студии узнаю по номеру из профиля в MIKAN.';
 
 /** Longest raw phone quoted in the note about an unreadable contact. */
 const MAX_NOTE_PHONE = 40;
@@ -43,8 +43,7 @@ export function findActiveEmployeeByPhone(db: DbOrTx, phone: string): EmployeeRo
 
 export const staffGreeting = (studioName: string, employee: EmployeeRow): string =>
   `Здравствуйте, ${employee.name}! Узнал вас — вы сотрудник ${studioName} ✅\n` +
-  'Здесь я помогаю команде: записи (ваши и коллег), карточки клиентов, выручка и аналитика, остатки на складе. ' +
-  'Спросите, например: «Что у нас сегодня?», «Выручка за неделю» или «Сколько осталось лабретов 8 мм?».';
+  'Спрашивайте про записи, клиентов, выручку и склад — например: «Что у нас сегодня?» или «Выручка за неделю».';
 
 export interface SharedContact {
   userId: number | undefined;
@@ -133,7 +132,7 @@ export async function handleContact(
   let text: string;
   if (existing) {
     linkTelegram(db, existing.id, from.chatId, from.username);
-    text = `Спасибо, ${existing.name}! Номер подтверждён ✅ Теперь сюда будут приходить напоминания о записях и рекомендации по уходу.`;
+    text = `Спасибо, ${existing.name}! Номер подтверждён ✅ Сюда будут приходить напоминания о записях и советы по уходу.`;
   } else {
     const firstName = contact.firstName.trim();
     const name = firstName || from.telegramName || 'Клиент из Telegram';

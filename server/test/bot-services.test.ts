@@ -190,3 +190,23 @@ describe('bot: services price list and show_service', () => {
     expect(context).toMatch(/Недавние процедуры:\n• .+ — Мочка \(прошло дней: 3\)\n• .+ — процедура \(прошло дней: 4\)/);
   });
 });
+
+describe('bot tone', () => {
+  let t: TestApp;
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(async () => {
+    await t.close();
+  });
+
+  it('tells the bot to write simply and in a friendly way, with examples, and without office jargon', () => {
+    const prompt = buildStablePrompt(t.ctx.db);
+    expect(prompt).toMatch(/^Ты — администратор тату- и пирсинг-студии «MIKAN STUDIO» в Telegram\. Пишешь клиентам как живой человек из студии: просто, тепло и по-дружески, на «вы»\./);
+    expect(prompt).toContain('Коротко: 1–3 простых предложения. Одно сообщение — одна мысль и не больше одного вопроса.');
+    expect(prompt).toContain('не пиши «в системе», «в данных», «в прайсе не указано»');
+    expect(prompt).toContain('Хорошо: «Хороший вопрос! Уточню у администратора — он ответит прямо здесь 🙂»');
+    // Facts-only stays the first rule.
+    expect(prompt).toContain('1. Говори только то, что есть в «Данных студии» и в ответах инструментов.');
+  });
+});
