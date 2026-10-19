@@ -39,6 +39,9 @@ struct MoreView: View {
                     NavigationLink { EmployeesListView() } label: {
                         Label("Сотрудники", systemImage: "person.3")
                     }
+                    NavigationLink { PayrollView() } label: {
+                        Label("Зарплата", systemImage: "banknote")
+                    }
                     NavigationLink { StudioSettingsView() } label: {
                         Label("Настройки студии", systemImage: "building.2")
                     }
