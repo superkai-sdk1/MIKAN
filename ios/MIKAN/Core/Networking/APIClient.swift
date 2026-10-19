@@ -61,12 +61,13 @@ final class APIClient {
         query: [URLQueryItem] = [],
         body: (any Encodable)? = nil,
         idempotencyKey: UUID? = nil,
-        timeout: TimeInterval = APIClient.requestTimeout
+        timeout: TimeInterval = APIClient.requestTimeout,
+        headers: [String: String] = [:]
     ) async throws -> T {
         let payload = try body.map { try encoder.encode($0) }
         let data = try await send(
             method, path, query: query, body: payload,
-            contentType: "application/json", timeout: timeout, idempotencyKey: idempotencyKey
+            contentType: "application/json", timeout: timeout, idempotencyKey: idempotencyKey, headers: headers
         )
         return try decode(T.self, from: data, path: path)
     }
@@ -103,11 +104,12 @@ final class APIClient {
         body: Data?,
         contentType: String,
         timeout: TimeInterval = APIClient.requestTimeout,
-        idempotencyKey: UUID? = nil
+        idempotencyKey: UUID? = nil,
+        headers: [String: String] = [:]
     ) async throws -> Data {
         let request = try makeRequest(
             method, path, query: query, body: body,
-            contentType: contentType, timeout: timeout, idempotencyKey: idempotencyKey
+            contentType: contentType, timeout: timeout, idempotencyKey: idempotencyKey, headers: headers
         )
         let (data, response) = try await perform(request)
         guard let http = response as? HTTPURLResponse else {
@@ -142,7 +144,8 @@ final class APIClient {
         body: Data?,
         contentType: String,
         timeout: TimeInterval,
-        idempotencyKey: UUID? = nil
+        idempotencyKey: UUID? = nil,
+        headers: [String: String] = [:]
     ) throws -> URLRequest {
         let endpoint = serverURL.appending(path: "api").appending(path: path)
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
@@ -162,6 +165,9 @@ final class APIClient {
         }
         if let idempotencyKey {
             request.setValue(idempotencyKey.uuidString, forHTTPHeaderField: "Idempotency-Key")
+        }
+        for (field, value) in headers {
+            request.setValue(value, forHTTPHeaderField: field)
         }
         if let body {
             request.httpBody = body

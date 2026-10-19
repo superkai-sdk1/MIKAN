@@ -31,6 +31,8 @@ final class AppState {
     let workSchedules: WorkScheduleStore
     /// Push notifications: permission, the device token and its registration.
     let push: PushCenter
+    /// The Face ID lock over the signed-in app.
+    let lock: AppLock
 
     private(set) var phase: Phase
     private(set) var employee: Employee?
@@ -45,9 +47,10 @@ final class AppState {
 
     @ObservationIgnored private let logger = Logger(subsystem: "com.mikanstudio.crm", category: "session")
 
-    init(api: APIClient, employee: Employee?, phase: Phase, push: PushCenter = PushCenter()) {
+    init(api: APIClient, employee: Employee?, phase: Phase, push: PushCenter = PushCenter(), lock: AppLock = AppLock()) {
         self.api = api
         self.push = push
+        self.lock = lock
         self.shift = ShiftStore(api: api)
         let cart = CartStore()
         self.cart = cart
@@ -66,7 +69,10 @@ final class AppState {
     static func live() -> AppState {
         let token = Keychain.string(for: Keychain.tokenAccount)
         let api = APIClient(serverURL: ServerConfig.url, token: token)
-        return AppState(api: api, employee: SessionCache.employee, phase: token == nil ? .signedOut : .signedIn)
+        return AppState(
+            api: api, employee: SessionCache.employee, phase: token == nil ? .signedOut : .signedIn,
+            lock: AppLock(signedInAtLaunch: token != nil)
+        )
     }
 
     /// «Ещё» tab badge.
@@ -87,8 +93,9 @@ final class AppState {
     }
 
     func signOut(notice: String? = nil) {
-        // While the session token still works: this iPhone stops getting the employee's notifications.
-        push.unregister(from: api)
+        // While the session token still works: this iPhone stops getting the employee's notifications and the
+        // session ends on the server.
+        endServerSession()
         pushRoute = nil
         Keychain.set(nil, for: Keychain.tokenAccount)
         api.updateToken(nil)

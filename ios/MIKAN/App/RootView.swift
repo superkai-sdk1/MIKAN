@@ -18,6 +18,8 @@ struct RootView: View {
             }
         }
         .animation(.smooth(duration: 0.35), value: appState.phase)
+        .appLock(appState.lock, signedIn: appState.phase == .signedIn)
+        .onChange(of: appState.phase) { appState.lock.reset() }
         .task(id: isPolling) {
             guard isPolling else { return }
             await appState.refreshSession()

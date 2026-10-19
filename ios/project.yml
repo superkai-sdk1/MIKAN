@@ -35,6 +35,7 @@ targets:
         LSRequiresIPhoneOS: true
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        NSFaceIDUsageDescription: "MIKAN использует Face ID, чтобы открываться только вам: после запуска и если приложение было свёрнуто дольше 5 минут."
         NSPhotoLibraryUsageDescription: "MIKAN использует фото из медиатеки, чтобы добавлять снимки украшений, расходников и работ в каталог склада и услуг."
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
