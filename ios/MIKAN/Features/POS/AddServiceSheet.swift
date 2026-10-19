@@ -7,6 +7,7 @@ struct AddServiceSheet: View {
     @Environment(CartStore.self) private var cart
     @Environment(ReferenceStore.self) private var reference
     @Environment(APIClient.self) private var api
+    @Environment(\.permissions) private var permissions
 
     /// Called after a catalog service was added, with a price hint for variable-price services.
     var onAdd: (_ hint: String?) -> Void = { _ in }
@@ -128,7 +129,8 @@ struct AddServiceSheet: View {
         } catch {
             loadError = error.userMessage
         }
-        // Popularity is a nice-to-have ranking: without the report the catalog order is used instead.
+        // Popularity is a nice-to-have ranking: without the report (a master has no reports) the catalog order is used.
+        guard permissions.seesReports else { return }
         let to = Date.now
         let from = Calendar.app.date(byAdding: .day, value: -ServicePicking.popularityWindowDays, to: to) ?? to
         topServices = (try? await api.reportSummary(from: from, to: to).topServices) ?? []

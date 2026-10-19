@@ -9,6 +9,7 @@ import Fastify, { type FastifyBaseLogger, type FastifyError, type FastifyInstanc
 import { ZodError } from 'zod';
 import type { AppContext } from './context.js';
 import { employees } from './db/schema.js';
+import { authorize } from './domain/permissions.js';
 import { AppError, unauthorized } from './lib/errors.js';
 import type { EmployeeRow } from './lib/serialize.js';
 import { formatZodError } from './lib/validation.js';
@@ -154,6 +155,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
       publicAuthRoutes(api, ctx);
       await api.register(async (secured) => {
         secured.addHook('onRequest', authenticate(ctx));
+        secured.addHook('preHandler', authorize(ctx.db));
         authRoutes(secured, ctx);
         dashboardRoutes(secured, ctx);
         employeeRoutes(secured, ctx);

@@ -31,7 +31,8 @@ describe('bot: staff recognised by phone, staff mode', () => {
     t = await createTestApp({ ai });
     pipeline = new BotPipeline(t.ctx, 0);
     handleStaffCommand(t.ctx, STAFF, issueStaffCode(t.ctx.db).code);
-    anna = await make(t, '/api/employees', { name: 'Анна', login: 'anna', password: 'secret123', phone: '+7 999 000-11-22', isMaster: true });
+    // An admin: the staff tools include analytics (a master gets «Отчёты доступны…», see below).
+    anna = await make(t, '/api/employees', { name: 'Анна', login: 'anna', password: 'secret123', phone: '+7 999 000-11-22', isMaster: true, role: 'admin' });
     oleg = await make(t, '/api/employees', { name: 'Олег', login: 'oleg', password: 'secret123', phone: '+79990003344', isMaster: true });
     await t.api('PATCH', `/api/employees/${oleg.id}`, { active: false });
   });
@@ -117,6 +118,30 @@ describe('bot: staff recognised by phone, staff mode', () => {
     expect(low!.content).toContain('Лабрет');
     expect(t.gateway.textsTo(CHAT).at(-1)).toBe('Сегодня одна запись, выручка 3 000 ₽.');
     expect((await chat()).needsAttention).toBe(false);
+  });
+
+  it('answers a master that reports are for the owner and admin; the other staff tools stay open', async () => {
+    await share('+79990001122');
+    await t.api('PATCH', `/api/employees/${anna.id}`, { role: 'master' });
+    ai.push(
+      message([toolUse('a', 'analytics', { from: '2026-10-01', to: '2026-10-31' }), toolUse('b', 'today', {})], 'tool_use'),
+      message([text('Отчёты доступны владельцу и администратору.')]),
+    );
+    pipeline.receive(from, 'Какая выручка за месяц?');
+    await pipeline.idle();
+
+    expect(toolNames(0)).toEqual(STAFF_TOOL_NAMES);
+    const [report, day] = toolResults(1);
+    expect(report).toEqual({ content: 'Отчёты доступны владельцу и администратору', isError: true });
+    expect(day!.content).toContain('Продажи сегодня');
+    expect(day!.isError).toBeFalsy();
+
+    // The role is read on every message: promoted, she gets the report at once.
+    await t.api('PATCH', `/api/employees/${anna.id}`, { role: 'admin' });
+    ai.push(message([toolUse('c', 'analytics', { from: '2026-10-01', to: '2026-10-31' })], 'tool_use'), message([text('Выручка 0 ₽.')]));
+    pipeline.receive(from, 'А сейчас?');
+    await pipeline.idle();
+    expect(toolResults(3)[0]!.content).toContain('"revenue":0');
   });
 
   it('never gives client chats the staff tools, and a deactivated employee loses staff mode at once', async () => {

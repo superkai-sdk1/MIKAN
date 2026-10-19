@@ -7,6 +7,7 @@ struct AppointmentEditorView: View {
     @Environment(APIClient.self) private var api
     @Environment(AppState.self) private var appState
     @Environment(ReferenceStore.self) private var reference
+    @Environment(\.permissions) private var permissions
 
     @State private var draft: AppointmentDraft
     @State private var isSaving = false
@@ -95,7 +96,10 @@ struct AppointmentEditorView: View {
 
     private var masterSection: some View {
         Section {
-            if reference.masters.isEmpty, referenceError == nil {
+            if !permissions.picksMaster {
+                // A master books and moves only their own appointments.
+                LabeledContent("Мастер", value: appState.employee?.name ?? "—")
+            } else if reference.masters.isEmpty, referenceError == nil {
                 LabeledContent("Мастер") { ProgressView() }
             } else {
                 Picker("Мастер", selection: $draft.masterId) {
@@ -196,6 +200,8 @@ struct AppointmentEditorView: View {
     }
 
     private func loadReference() async {
+        // A master books only themselves, whatever column or request the draft came from.
+        draft.masterId = permissions.master(for: draft.masterId)
         do {
             try await reference.ensureEmployees()
             try await reference.ensureServices()

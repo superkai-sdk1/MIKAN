@@ -21,7 +21,8 @@ struct MIKANApp: App {
 extension View {
     /// Injects the app state, its stores and the Russian locale/calendar.
     func appEnvironment(_ state: AppState) -> some View {
-        environment(state)
+        modifier(PermissionsEnvironment(state: state))
+            .environment(state)
             .environment(state.api)
             .environment(state.shift)
             .environment(state.cart)

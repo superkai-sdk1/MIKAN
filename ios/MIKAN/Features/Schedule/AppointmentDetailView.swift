@@ -6,6 +6,7 @@ struct AppointmentDetailView: View {
     @Environment(ScheduleStore.self) private var schedule
     @Environment(ReferenceStore.self) private var reference
     @Environment(\.openURL) private var openURL
+    @Environment(\.permissions) private var permissions
 
     @State private var appointment: Appointment
     @State private var isWorking = false
@@ -33,7 +34,7 @@ struct AppointmentDetailView: View {
             servicesSection
             detailsSection
             if DepositSummary.showsSection(appointment) {
-                AppointmentDepositSection(appointment: appointment, qrEnabled: reference.qrPaymentsEnabled) { flow in
+                AppointmentDepositSection(appointment: appointment, qrEnabled: reference.qrPaymentsEnabled, showsActions: canChange) { flow in
                     depositFlow = flow
                 }
             }
@@ -41,14 +42,16 @@ struct AppointmentDetailView: View {
                 Section("Заметки") { Text(notes) }
             }
             paymentSection
-            if !actions.isEmpty {
+            if !visibleActions.isEmpty {
                 actionsSection
+            } else if !actions.isEmpty {
+                ReadOnlyNotice(text: "Чужие записи меняют владелец и администратор.")
             }
         }
         .navigationTitle("Запись")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if appointment.isOpen {
+            if appointment.isOpen, canChange {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Изменить") { editorDraft = .edit(appointment, catalog: reference.services) }
                 }
@@ -197,6 +200,11 @@ struct AppointmentDetailView: View {
         }
     }
 
+    /// A master sees every appointment but changes only their own; completing a visit is a till action, open to all.
+    private var canChange: Bool { permissions.canChange(appointment) }
+
+    private var visibleActions: [Action] { canChange ? actions : actions.filter { $0 == .complete } }
+
     private enum Action: Hashable {
         case confirm, complete, reschedule, noShow, cancel, restore
     }
@@ -211,8 +219,8 @@ struct AppointmentDetailView: View {
     }
 
     private var actionsSection: some View {
-        Section("Действия") {
-            ForEach(actions, id: \.self) { action in
+        Section {
+            ForEach(visibleActions, id: \.self) { action in
                 switch action {
                 case .confirm:
                     Button("Подтвердить", systemImage: "checkmark.circle") { setStatus(.confirmed) }
@@ -229,6 +237,12 @@ struct AppointmentDetailView: View {
                 case .restore:
                     Button("Вернуть в запись", systemImage: "arrow.uturn.backward.circle") { setStatus(.scheduled) }
                 }
+            }
+        } header: {
+            Text("Действия")
+        } footer: {
+            if !canChange {
+                Text("Перенести, отменить или отметить неявку в чужой записи могут владелец и администратор.")
             }
         }
     }

@@ -10,10 +10,11 @@ import { getOpenShift, serializeShift } from '../domain/cash.js';
 import { clientStats, searchClients } from '../domain/clients.js';
 import { historyEntries } from '../domain/history.js';
 import { variantsByProduct } from '../domain/products.js';
+import { REPORTS_MESSAGE, roleOf } from '../domain/permissions.js';
 import { serializeAppointments } from '../domain/refs.js';
 import { badges, reportSummary } from '../domain/reports.js';
 import { studioTimezone } from '../domain/settings.js';
-import { clientFullName, type AppointmentOut, type ClientRow, type ProductRow } from '../lib/serialize.js';
+import { clientFullName, type AppointmentOut, type ClientRow, type EmployeeRow, type ProductRow } from '../lib/serialize.js';
 import { formatRub, searchKey } from '../lib/text.js';
 import { DAY_MS, formatShortDate, localDayBounds } from '../lib/time.js';
 import { describeForClient, statusLabel, upcomingForClient } from './client-appointments.js';
@@ -344,12 +345,13 @@ function todayTool(ctx: AppContext): ToolResult {
   };
 }
 
-export function buildStaffToolHandlers(ctx: AppContext): Record<string, ToolHandler> {
+/** Tools for the employee of the chat: reports follow the role (docs/API.md «Roles»), the rest are open to all. */
+export function buildStaffToolHandlers(ctx: AppContext, employee: Pick<EmployeeRow, 'role'>): Record<string, ToolHandler> {
   return {
     today: async () => todayTool(ctx),
     appointments: async (raw) => appointmentsTool(ctx, raw),
     client_info: async (raw) => clientTool(ctx, raw),
-    analytics: async (raw) => analyticsTool(ctx, raw),
+    analytics: async (raw) => (roleOf(employee) === 'master' ? error(REPORTS_MESSAGE) : analyticsTool(ctx, raw)),
     stock: async (raw) => stockTool(ctx, raw),
   };
 }

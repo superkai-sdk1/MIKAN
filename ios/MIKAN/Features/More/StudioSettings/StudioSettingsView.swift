@@ -3,6 +3,7 @@ import SwiftUI
 struct StudioSettingsView: View {
     @Environment(APIClient.self) private var api
     @Environment(ReferenceStore.self) private var reference
+    @Environment(\.permissions) private var permissions
     @State private var remote = Remote<StudioSettings>()
     @State private var settings: StudioSettings?
     @State private var isSaving = false
@@ -38,6 +39,9 @@ struct StudioSettingsView: View {
 
     var body: some View {
         Form {
+            if !permissions.editsSettings {
+                ReadOnlyNotice()
+            }
             if let settings = Binding($settings) {
                 Section("Студия") {
                     TextField("Название", text: settings.name)
@@ -81,14 +85,18 @@ struct StudioSettingsView: View {
                 }
             }
         }
+        // A master only looks at the settings.
+        .disabled(!permissions.editsSettings)
         .overlay {
             if settings == nil { RemoteStateOverlay(remote: remote, retry: load) }
         }
         .navigationTitle("Настройки студии")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!hasChanges || !hasValidHours || reviewLinksIssue != nil) }
+            if permissions.editsSettings {
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!hasChanges || !hasValidHours || reviewLinksIssue != nil) }
+                }
             }
         }
         .refreshable { await load() }
