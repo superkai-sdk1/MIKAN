@@ -30,6 +30,8 @@ import { employeeRoutes } from './routes/employees.js';
 import { historyRoutes } from './routes/history.js';
 import { payrollRoutes } from './routes/payroll.js';
 import { productRoutes } from './routes/products.js';
+import { onlineBookingRoutes } from './routes/online-bookings.js';
+import { publicBookingRoutes } from './routes/public-booking.js';
 import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { receiptRoutes } from './routes/receipts.js';
 import { salesRoutes } from './routes/sales.js';
@@ -160,6 +162,8 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
     async (api) => {
       api.get('/health', async () => ({ ok: true, version: APP_VERSION }));
       publicAuthRoutes(api, ctx);
+      // The booking page and the Mini App: no auth, rate-limited per IP.
+      await api.register(async (open) => publicBookingRoutes(open, ctx), { prefix: '/public/booking' });
       await api.register(async (secured) => {
         secured.addHook('onRequest', authenticate(ctx));
         secured.addHook('preHandler', authorize(ctx.db));
@@ -175,6 +179,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         historyRoutes(secured, ctx);
         uploadRoutes(secured, ctx);
         appointmentRoutes(secured, ctx);
+        onlineBookingRoutes(secured, ctx);
         depositRoutes(secured, ctx);
         receiptRoutes(secured, ctx);
         salesRoutes(secured, ctx);

@@ -3,10 +3,10 @@ import { DateTime } from 'luxon';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { services } from '../db/schema.js';
-import { bookableMasters, freeSlots, SLOT_HORIZON_DAYS, SLOT_STEP_MIN } from '../domain/free-slots.js';
+import { bookableMasters, freeSlots } from '../domain/free-slots.js';
 import { findClientByChat } from '../domain/clients.js';
 import { serviceIdsByProduct } from '../domain/products.js';
-import { studioTimezone } from '../domain/settings.js';
+import { getStudioSettings, studioTimezone } from '../domain/settings.js';
 import { formatThickness, threadLabel } from '../lib/jewelry.js';
 import { formatRub } from '../lib/text.js';
 import { formatHumanDateTime, formatTime, localDate, MINUTE_MS } from '../lib/time.js';
@@ -123,13 +123,13 @@ export function buildClientToolHandlers(ctx: AppContext, scope: ToolScope, sink:
       const parsed = slotsInput.safeParse(raw);
       if (!parsed.success) return error('Некорректные данные: дата нужна в формате ГГГГ-ММ-ДД.');
       const input = parsed.data;
-      const tz = studioTimezone(db);
+      const { timezone: tz, onlineBooking: online } = getStudioSettings(db);
       const now = Date.now();
       const day = DateTime.fromISO(input.date, { zone: tz });
       if (!day.isValid) return error('Такой даты нет. Дата нужна в формате ГГГГ-ММ-ДД.');
       if (input.date < localDate(now, tz)) return error('Эта дата уже прошла. Уточни у клиента другую дату.');
-      if (day.diff(DateTime.fromMillis(now, { zone: tz }).startOf('day'), 'days').days > SLOT_HORIZON_DAYS) {
-        return error(`Можно смотреть не дальше чем на ${SLOT_HORIZON_DAYS} дней вперёд.`);
+      if (day.diff(DateTime.fromMillis(now, { zone: tz }).startOf('day'), 'days').days > online.horizonDays) {
+        return error(`Можно смотреть не дальше чем на ${online.horizonDays} дней вперёд.`);
       }
       let durationMin = DEFAULT_SLOT_MINUTES;
       let masterId = input.masterId ?? undefined;
@@ -159,9 +159,9 @@ export function buildClientToolHandlers(ctx: AppContext, scope: ToolScope, sink:
       const anyFree = result.some((r) => r.starts.length > 0);
       return {
         content:
-          `Свободное время на ${dayTitle} (${input.date}), ${note}, шаг ${SLOT_STEP_MIN} мин:\n${lines.join('\n')}\n` +
+          `Свободное время на ${dayTitle} (${input.date}), ${note}, шаг ${online.stepMinutes} мин:\n${lines.join('\n')}\n` +
           (anyFree
-            ? `Для reschedule_appointment передавай startsAt в виде «${input.date} ЧЧ:ММ», например «${studioDateTimeText(result.find((r) => r.starts.length)!.starts[0]!, tz)}».`
+            ? `Для book_appointment и reschedule_appointment передавай startsAt в виде «${input.date} ЧЧ:ММ», например «${studioDateTimeText(result.find((r) => r.starts.length)!.starts[0]!, tz)}».`
             : 'Свободного времени нет — предложи другую дату.'),
       };
     },

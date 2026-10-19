@@ -88,6 +88,8 @@ const OWN_APPOINTMENT_ROUTES: ReadonlySet<string> = new Set([
   'POST /appointments/:id/deposit/retain',
   'POST /appointments/:id/deposit/qr',
   'POST /appointments/:id/deposit/remind',
+  'POST /appointments/:id/online/confirm',
+  'POST /appointments/:id/online/reject',
 ]);
 
 const API_PREFIX = '/api';

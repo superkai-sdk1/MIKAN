@@ -1,6 +1,7 @@
 import type { Bot, Context, Keyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { errorMessage } from '../lib/errors.js';
+import { sendBookingOffer } from './booking-start.js';
 import { handleCallback } from './callbacks.js';
 import { jewelryCategoriesMenu, sendMenu, serviceSectionsMenu } from './catalog.js';
 import { BUTTONS, mainKeyboard, staffKeyboard } from './keyboards.js';
@@ -79,6 +80,7 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
   pm.command('start', async (c) => {
     const reply = handleStart(ctx, sender(c), String(c.match ?? ''));
     await c.reply(reply.text, { reply_markup: keyboardFor(reply) });
+    await sendBookingOffer(ctx, c.chat.id, reply);
   });
 
   pm.on('message:contact', async (c) => {

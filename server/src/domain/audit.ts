@@ -14,7 +14,7 @@ import { employeesByIds } from './refs.js';
  * by itself (domain/audit-events.ts). Writing never fails the action it describes.
  */
 
-export const AUDIT_SOURCES = ['app', 'bot_staff', 'bot', 'system'] as const;
+export const AUDIT_SOURCES = ['app', 'bot_staff', 'bot', 'online', 'system'] as const;
 export type AuditSource = (typeof AUDIT_SOURCES)[number];
 
 /** Rows older than this are pruned once a day. */

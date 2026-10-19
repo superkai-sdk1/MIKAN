@@ -5,10 +5,14 @@
 export type PhotoSource = { kind: 'file'; path: string } | { kind: 'url'; url: string };
 
 /**
- * One inline button: a callback button (`data` is its payload, ≤ 64 bytes, see TELEGRAM_MAX_CALLBACK_DATA) or a link
- * button (`url`, opened by Telegram itself; nothing comes back to the bot).
+ * One inline button: a callback button (`data` is its payload, ≤ 64 bytes, see TELEGRAM_MAX_CALLBACK_DATA), a link
+ * button (`url`, opened by Telegram itself; nothing comes back to the bot) or a Mini App button (`webApp`, an
+ * `https://` page Telegram opens inside the chat; private chats only).
  */
-export type InlineButton = { text: string; data: string; url?: undefined } | { text: string; url: string; data?: undefined };
+export type InlineButton =
+  | { text: string; data: string; url?: undefined; webApp?: undefined }
+  | { text: string; url: string; data?: undefined; webApp?: undefined }
+  | { text: string; webApp: string; data?: undefined; url?: undefined };
 
 /** Rows of inline buttons under a message. */
 export type InlineKeyboard = InlineButton[][];

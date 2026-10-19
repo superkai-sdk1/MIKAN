@@ -28,7 +28,8 @@ If the implementation must deviate, update this file in the same change.
   with a Russian message («Это доступно владельцу студии», «Можно менять только свои записи»).
 - Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /receipts`, `POST /cash/operations`,
   `POST /products/:id/movements`, `POST /products/:id/movements/batch`, `POST /products/:id/purchases`
-  and the prepayment writes `POST /appointments/:id/deposit`, `…/deposit/refund`, `…/deposit/retain` accept an optional `Idempotency-Key: <UUID>` header. The app generates one key per user action and resends the
+  and the prepayment writes `POST /appointments/:id/deposit`, `…/deposit/refund`, `…/deposit/retain` accept an optional `Idempotency-Key: <UUID>` header
+  (so does the public `POST /public/booking`, without an employee — see «Online booking»). The app generates one key per user action and resends the
   same key when it retries that action (timeout, dropped connection, repeated tap after an unclear outcome).
   - The first request with a key runs normally; its successful response is stored for **24 h**, scoped to the
     employee (key + endpoint + employee + response).
@@ -685,9 +686,11 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 
 - Logged: every successful write request from the app (`POST`/`PUT`/`PATCH`/`DELETE`) except `POST /auth/login`,
   `POST /uploads`, `POST /bot/chats/:chatId/read`, `POST /bot/staff-code`, `POST /devices`, `DELETE /devices/:token`
-  and idempotent replays; online bookings and client cancellations on the booking page as `online`; client actions in
-  the bot (booking request, reschedule, confirm «Приду») as `bot`; staff bot actions as `bot_staff`; automatic
-  prepayment retain and bank-confirmed QR payments as `system`.
+  and idempotent replays; online bookings from the booking page and the Mini App and client cancellations on the
+  booking page as `online`; client actions in the bot (online booking, booking request, reschedule, confirm «Приду») as
+  `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed QR payments, an online hold
+  confirmed by its prepayment and an unpaid hold released as `system`. Staff confirming / rejecting an online booking
+  in the app is `appointment.online_confirm` / `appointment.online_reject`.
 - `summary` is written for people, in Russian, impersonal (the employee's gender is not stored; the app shows who
   next to it): «Запись №1846 (Анна Иванова) перенесена с … на …», «Продажа №1580 возвращена: 3 500 ₽»,
   «Цена «Мочка»: 1 600 → 1 800 ₽», «Фатиме назначена роль «Мастер»». Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
@@ -1229,7 +1232,8 @@ use one engine and the rules below.
 **What a client books.** 1–5 items `{ serviceId, variant? }` (active catalog services; `variant` — a variant `name`),
 a master or «any», a start. Duration = Σ durations (variant's, else the service's; 60 min when none), `price` = Σ
 prices (variant's, else `price`), `depositRequired` = Σ `depositAmount`. The appointment gets the service lines like
-`POST /appointments` with `services`.
+`POST /appointments` with `services` (a variant line is named `"<service> — <variant>"`). A service with variants
+needs one («Выберите вариант услуги «Соски»: Один, Два»).
 
 **Free time.** Starts on the `onlineBooking.stepMinutes` grid from the beginning of the master's working day (own
 schedule minus breaks, else studio hours — see «WorkSchedule»), at least `leadMinutes` from now, at most `horizonDays`
@@ -1238,25 +1242,40 @@ appointments (online holds included). The bot's `free_slots` follows the same se
 master (`isMaster`); a booking for «any» goes to a free master at that start — the one with the fewest appointments
 that day, then the lowest id.
 
-**The client.** By phone (normalized): the existing client card, else a new one (`name`, `phone`). In the bot and the
-Mini App the chat's linked client is used (the phone was shared at start); a Mini App chat without one sends name and
-phone like the page, and the chat is linked to that card. At most 2 unsettled online bookings per client: a third →
-`409` «У вас уже есть записи, которые ждут подтверждения — дождитесь ответа студии».
+**The client.** By phone (normalized): the existing client card, else a new one (`name`, `phone`, source
+`онлайн-запись` from the page, `telegram` from the Mini App). In the bot and the Mini App the chat's linked client is
+used (the phone was shared at start); a Mini App chat without one sends name and phone like the page. A typed phone
+proves nothing, so that chat is **not** linked to the card by it: the bot answers the booking in that chat and then asks
+«Чтобы уведомления о записи приходили сюда, нажмите «📱 Поделиться номером» внизу 👇 Это нужно сделать один раз.»
+with the phone button — the person's own contact links the chat to the card with that phone (see «Staff chats»). At
+most 2 unsettled online bookings per client: a third → `409` «У вас уже есть записи, которые ждут подтверждения —
+дождитесь ответа студии». One person is never booked twice at overlapping times (a double submit for «any master»):
+`409` «У вас уже есть запись на это время».
 
 **Settlement.**
 - `depositRequired > 0` and QR payments configured → `onlineState: awaiting_payment`, `holdUntil = now +
   holdMinutes`, and a prepayment QR code (`QrPayment` `kind: deposit`, amount `depositRequired`, valid until
-  `holdUntil`). Paid (the usual bank confirmation) → `onlineState: null`: confirmed. Not paid by `holdUntil` (the bank
-  confirms unpaid) → `status: cancelled`, notes «Предоплата не внесена вовремя», the code cancelled, the time free; the
-  client is told when there is a chat.
-- Otherwise (no prepayment, or QR payments not configured) → `onlineState: awaiting_confirmation`: the time is held
-  until staff confirm (`…/online/confirm`) or reject (`…/online/reject`) it in the app.
+  `holdUntil`; its `employee` is the booked master — no one issued it). Paid (the usual bank confirmation, or a
+  prepayment staff took at the studio meanwhile) → `onlineState: null`: confirmed. Not paid by `holdUntil` (the bank
+  confirms unpaid) → `status: cancelled`, «Предоплата не внесена вовремя» added to the notes, the code cancelled, the
+  time free; the client is told when there is a chat. While the bank cannot be asked the time stays held, at most an
+  hour past `holdUntil`. A payment arriving after the release is recorded with a staff alert, as for any cancelled
+  appointment.
+- Otherwise (no prepayment, QR payments not configured, or the bank did not issue the code) → `onlineState:
+  awaiting_confirmation`: the time is held until staff confirm (`…/online/confirm`) or reject (`…/online/reject`) it in
+  the app. Rejecting adds «Онлайн-запись отклонена: <reason>» to the notes; a prepayment code it had is cancelled.
 - Staff are told in the staff chat (and by push): «🆕 Онлайн-запись (сайт): Анна, +7…, Мочка — 21 октября, 15:00,
-  мастер Фатима · ждёт подтверждения» / «· ждёт оплату до 14:35» / «💳 Онлайн-запись оплачена: …».
-- The client with a Telegram chat gets: on booking — «Заявка принята, время за вами 🙌 Подтвердим в ближайшее время»
-  or the payment request with the link button «💳 Оплатить предоплату»; on confirmation or payment — «✅ Запись
-  подтверждена: 21 октября, 15:00, мастер Фатима, адрес…» with the cancellation rule line; on rejection — the reason and
-  the booking link. Reminders are scheduled as for any appointment.
+  мастер Фатима · ждёт подтверждения» / «· ждёт оплату до 14:35» (channel: `сайт` | `Mini App` | `бот`; the client's
+  comment on a second line «Комментарий: …») / «💳 Онлайн-запись оплачена: … · предоплата 1 000 ₽» (instead of the usual
+  «💳 Предоплата … получена»); a released hold — «⌛ Онлайн-запись №… снята — предоплата не поступила вовремя: …».
+- The client with a Telegram chat (the chat linked to the card; the Mini App chat that booked) gets: on booking —
+  «Заявка принята, время за вами 🙌 Подтвердим в ближайшее время.» with the time, services and master, or the payment
+  request with the link button «💳 Оплатить предоплату»; on confirmation or payment — «✅ Запись подтверждена: 21
+  октября, 15:00, мастер Фатима, адрес…» and the services, plus the cancellation rule line when the booking has a
+  prepayment (instead of the usual thanks for a prepayment); on rejection — the reason and the booking link
+  (`PUBLIC_URL/book`); on release — «⌛ Время … освободилось — предоплата не поступила вовремя.» and the booking link.
+  In the bot the AI tells the booking itself; only the payment request follows its reply. Reminders are scheduled as for
+  any appointment.
 - Background: unpaid holds are checked every minute.
 - Audit: the booking is logged with source `bot` / `online`, its release with `system`.
 
@@ -1280,30 +1299,51 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
 
 | Method | Path (no auth) | Body | Response |
 |---|---|---|---|
-| GET | `/public/booking/config` | — | `{ enabled, studio: { name, address, phone, workingHours, timezone }, note, leadMinutes, horizonDays, stepMinutes, cancellationText, botUsername }` |
+| GET | `/public/booking/config` | — | `{ enabled, studio: { name, address, phone, workingHours, timezone }, note, leadMinutes, horizonDays, holdMinutes, stepMinutes, cancellationText, botUsername }` |
 | GET | `/public/booking/services` | — | `{ items: [PublicService] }` active services in catalog order |
 | GET | `/public/booking/masters` | — | `{ items: [ { id, name, color } ] }` active masters |
-| GET | `/public/booking/days?from=&to=&items=&masterId=` | — | `{ items: [ { date, available } ] }` ≤ 31 dates; `items` = `serviceId[:variant]` comma-separated (variant URL-encoded) |
+| GET | `/public/booking/days?from=&to=&items=&masterId=` | — | `{ items: [ { date, available } ] }` ≤ 31 dates (default: 14 from today); `items` = `serviceId[:variant]` comma-separated (variant URL-encoded) |
 | GET | `/public/booking/slots?date=&items=&masterId=` | — | `{ date, durationMin, items: [ { startsAt, masterIds: [3, 5] } ] }` |
-| GET | `/public/booking/me` | header `X-Telegram-Init-Data` | `{ linked: true, name: "Анна", phone: "+7 *** ***-**-01" }` · `401` for invalid init data |
-| POST | `/public/booking` | `{ items, masterId?, startsAt, name, phone, comment?, website? }` (+ `X-Telegram-Init-Data` in the Mini App) | `PublicBooking` · `409 schedule_conflict` «Это время только что заняли — выберите другое» · `400` · `429` (5 per hour per IP) |
+| GET | `/public/booking/me` | header `X-Telegram-Init-Data` | `{ linked: true, name: "Анна", phone: "+7 *** ***-**-01" }` (`{ linked: false, name: null, phone: null }` for an unknown chat) · `401` for missing or invalid init data |
+| POST | `/public/booking` | `{ items: [ { serviceId, variant? } ], masterId?, startsAt, name, phone, comment?, website? }` (+ `X-Telegram-Init-Data` in the Mini App; `items` may also be the query-string form) | `PublicBooking` · `409 schedule_conflict` «Это время только что заняли — выберите другое» · `400` · `401` for invalid init data · `429` (5 per hour per IP) · accepts `Idempotency-Key` |
 | GET | `/public/booking/b/:token` | — | `PublicBooking` (a pending payment is checked with the bank, at most every 2 s) |
 | POST | `/public/booking/b/:token/cancel` | — | `PublicBooking` · until the start; staff are told («❌ Клиент отменил онлайн-запись №…»), a held prepayment stays for staff to refund or keep by the rules |
 | GET | `/public/booking/b/:token/calendar.ics` | — | `text/calendar` event |
 
 - `PublicService`: `{ id, name, category, group, description, priceText: "от 3 000 ₽", price, durationMin,
-  depositAmount, imageUrl, variants: [ { name, priceText, price, durationMin } ] }` — no internal fields.
+  depositAmount, imageUrl, variants: [ { name, priceText, price, durationMin } ] }` — no internal fields. `imageUrl` —
+  the cover (`imageUrl` ?? `photos[0]`, `null` when none); `durationMin` — the effective duration (a variant's falls
+  back to the service's, 60 when none). Order: per service category (tattoo, piercing, other) its groups in staff
+  order, then the ungrouped services.
 - `PublicBooking`: `{ token, status: "awaiting_payment"|"awaiting_confirmation"|"confirmed"|"cancelled"|"completed",
   number, items: [ { name, price } ], master: { name }, startsAt, endsAt, price, depositRequired, holdUntil,
   payment: { payload, amount, expiresAt } | null, studio: { name, address, phone }, telegramLink, calendarUrl }`.
+  `number` — the appointment id; `status` `cancelled` covers a no-show too; `telegramLink` — `null` while the bot's
+  username is unknown; `calendarUrl` — `PUBLIC_URL/api/public/booking/b/<token>/calendar.ics`.
 - `website` is a honeypot: when filled the server answers as if booked and stores nothing. Phone validation as for
-  clients; `name` 1…100. Unknown or inactive services, a master who is not an active master, a start that is not free
-  → `400` / `409` with Russian reasons. `enabled: false` → `403` «Онлайн-запись временно недоступна».
+  clients; `name` 1…100 (both skipped for a linked Mini App chat). Unknown or inactive services, a master who is not an
+  active master, a start before `leadMinutes` or past `horizonDays` → `400`; a start that is not free (taken, off the
+  grid, outside working time) → `409 schedule_conflict` — never naming another client. `enabled: false` → `403`
+  «Онлайн-запись временно недоступна» (`days`, `slots`, booking; `config`, `services`, `masters` still answer).
+- Every public route is limited per IP (120 reads / 20 writes a minute); booking itself 5 an hour per IP — only
+  bookings made count (honeypot hits included), so taken times and invalid input never lock a person out.
+- `POST /public/booking` accepts an optional `Idempotency-Key: <UUID>` like the app's writes (see «Conventions»), scoped
+  to the key and the endpoint (no employee): a retry with the same key and body gets the stored `PublicBooking` with
+  `Idempotent-Replayed: true` and books nothing; a retry arriving while the first is still running waits for it; the same
+  key with another body → `409 conflict`; a malformed key → `400`. Errors are not stored.
 - Mini App init data is checked as Telegram documents (HMAC-SHA256 with the key `HMAC("WebAppData", bot token)`,
   `auth_date` within 24 h); the Telegram user id is the chat id.
-- `/start b_<token>` in the bot links the chat to the booking's client (when the chat has no client yet) and answers
-  with the booking status; later notices of that booking go to Telegram.
-- The bot sets its menu button to the Mini App («📅 Записаться», `web_app` → `PUBLIC_URL/book`) at start.
+- `/start b_<token>` in the bot answers with the booking: number, time, services, master and status («ждёт предоплату
+  до 14:35» / «ждёт подтверждения студии» / «подтверждена ✅» / «отменена» / «завершена»). A booking link proves
+  nothing about who opens it, so it does not link the chat itself: a chat not linked to any client also gets the usual
+  request to share the phone, and the shared contact links it to the card with that phone — later notices of the
+  booking then go to Telegram. A chat already linked to the booking's client is greeted «Анна, нашёл вашу запись ✅ …
+  Сюда придут уведомления о ней и напоминание перед визитом.» An unknown token — «Не нашёл эту запись — возможно, ссылка
+  устарела.» and the greeting.
+- The bot sets its menu button to the Mini App («📅 Записаться», `web_app` → `PUBLIC_URL/book`) at start (only for an
+  `https://` `PUBLIC_URL`; a failure is logged). After the `/start` greeting a client chat also gets «📅 Записаться можно
+  прямо здесь: выберите услугу, мастера и свободное время — это займёт минуту.» with the inline `web_app` button
+  «📅 Записаться онлайн», while online booking is on.
 
 ### Push notifications
 Staff iPhones get push notifications through APNs (token auth). Configured by env `APNS_KEY_ID`, `APNS_TEAM_ID`,
@@ -1366,7 +1406,10 @@ answer from the app (`POST /bot/chats/:chatId/messages`). Client tools:
   chat's linked client through the engine (see «Online booking», channel `bot`): `startsAt` is studio-local «YYYY-MM-DD
   HH:MM». The model calls it only after the client agreed to the services, the master (or «any») and the time it
   offered from `free_slots`; the result says what happens next (payment link sent as a button, or waiting for
-  confirmation) and the model tells the client in plain words. Unidentified chats are asked to share the phone.
+  confirmation) and the model tells the client in plain words. Unidentified chats are asked to share the phone. A taken
+  time answers with up to 8 free starts of that day; with online booking off the tool refuses and points to
+  `create_booking_request`. The system prompt's booking rule follows `onlineBooking.enabled` (on: book through
+  `book_appointment`, requests only for vague wishes; off: requests as before).
 - `create_booking_request { contactName, phone, serviceName, preferredTime, comment? }` — a `BookingRequest`; staff
   confirm the time. Used when the client has no exact time in mind or online booking is off.
 - `handoff_to_staff { reason }`.
@@ -1382,8 +1425,9 @@ answer from the app (`POST /bot/chats/:chatId/messages`). Client tools:
   nothing): number, time, services, master, status. Unidentified chats are asked to share the phone.
 - `free_slots { date, appointmentId?, serviceId?, masterId? }` — free starts on a studio-local date: inside the
   master's working time (see «WorkSchedule»: their own schedule minus breaks, else `StudioSettings.workdayStart`–
-  `workdayEnd`; studio timezone), every 30 minutes from the start of their working day, at least 1 hour from now, at most 90
-  days ahead, not overlapping the master's non-cancelled, non-no-show appointments. With `appointmentId` (the client's
+  `workdayEnd`; studio timezone), on the `onlineBooking.stepMinutes` grid from the start of their working day, at least
+  `onlineBooking.leadMinutes` from now, at most `onlineBooking.horizonDays` ahead, not overlapping the master's
+  non-cancelled, non-no-show appointments (online holds included). With `appointmentId` (the client's
   own) its duration and master are used and its own time does not count as busy; else `serviceId` gives the duration
   (default 60 min) and `masterId` one master (default: every active master — employees with `isMaster`, all active
   employees when none is). A master off that day is left out (named «не работает в этот день» when asked for by

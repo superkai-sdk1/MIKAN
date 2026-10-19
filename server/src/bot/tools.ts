@@ -11,6 +11,7 @@ import type { ProductRow, ServiceRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
 import { bookingRequestPush, clientMessagePush } from '../push/staff-events.js';
 import type { JewelryList } from './callback-data.js';
+import { BOOK_APPOINTMENT_TOOL, buildBookingToolHandler } from './booking-tool.js';
 import { buildClientToolHandlers } from './client-tools.js';
 import { photoMessageText, serviceCaptionTitle, servicePhotoSource } from './media.js';
 import { HISTORY_LIMIT } from './prompt.js';
@@ -22,8 +23,9 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'create_booking_request',
     description:
-      'Создаёт заявку на запись для администратора. Вызывай, когда клиент хочет записаться и ты уже знаешь его имя, ' +
-      'телефон, желаемую услугу и удобное время. Время не подтверждается автоматически — администратор свяжется с клиентом.',
+      'Создаёт заявку на запись для администратора. Вызывай, когда клиент хочет записаться, но точного времени у него нет ' +
+      '(«как-нибудь на выходных»), он просит, чтобы время подобрал администратор, или онлайн-запись выключена; нужны имя, ' +
+      'телефон, желаемая услуга и удобное время. Время не подтверждается автоматически — администратор свяжется с клиентом.',
     input_schema: {
       type: 'object',
       properties: {
@@ -116,9 +118,10 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'free_slots',
     description:
-      'Возвращает свободное время мастеров на дату в часы работы студии (шаг 30 минут). Для переноса записи передай ' +
-      'appointmentId — тогда учитываются её длительность и мастер. Для новой записи можно передать serviceId (длительность ' +
-      'услуги) и masterId. Предлагай клиенту 2–4 удобных варианта, а не весь список.',
+      'Возвращает свободное время мастеров на дату (в их рабочее время, с шагом и сроками онлайн-записи студии). Для ' +
+      'переноса записи передай appointmentId — тогда учитываются её длительность и мастер. Для новой записи передай ' +
+      'serviceId (длительность услуги) и masterId, если клиент хочет к конкретному мастеру. Предлагай клиенту 2–4 удобных ' +
+      'варианта, а не весь список.',
     input_schema: {
       type: 'object',
       properties: {
@@ -130,6 +133,7 @@ export const TOOLS: Anthropic.Tool[] = [
       required: ['date'],
     },
   },
+  BOOK_APPOINTMENT_TOOL,
   {
     name: 'reschedule_appointment',
     description:
@@ -181,10 +185,12 @@ export interface ToolSink {
   carousels: JewelryList[];
   notes: string[];
   /** Live actions that succeeded (used to confirm them if the model ends without text). */
-  done: Set<'booking' | 'handoff' | 'reschedule'>;
+  done: Set<'booking' | 'handoff' | 'reschedule' | 'online_booking'>;
+  /** Messages sent after the reply (the payment request of an online booking). */
+  after: Array<() => Promise<unknown>>;
 }
 
-export const emptySink = (): ToolSink => ({ products: [], services: [], carousels: [], notes: [], done: new Set() });
+export const emptySink = (): ToolSink => ({ products: [], services: [], carousels: [], notes: [], done: new Set(), after: [] });
 
 const invalid = (what: string): ToolResult => ({ content: `Некорректные данные: ${what}. Уточни у клиента и попробуй снова.`, isError: true });
 
@@ -220,6 +226,7 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
   const who = clientLabel(scope.telegramName, scope.username);
   return {
     ...buildClientToolHandlers(ctx, scope, sink),
+    book_appointment: buildBookingToolHandler(ctx, scope, sink),
     create_booking_request: async (raw) => {
       const parsed = bookingInput.safeParse(raw);
       if (!parsed.success) {

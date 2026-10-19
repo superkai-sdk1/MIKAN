@@ -31,6 +31,8 @@ export const REPLIES = {
   booked: 'Спасибо! Я передал заявку администратору — он свяжется с вами, чтобы подтвердить время 🙌',
   handedOff: 'Я передал ваш вопрос администратору — он скоро ответит здесь 🙏',
   rescheduled: 'Готово! Запись перенесена — напоминание придёт заранее 🙌',
+  onlineBooked: 'Готово! Время за вами 🙌 Студия подтвердит запись в ближайшее время.',
+  onlineBookedPay: 'Готово! Время за вами 🙌 Осталось внести предоплату — кнопка в следующем сообщении.',
   staffUnavailable: 'ИИ-помощник сейчас недоступен (выключен в настройках бота или исчерпан лимит ответов). Данные можно посмотреть в приложении MIKAN.',
   staffError: 'Не получилось подготовить ответ — попробуйте переформулировать вопрос или посмотрите данные в приложении MIKAN.',
 };
@@ -326,6 +328,7 @@ export class BotPipeline {
 
     // The model may finish with no text after a successful action — confirm the action instead of an error.
     const confirmation = result.outcome !== 'ok' ? '' :
+      sink.done.has('online_booking') ? (sink.after.length ? REPLIES.onlineBookedPay : REPLIES.onlineBooked) :
       sink.done.has('booking') ? REPLIES.booked : sink.done.has('handoff') ? REPLIES.handedOff : sink.done.has('reschedule') ? REPLIES.rescheduled : '';
     const text = result.text || confirmation;
     if (result.outcome === 'ok' && (text || sink.products.length || sink.services.length || sink.carousels.length)) {
@@ -333,6 +336,7 @@ export class BotPipeline {
         if (!employee) await this.escalate(chatId, 'не удалось доставить ответ бота в Telegram', last);
         return;
       }
+      for (const send of sink.after) await send();
       for (const service of sink.services) await this.sendService(chatId, service);
       for (const product of sink.products) await this.sendProduct(chatId, product);
       for (const list of sink.carousels) {
@@ -346,6 +350,8 @@ export class BotPipeline {
       await this.deliver(chatId, REPLIES.staffError);
       return;
     }
+    // A booking made before the AI failed still needs its payment request.
+    for (const send of sink.after) await send();
     const reason =
       result.outcome === 'refusal'
         ? 'ИИ отказался отвечать на сообщение'

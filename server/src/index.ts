@@ -13,6 +13,7 @@ import { DIGEST_CHECK_INTERVAL_MS, sendDueDigests } from './bot/digest.js';
 import { checkDiskSpace, DISK_CHECK_INTERVAL_MS, raiseAlert, resolveAlerts } from './domain/alerts.js';
 import { pruneAuditLog } from './domain/audit.js';
 import { runBackupIfDue } from './domain/backup.js';
+import { HOLD_CHECK_INTERVAL_MS, releaseUnpaidHolds } from './domain/online-booking-lifecycle.js';
 import { uploadBackupOffsite } from './domain/offsite-backup.js';
 import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
 import { studioTimezone } from './domain/settings.js';
@@ -89,6 +90,19 @@ async function main(): Promise<void> {
       });
   }, QR_SWEEP_INTERVAL_MS);
 
+  // Online bookings whose prepayment did not arrive in time free their time (docs/API.md «Online booking»).
+  let releasing = false;
+  const holdTimer = setInterval(() => {
+    if (releasing) return;
+    releasing = true;
+    releaseUnpaidHolds(ctx)
+      .then((released) => released && log.info({ released }, 'unpaid online holds released'))
+      .catch((err) => log.error({ err: errorMessage(err) }, 'online hold check failed'))
+      .finally(() => {
+        releasing = false;
+      });
+  }, HOLD_CHECK_INTERVAL_MS);
+
   let digesting = false;
   const digestTimer = setInterval(() => {
     if (digesting) return;
@@ -161,6 +175,7 @@ async function main(): Promise<void> {
     log.info({ signal }, 'shutting down');
     clearInterval(senderTimer);
     clearInterval(qrTimer);
+    clearInterval(holdTimer);
     clearInterval(digestTimer);
     clearInterval(backupTimer);
     clearInterval(diskTimer);

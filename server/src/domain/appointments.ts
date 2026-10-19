@@ -69,6 +69,8 @@ export interface AppointmentFilter {
   masterId?: number;
   clientId?: number;
   statuses?: string[];
+  /** Unsettled online bookings in these states (`awaiting_payment`, `awaiting_confirmation`), still open. */
+  onlineStates?: string[];
 }
 
 export function listAppointments(db: DbOrTx, f: AppointmentFilter): AppointmentRow[] {
@@ -78,6 +80,9 @@ export function listAppointments(db: DbOrTx, f: AppointmentFilter): AppointmentR
   if (f.masterId !== undefined) conditions.push(eq(appointments.masterId, f.masterId));
   if (f.clientId !== undefined) conditions.push(eq(appointments.clientId, f.clientId));
   if (f.statuses && f.statuses.length > 0) conditions.push(inArray(appointments.status, f.statuses));
+  if (f.onlineStates && f.onlineStates.length > 0) {
+    conditions.push(inArray(appointments.onlineState, f.onlineStates), inArray(appointments.status, ['scheduled', 'confirmed']));
+  }
   return db
     .select()
     .from(appointments)

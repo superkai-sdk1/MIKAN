@@ -323,8 +323,22 @@ export const appointmentOut = (
   createdAt: toIso(a.createdAt),
   updatedAt: toIso(a.updatedAt),
   cancellation,
+  channel: a.channel,
+  ...onlineOut(a),
 });
 export type AppointmentOut = ReturnType<typeof appointmentOut>;
+
+/** Statuses in which an online booking may still wait to be settled. */
+const UNSETTLED_STATUSES = ['scheduled', 'confirmed'];
+
+/**
+ * `onlineState` / `holdUntil` of an appointment: an online booking not settled yet. Once it is closed (cancelled,
+ * completed, no-show) it waits for nothing, whatever the stored state says.
+ */
+function onlineOut(a: AppointmentRow): { onlineState: string | null; holdUntil: string | null } {
+  const onlineState = a.onlineState != null && UNSETTLED_STATUSES.includes(a.status) ? a.onlineState : null;
+  return { onlineState, holdUntil: onlineState === 'awaiting_payment' ? toIso(a.holdUntil) : null };
+}
 
 export const saleItemOut = (i: SaleItemRow) => ({
   id: i.id,

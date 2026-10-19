@@ -11,6 +11,12 @@ import {
   legacyReminderHours,
   MAX_REMINDER_OFFSETS,
   normalizeReminderOffsets,
+  ONLINE_HOLD_MAX,
+  ONLINE_HOLD_MIN,
+  ONLINE_HORIZON_MAX,
+  ONLINE_LEAD_MAX,
+  ONLINE_NOTE_MAX,
+  ONLINE_STEPS,
   REMINDER_OFFSET_MAX,
   REMINDER_OFFSET_MIN,
   REVIEW_LINK_MAX,
@@ -69,6 +75,18 @@ const reviewLink = z
 
 const reviewLinks = z.object({ yandex: reviewLink, twogis: reviewLink, google: reviewLink });
 
+/** Each field omitted = unchanged; `note: null` clears it. */
+const onlineBooking = z.object({
+  enabled: nonNull(z.boolean()),
+  leadMinutes: nonNull(z.number().int().min(0).max(ONLINE_LEAD_MAX)),
+  horizonDays: nonNull(z.number().int().min(1).max(ONLINE_HORIZON_MAX)),
+  holdMinutes: nonNull(z.number().int().min(ONLINE_HOLD_MIN).max(ONLINE_HOLD_MAX)),
+  stepMinutes: nonNull(
+    z.number().int().refine((v) => (ONLINE_STEPS as readonly number[]).includes(v), { message: 'допустимо 15, 30 или 60 минут' }),
+  ),
+  note: text(ONLINE_NOTE_MAX),
+});
+
 const studioBody = z.object({
   name: nonNull(z.string().trim().min(1).max(200)),
   address: text(500),
@@ -83,6 +101,7 @@ const studioBody = z.object({
   /** Omitted = unchanged (older builds never send them). */
   cancellation: nonNull(cancellationRules),
   reviewLinks: nonNull(reviewLinks),
+  onlineBooking: nonNull(onlineBooking),
 });
 
 const botBody = z.object({
@@ -142,13 +161,14 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/settings/studio', async () => getStudioSettings(db));
 
   app.put('/settings/studio', async (request) => {
-    const { cancellation, reviewLinks: links, ...input } = parse(studioBody, request.body);
+    const { cancellation, reviewLinks: links, onlineBooking: online, ...input } = parse(studioBody, request.body);
     const current = getStudioSettings(db);
     const next: StudioSettings = {
       ...merge(current, input),
-      // Nested: each rule / link omitted = unchanged.
+      // Nested: each rule / link / booking setting omitted = unchanged.
       cancellation: merge(current.cancellation, cancellation ?? {}),
       reviewLinks: merge(current.reviewLinks, links ?? {}),
+      onlineBooking: merge(current.onlineBooking, online ?? {}),
     };
     // Only the calendar's default range: appointments outside it are still allowed.
     if (parseTimeOfDay(next.workdayEnd)! <= parseTimeOfDay(next.workdayStart)!) {
