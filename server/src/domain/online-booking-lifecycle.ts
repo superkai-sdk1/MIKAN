@@ -43,8 +43,10 @@ export const REJECTED_NOTE = 'Онлайн-запись отклонена';
 export const CLIENT_CANCELLED_NOTE = 'Отменена клиентом онлайн';
 /** The reason of a booking nobody confirmed in time (docs/API.md «StudioSettings» → `confirmationHours`). */
 export const UNCONFIRMED_REASON = 'Студия не успела подтвердить запись — выберите, пожалуйста, другое время';
-/** An unconfirmed booking is rejected at the latest this long before its start. */
+/** An unconfirmed booking is rejected at the latest this long before its start… */
 export const CONFIRM_BEFORE_START_MS = 2 * HOUR_MS;
+/** …but never sooner than this after it was made (a booking for the nearest free time is not rejected at once). */
+export const CONFIRM_MIN_WINDOW_MS = 30 * MINUTE_MS;
 
 const OPEN_STATUSES = ['scheduled', 'confirmed'];
 const isOpen = (a: AppointmentRow): boolean => OPEN_STATUSES.includes(a.status);
@@ -202,16 +204,22 @@ export async function releaseUnpaidHolds(ctx: AppContext, now = Date.now()): Pro
 
 // ---------- unconfirmed bookings ----------
 
-/** When an unconfirmed booking rejects itself: `hours` after it was made, or 2 hours before its start if earlier. */
+/**
+ * When an unconfirmed booking rejects itself: `hours` after it was made, or 2 hours before its start if earlier — but
+ * not sooner than 30 minutes after it was made.
+ */
 export function confirmationDeadline(a: Pick<AppointmentRow, 'createdAt' | 'startsAt'>, hours: number): number {
-  return Math.min(a.createdAt + hours * HOUR_MS, a.startsAt - CONFIRM_BEFORE_START_MS);
+  return Math.max(a.createdAt + CONFIRM_MIN_WINDOW_MS, Math.min(a.createdAt + hours * HOUR_MS, a.startsAt - CONFIRM_BEFORE_START_MS));
 }
 
-/** Rejects one booking like staff would (as `system`); false when it was settled meanwhile. */
+/**
+ * Rejects one booking like staff would (as `system`); false when it was settled meanwhile or holds a prepayment (staff
+ * took money for it: theirs to settle, and the cancellation rules must not keep any of it for the studio's delay).
+ */
 async function rejectUnconfirmed(ctx: AppContext, booking: AppointmentRow): Promise<boolean> {
   const result = ctx.db.transaction((tx) => {
     const before = getAppointmentRow(tx, booking.id);
-    if (!isOpen(before) || before.onlineState !== 'awaiting_confirmation') return null;
+    if (!isOpen(before) || before.onlineState !== 'awaiting_confirmation' || heldDeposit(tx, before.id) > 0) return null;
     return { before, after: rejected(tx, before, UNCONFIRMED_REASON, null) };
   });
   if (!result) return false;

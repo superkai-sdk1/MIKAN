@@ -70,6 +70,30 @@ describe('online booking: unconfirmed bookings are rejected by themselves', () =
     const createdAt = NOW;
     expect(confirmationDeadline({ createdAt, startsAt: NOW + 72 * HOUR }, 24)).toBe(NOW + 24 * HOUR);
     expect(confirmationDeadline({ createdAt, startsAt: NOW + 10 * HOUR }, 24)).toBe(NOW + 8 * HOUR);
+    // Never sooner than 30 minutes after it was made: the nearest free time is not rejected at once.
+    expect(confirmationDeadline({ createdAt, startsAt: NOW + 2 * HOUR }, 24)).toBe(NOW + 30 * MIN);
+    expect(confirmationDeadline({ createdAt, startsAt: NOW + 2 * HOUR + 45 * MIN }, 24)).toBe(NOW + 45 * MIN);
+  });
+
+  it('gives a booking for the nearest time 30 minutes before rejecting it', async () => {
+    await t.api('PUT', '/api/settings/studio', { onlineBooking: { leadMinutes: 60, stepMinutes: 60 } });
+    const booking = await book('2026-10-15T10:00:00.000Z'); // 13:00 Moscow, an hour from now
+    vi.setSystemTime(NOW + MIN);
+    expect(await rejectUnconfirmedBookings(t.ctx)).toBe(0);
+    vi.setSystemTime(NOW + 29 * MIN);
+    expect(await rejectUnconfirmedBookings(t.ctx)).toBe(0);
+    vi.setSystemTime(NOW + 30 * MIN);
+    expect(await rejectUnconfirmedBookings(t.ctx)).toBe(1);
+    expect((await appointment(booking.number)).status).toBe('cancelled');
+  });
+
+  it('leaves a booking that holds a prepayment to staff (nothing is kept by the cancellation rules)', async () => {
+    await t.api('PUT', '/api/settings/studio', { cancellation: { autoRetain: true } });
+    const booking = await book(FRIDAY_NOON);
+    expect((await t.api('POST', `/api/appointments/${booking.number}/deposit`, { amount: 500, method: 'transfer' })).statusCode).toBe(200);
+    vi.setSystemTime(NOW + 30 * HOUR);
+    expect(await rejectUnconfirmedBookings(t.ctx)).toBe(0);
+    expect(await appointment(booking.number)).toMatchObject({ status: 'scheduled', onlineState: 'awaiting_confirmation', deposit: 500 });
   });
 
   it('rejects one N hours after it was made, like staff would: client, staff chat, freed time, audit as system', async () => {

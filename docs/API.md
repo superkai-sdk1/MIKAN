@@ -605,7 +605,8 @@ carry the inline buttons «✅ Приду» and «🔁 Перенести» (see
   booking still `awaiting_confirmation` that long after it was made, or 2 hours before its start if that comes first,
   is rejected by itself with the reason «Студия не успела подтвердить запись — выберите, пожалуйста, другое время»
   (the client is told with the booking link, staff see it in the staff chat; audited as `system`; checked every
-  minute). On PUT omitted = unchanged.
+  minute). Never sooner than 30 minutes after it was made (a booking for the nearest free time is not rejected at
+  once); one holding a prepayment staff took is left to staff. On PUT omitted = unchanged.
 - `cancellation` — the studio's prepayment rules, told to clients and applied when a visit that holds a prepayment is
   cancelled or missed:
   - `freeHours` (0…336) — a cancellation at least this many hours before the start is free (the whole prepayment can
