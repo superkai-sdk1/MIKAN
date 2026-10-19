@@ -20,6 +20,7 @@ import type { EmployeeRow } from '../lib/serialize.js';
 import { isValidCalendarDate, localDate } from '../lib/time.js';
 import { idParams, nullableText, parse } from '../lib/validation.js';
 import { assertRole } from '../domain/permissions.js';
+import { trackWorkingTime } from '../domain/waitlist-hooks.js';
 
 /** Work schedules of masters (docs/API.md «Work schedules»): everyone reads, owners and admins change them. */
 
@@ -76,12 +77,15 @@ export function scheduleRoutes(app: FastifyInstance, ctx: AppContext): void {
     const { id } = parse(idParams, request.params);
     const weekly = parseWeekly((request.body as { weekly?: unknown } | null)?.weekly);
     employeeOr404(db, id);
+    // Working time the change adds may be offered to the waitlist.
+    const offerAdded = trackWorkingTime(db, id);
     const row = db
       .update(employees)
       .set({ weeklySchedule: weekly ? JSON.stringify(weekly) : null, updatedAt: Date.now() })
       .where(eq(employees.id, id))
       .returning()
       .get();
+    offerAdded();
     return workScheduleOut(db, row, today());
   });
 
@@ -102,6 +106,7 @@ export function scheduleRoutes(app: FastifyInstance, ctx: AppContext): void {
       note: input.note ?? null,
       updatedAt: now,
     };
+    const offerAdded = trackWorkingTime(db, id);
     db.transaction((tx) => {
       for (const day of dates) {
         tx.insert(scheduleDays)
@@ -110,6 +115,7 @@ export function scheduleRoutes(app: FastifyInstance, ctx: AppContext): void {
           .run();
       }
     });
+    offerAdded();
     return workScheduleOut(db, employee, today());
   });
 
@@ -120,9 +126,11 @@ export function scheduleRoutes(app: FastifyInstance, ctx: AppContext): void {
     const to = q.to ?? q.from;
     if (to < q.from) throw badRequest('Конец периода раньше начала');
     const employee = employeeOr404(db, id);
+    const offerAdded = trackWorkingTime(db, id);
     db.delete(scheduleDays)
       .where(and(eq(scheduleDays.employeeId, id), gte(scheduleDays.date, q.from), lte(scheduleDays.date, to)))
       .run();
+    offerAdded();
     return workScheduleOut(db, employee, today());
   });
 }

@@ -22,6 +22,7 @@ import { getAppointmentRow, getClientRow, serializeAppointment } from '../domain
 import { serializeService } from '../domain/services.js';
 import { sessionSnapshot } from '../domain/sessions.js';
 import { getStudioSettings, studioTimezone } from '../domain/settings.js';
+import { getWaitlistRow, serializeWaitlistEntry } from '../domain/waitlist.js';
 import { getProductRow } from '../domain/stock.js';
 import { errorMessage } from '../lib/errors.js';
 import { REPLAYED_HEADER } from '../lib/idempotency.js';
@@ -179,6 +180,7 @@ const SNAPSHOTS: Record<string, SnapshotLoader> = {
   'POST /campaigns/:id/test': campaign,
   'POST /campaigns/:id/cancel': campaign,
   'DELETE /campaigns/:id': campaign,
+  'PATCH /waitlist/:id': (ctx, p) => serializeWaitlistEntry(ctx.db, getWaitlistRow(ctx.db, idOf(p))),
   // Whose session ends and on which device.
   'POST /auth/logout': (ctx, _p, request) => sessionSnapshot(ctx.db, request.sessionId),
   'DELETE /auth/sessions/:id': (ctx, p) => sessionSnapshot(ctx.db, idOf(p)),

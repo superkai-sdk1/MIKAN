@@ -36,6 +36,7 @@ import { payrollRoutes } from './routes/payroll.js';
 import { productRoutes } from './routes/products.js';
 import { onlineBookingRoutes } from './routes/online-bookings.js';
 import { publicBookingRoutes } from './routes/public-booking.js';
+import { publicWaitlistRoutes } from './routes/public-waitlist.js';
 import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { receiptRoutes } from './routes/receipts.js';
 import { salesRoutes } from './routes/sales.js';
@@ -43,6 +44,7 @@ import { scheduleRoutes } from './routes/schedules.js';
 import { retentionSettingsRoutes } from './routes/retention-settings.js';
 import { settingsRoutes } from './routes/settings.js';
 import { uploadRoutes } from './routes/uploads.js';
+import { waitlistRoutes } from './routes/waitlist.js';
 
 export const APP_VERSION = '1.0.0';
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -173,7 +175,13 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
       api.get('/health', async () => ({ ok: true, version: APP_VERSION }));
       publicAuthRoutes(api, ctx);
       // The booking page and the Mini App: no auth, rate-limited per IP.
-      await api.register(async (open) => publicBookingRoutes(open, ctx), { prefix: '/public/booking' });
+      await api.register(
+        async (open) => {
+          publicBookingRoutes(open, ctx);
+          publicWaitlistRoutes(open, ctx);
+        },
+        { prefix: '/public/booking' },
+      );
       await api.register(async (secured) => {
         secured.addHook('onRequest', authenticate(ctx));
         secured.addHook('preHandler', authorize(ctx.db));
@@ -204,6 +212,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         auditRoutes(secured, ctx);
         payrollRoutes(secured, ctx);
         deviceRoutes(secured, ctx);
+        waitlistRoutes(secured, ctx);
       });
     },
     { prefix: '/api' },

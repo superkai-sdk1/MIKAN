@@ -75,6 +75,8 @@ const FIELD_LABELS: Record<string, string> = {
   initialQuantity: 'Начальный остаток',
   from: 'Начало периода',
   to: 'Конец периода',
+  dateFrom: 'Даты с',
+  dateTo: 'Даты по',
   limit: 'Лимит',
   offset: 'Смещение',
   sku: 'Артикул',

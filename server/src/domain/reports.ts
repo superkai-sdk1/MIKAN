@@ -7,6 +7,7 @@ import { hasLowStock } from './products.js';
 import { employeeRefOrMissing, employeesByIds, productsByIds, variantsByIds } from './refs.js';
 import { isCertificateLine, lineRevenues, saleRevenueSql } from './sale-revenue.js';
 import { studioTimezone } from './settings.js';
+import { openEntryCount } from './waitlist-store.js';
 
 const TOP_LIMIT = 10;
 
@@ -241,5 +242,6 @@ export function badges(db: DbOrTx) {
         )
         .get(),
     ),
+    waitlist: openEntryCount(db),
   };
 }

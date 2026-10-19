@@ -148,6 +148,7 @@ const KEY_DIGESTS_SENT = 'digestsSent';
 const KEY_ALERTS = 'alerts';
 const KEY_RETENTION = 'retention';
 const KEY_DISMISSED_DUPLICATES = 'clientDuplicatesDismissed';
+const KEY_WAITLIST_FREED = 'waitlistFreed';
 
 function readKey<T>(db: DbOrTx, key: string): T | null {
   const row = db.select().from(settings).where(eq(settings.key, key)).get();
@@ -318,4 +319,13 @@ export function getDismissedDuplicatePairs(db: DbOrTx): string[] {
 
 export function setDismissedDuplicatePairs(db: DbOrTx, pairs: readonly string[]): void {
   writeKey(db, KEY_DISMISSED_DUPLICATES, pairs);
+}
+
+/** Freed time waiting for the waitlist check (domain/waitlist-store.ts validates the items). */
+export function readWaitlistFreed(db: DbOrTx): unknown {
+  return readKey<unknown>(db, KEY_WAITLIST_FREED);
+}
+
+export function writeWaitlistFreed(db: DbOrTx, value: unknown): void {
+  writeKey(db, KEY_WAITLIST_FREED, value);
 }

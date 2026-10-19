@@ -6,6 +6,7 @@ import { catalogSummaries } from './audit-summaries-catalog.js';
 import { loyaltySummaries } from './audit-summaries-loyalty.js';
 import { teamSummaries } from './audit-summaries-team.js';
 import { visitSummaries } from './audit-summaries-visits.js';
+import { waitlistSummaries } from './audit-summaries-waitlist.js';
 
 /** One successful write request, as the capture hook (routes/audit-capture.ts) saw it. */
 export interface SummaryContext {
@@ -37,6 +38,7 @@ export const SUMMARY_BUILDERS: Record<string, SummaryBuilder> = {
   ...teamSummaries,
   ...loyaltySummaries,
   ...campaignSummaries,
+  ...waitlistSummaries,
 };
 
 /** First path segment → entity, for routes without a specific summary. */
@@ -61,6 +63,7 @@ const PATH_ENTITIES: Record<string, string> = {
   bot: 'bot',
   'booking-requests': 'bot',
   campaigns: 'campaign',
+  waitlist: 'waitlist',
 };
 
 const VERBS: Record<string, string> = { POST: 'create', PUT: 'update', PATCH: 'update', DELETE: 'delete' };

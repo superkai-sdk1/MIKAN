@@ -6,6 +6,7 @@ import { chatEmployee, findChat, getChat, setChatEmployee, storeMessage, upsertC
 import { createClient, findClientByChat, findClientByLinkToken, findClientByPhone, linkTelegram } from '../domain/clients.js';
 import { BOOKING_START_PREFIX } from '../domain/online-booking-links.js';
 import { getBotSettings, getStudioSettings } from '../domain/settings.js';
+import { WAITLIST_START_PREFIX, waitlistStartText } from '../domain/waitlist-messages.js';
 import { errorMessage } from '../lib/errors.js';
 import { isPlausiblePhone, normalizePhone } from '../lib/phone.js';
 import { clientFullName, type BotChatRow, type EmployeeRow } from '../lib/serialize.js';
@@ -66,8 +67,8 @@ export interface SharedContact {
 }
 
 /**
- * `/start` (optionally with a `c<token>` deep-link payload from POST /clients/:id/telegram-link, or `b_<token>` from
- * an online booking's page).
+ * `/start` (optionally with a `c<token>` deep-link payload from POST /clients/:id/telegram-link, `b_<token>` from
+ * an online booking's page or `w_<id>` from the booking page after joining the waitlist).
  */
 export function handleStart(ctx: AppContext, from: IncomingFrom, payload: string): OnboardingReply {
   const { db } = ctx;
@@ -76,7 +77,10 @@ export function handleStart(ctx: AppContext, from: IncomingFrom, payload: string
   let text = greeting;
   const token = payload.trim();
   const bookingLink = token.startsWith(BOOKING_START_PREFIX) && token.length > BOOKING_START_PREFIX.length;
-  if (bookingLink) {
+  const waitlistLink = token.startsWith(WAITLIST_START_PREFIX) && token.length > WAITLIST_START_PREFIX.length;
+  if (waitlistLink) {
+    text = waitlistStartText(db, from.chatId, token.slice(WAITLIST_START_PREFIX.length));
+  } else if (bookingLink) {
     text =
       bookingStartText(ctx, from, token.slice(BOOKING_START_PREFIX.length)) ??
       `Не нашёл эту запись — возможно, ссылка устарела.\n\n${greeting}`;
@@ -93,7 +97,9 @@ export function handleStart(ctx: AppContext, from: IncomingFrom, payload: string
     }
   }
   const employee = chatEmployee(db, findChat(db, from.chatId));
-  if (employee && !bookingLink && !(token.startsWith('c') && token.length > 1)) text = staffGreeting(getStudioSettings(db).name, employee);
+  if (employee && !bookingLink && !waitlistLink && !(token.startsWith('c') && token.length > 1)) {
+    text = staffGreeting(getStudioSettings(db).name, employee);
+  }
   const linked = findClientByChat(db, from.chatId) !== null;
   // Telegram never tells a bot the user's phone: ask for it, or employees go on chatting unrecognised, as clients.
   if (!linked && !employee) text = `${text}\n\n${SHARE_PHONE_HINT}`;

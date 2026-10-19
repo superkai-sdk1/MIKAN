@@ -20,6 +20,8 @@ import { HOLD_CHECK_INTERVAL_MS, releaseUnpaidHolds } from './domain/online-book
 import { uploadBackupOffsite } from './domain/offsite-backup.js';
 import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
 import { studioTimezone } from './domain/settings.js';
+import { expireWaitlist } from './domain/waitlist.js';
+import { FREED_CHECK_INTERVAL_MS, offerFreedTime, WAITLIST_EXPIRY_INTERVAL_MS } from './domain/waitlist-matcher.js';
 import { errorMessage } from './lib/errors.js';
 import { createQrProvider } from './payments/tochka.js';
 import { createHttp2Transport } from './push/apns.js';
@@ -105,6 +107,29 @@ async function main(): Promise<void> {
         releasing = false;
       });
   }, HOLD_CHECK_INTERVAL_MS);
+
+  // Freed time is offered to the waitlist; entries past their dates expire (docs/API.md «Waitlist»).
+  let offering = false;
+  const waitlistTimer = setInterval(() => {
+    if (offering) return;
+    offering = true;
+    offerFreedTime(ctx)
+      .then((told) => told && log.info({ told }, 'waitlist clients told about freed time'))
+      .catch((err) => log.error({ err: errorMessage(err) }, 'waitlist freed time check failed'))
+      .finally(() => {
+        offering = false;
+      });
+  }, FREED_CHECK_INTERVAL_MS);
+  const waitlistExpiryTick = () => {
+    try {
+      const expired = expireWaitlist(db);
+      if (expired) log.info({ expired }, 'waitlist entries expired');
+    } catch (err) {
+      log.error({ err: errorMessage(err) }, 'waitlist expiry failed');
+    }
+  };
+  const waitlistExpiryTimer = setInterval(waitlistExpiryTick, WAITLIST_EXPIRY_INTERVAL_MS);
+  waitlistExpiryTick();
 
   let digesting = false;
   const digestTimer = setInterval(() => {
@@ -217,6 +242,8 @@ async function main(): Promise<void> {
     clearInterval(senderTimer);
     clearInterval(qrTimer);
     clearInterval(holdTimer);
+    clearInterval(waitlistTimer);
+    clearInterval(waitlistExpiryTimer);
     clearInterval(digestTimer);
     clearInterval(campaignTimer);
     clearInterval(retentionTimer);
