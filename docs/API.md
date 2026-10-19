@@ -157,7 +157,7 @@ The detailed statement adds `"lines"`: `[ { "date", "kind": "service"|"product",
 ```json
 { "id": 1, "at": "...", "employee": { EmployeeRef } | null, "source": "app",
   "action": "appointment.update", "entity": "appointment", "entityId": 1846,
-  "summary": "Перенесла запись №1846 (Анна Иванова) с 20 октября, 14:00 на 21 октября, 15:00",
+  "summary": "Запись №1846 (Анна Иванова) перенесена с 20 октября, 14:00 на 21 октября, 15:00",
   "changes": { "startsAt": { "from": "...", "to": "..." } } }
 ```
 `source`: `app` | `bot_staff` | `bot` (a client through the bot) | `system` (the server by itself: automatic
@@ -639,9 +639,9 @@ outside the hours, overlapping breaks, `end` ≤ `start` → `400` with the Russ
   `POST /uploads`, `POST /bot/chats/:chatId/read`, `POST /bot/staff-code` and idempotent replays; client actions in
   the bot (booking request, reschedule, confirm «Приду») as `bot`; staff bot actions as `bot_staff`; automatic
   prepayment retain and bank-confirmed QR payments as `system`.
-- `summary` is written for people, in Russian, with the verb in the actor's form where the app shows it
-  («Перенесла запись №…», «Вернул продажу №… на 3 500 ₽», «Изменила цену «Мочка»: 1 600 → 1 800 ₽»,
-  «Назначил Фатиме роль «Мастер»»). Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
+- `summary` is written for people, in Russian, impersonal (the employee's gender is not stored; the app shows who
+  next to it): «Запись №1846 (Анна Иванова) перенесена с … на …», «Продажа №1580 возвращена: 3 500 ₽»,
+  «Цена «Мочка»: 1 600 → 1 800 ₽», «Фатиме назначена роль «Мастер»». Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
   `service`, `product`, `stock`, `category`, `aftercare`, `knowledge`, `employee`, `schedule`, `payroll`,
   `settings`, `bot`.
 - Kept 2 years (older rows are pruned daily). A failure to write the log never fails the request (it is logged).
