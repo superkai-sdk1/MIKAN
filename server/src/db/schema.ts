@@ -48,6 +48,8 @@ export const clients = sqliteTable(
     telegramChatId: integer('telegram_chat_id').unique(),
     telegramUsername: text('telegram_username'),
     botEnabled: bool('bot_enabled').notNull().default(true),
+    /** The client asked for no news and offers (campaigns, birthday, win-back); service messages still go. */
+    marketingOptOut: bool('marketing_opt_out').notNull().default(false),
     archived: bool('archived').notNull().default(false),
     linkToken: text('link_token').unique(),
     searchText: text('search_text').notNull().default(''),
@@ -331,6 +333,10 @@ export const sales = sqliteTable(
     payQr: integer('pay_qr').notNull().default(0),
     /** Covered by the appointment's prepayment (received earlier; see `deposit_operations` type `apply`). */
     payDeposit: integer('pay_deposit').notNull().default(0),
+    /** Paid with the client's loyalty bonuses (1 bonus = 1 ₽; a discount, not revenue). */
+    payBonus: integer('pay_bonus').notNull().default(0),
+    /** Paid with gift certificates (money received when the certificate was sold). */
+    payCertificate: integer('pay_certificate').notNull().default(0),
     status: text('status').notNull(),
     note: text('note'),
     refundedAt: ms('refunded_at'),
@@ -361,6 +367,8 @@ export const saleItems = sqliteTable(
     /** The size's name at the moment of sale; null for services, unnamed sizes and items sold before sizes existed. */
     variantName: text('variant_name'),
     serviceId: integer('service_id').references(() => services.id),
+    /** The gift certificate this line sold (`type: certificate`). */
+    certificateId: integer('certificate_id'),
     /** Snapshot: «<product> — <size>» for products, the service line name otherwise. */
     name: text('name').notNull(),
     quantity: integer('quantity').notNull(),
@@ -772,4 +780,141 @@ export const pushDevices = sqliteTable(
     lastSeenAt: ms('last_seen_at').notNull(),
   },
   (t) => [index('push_devices_employee_idx').on(t.employeeId)],
+);
+
+/**
+ * The loyalty bonus ledger (docs/API.md «Loyalty bonuses»): every change of a client's balance. Credits (`earn`,
+ * `gift`, positive `adjust`) are lots spent oldest first; `remaining` is what is left of a lot, `expires_at` when
+ * the rest of it burns.
+ */
+export const bonusOperations = sqliteTable(
+  'bonus_operations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    /** `earn` | `spend` | `gift` | `expire` | `adjust` | `reverse` (a refunded sale's bonuses taken back or returned). */
+    type: text('type').notNull(),
+    /** Signed: credits > 0, debits < 0. */
+    amount: integer('amount').notNull(),
+    /** Unspent part of a credit; 0 for debits. */
+    remaining: integer('remaining').notNull().default(0),
+    expiresAt: ms('expires_at'),
+    saleId: integer('sale_id').references(() => sales.id),
+    note: text('note'),
+    employeeId: integer('employee_id').references(() => employees.id),
+    createdAt: ms('created_at').notNull(),
+  },
+  (t) => [
+    index('bonus_operations_client_idx').on(t.clientId, t.createdAt),
+    index('bonus_operations_expiry_idx').on(t.expiresAt),
+  ],
+);
+
+/** Gift certificates (docs/API.md «Gift certificates»): sold at the till, spent in parts until the balance is 0. */
+export const giftCertificates = sqliteTable(
+  'gift_certificates',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    /** «MIKAN-7K3Q-9F2D»: what the client shows; unique. */
+    code: text('code').notNull().unique(),
+    amount: integer('amount').notNull(),
+    balance: integer('balance').notNull(),
+    /** `active` | `used` | `expired` | `cancelled`. */
+    status: text('status').notNull(),
+    expiresAt: ms('expires_at'),
+    buyerClientId: integer('buyer_client_id').references(() => clients.id),
+    recipientName: text('recipient_name'),
+    note: text('note'),
+    saleId: integer('sale_id').references(() => sales.id),
+    createdBy: integer('created_by').references(() => employees.id),
+    createdAt: ms('created_at').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  (t) => [index('gift_certificates_status_idx').on(t.status, t.expiresAt)],
+);
+
+/** Every change of a certificate's balance. */
+export const certificateOperations = sqliteTable(
+  'certificate_operations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    certificateId: integer('certificate_id')
+      .notNull()
+      .references(() => giftCertificates.id),
+    /** `issue` | `redeem` | `refund` (a refunded sale gives it back) | `cancel` | `expire`. */
+    type: text('type').notNull(),
+    /** Signed change of the balance. */
+    amount: integer('amount').notNull(),
+    saleId: integer('sale_id').references(() => sales.id),
+    employeeId: integer('employee_id').references(() => employees.id),
+    createdAt: ms('created_at').notNull(),
+  },
+  (t) => [index('certificate_operations_certificate_idx').on(t.certificateId, t.createdAt)],
+);
+
+/** Telegram campaigns (docs/API.md «Campaigns»): one message to a segment of clients. */
+export const campaigns = sqliteTable(
+  'campaigns',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    title: text('title').notNull(),
+    text: text('text').notNull(),
+    imageUrl: text('image_url'),
+    /** JSON `{ text, kind: "book" | "url", url? }` or NULL. */
+    button: text('button'),
+    /** JSON `CampaignSegment`. */
+    segment: text('segment').notNull(),
+    /** `draft` | `scheduled` | `sending` | `sent` | `cancelled`. */
+    status: text('status').notNull(),
+    scheduledAt: ms('scheduled_at'),
+    startedAt: ms('started_at'),
+    finishedAt: ms('finished_at'),
+    createdBy: integer('created_by').references(() => employees.id),
+    createdAt: ms('created_at').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  (t) => [index('campaigns_status_idx').on(t.status, t.scheduledAt)],
+);
+
+/** One client of a campaign: fixed when sending starts, delivered at a safe rate. */
+export const campaignRecipients = sqliteTable(
+  'campaign_recipients',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    campaignId: integer('campaign_id')
+      .notNull()
+      .references(() => campaigns.id),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    chatId: integer('chat_id').notNull(),
+    /** `pending` | `sent` | `failed` | `blocked` | `skipped`. */
+    status: text('status').notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    error: text('error'),
+    sentAt: ms('sent_at'),
+  },
+  (t) => [
+    uniqueIndex('campaign_recipients_unique').on(t.campaignId, t.clientId),
+    index('campaign_recipients_status_idx').on(t.campaignId, t.status),
+  ],
+);
+
+/** Automatic retention messages already sent: a birthday once a year, a win-back once per absence. */
+export const retentionSends = sqliteTable(
+  'retention_sends',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    /** `birthday` | `winback`. */
+    kind: text('kind').notNull(),
+    /** `2026` for a birthday; the date of the last visit for a win-back. */
+    periodKey: text('period_key').notNull(),
+    sentAt: ms('sent_at').notNull(),
+  },
+  (t) => [uniqueIndex('retention_sends_unique').on(t.clientId, t.kind, t.periodKey)],
 );

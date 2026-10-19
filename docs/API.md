@@ -130,6 +130,7 @@ All optional numbers default to 0 / `null`; percents 0…100, money ≥ 0 (integ
 - `perDay` — for each studio day on which the employee completed at least one visit (as master) or made a sale.
 - `servicePercent` — share of the **service revenue of their completed visits** (their `masterId`): the service lines
   of the non-refunded sales of those visits, after the sale discount (split proportionally like analytics).
+  Bonus payments count as discount here too; gift certificate lines are not revenue (paying with a certificate is).
   `categoryPercent` overrides it per service category (`null` = use `servicePercent`).
 - `deductMaterials` — the cost of consumables written off for the visit (usage movements × the product's unit cost)
   is subtracted from that visit's service revenue before the percent (never below 0).
@@ -193,7 +194,7 @@ online hold released). `employee` is `null` for `bot` and `system`.
   "telegramNick": "ivan_petrov", "birthday": "1995-04-12", "notes": "Аллергия на никель", "source": "instagram",
   "telegramLinked": true, "telegramUsername": "ivanp", "botEnabled": true,
   "archived": false, "createdAt": "...", "updatedAt": "...",
-  "stats": null }
+  "marketingOptOut": false, "stats": null, "loyalty": null }
 ```
 - The client card: `name` (first name, required), `lastName`, `birthday`, `phone` (required), `telegramNick`; the
   other fields are optional extras.
@@ -210,6 +211,13 @@ online hold released). `employee` is `null` for `bot` and `system`.
 - `stats` is `null` in lists and filled in `GET /clients/:id`:
   `{ "visits": 3, "totalSpent": 25000, "lastVisitAt": "..." | null, "upcomingAppointments": 1 }`
   (`visits` = completed appointments; `totalSpent` = sum of non-refunded sales totals).
+- `marketingOptOut` — the client asked for no news and offers: no campaigns, birthday or win-back messages (service
+  messages — reminders, aftercare, booking notices — still go). Set by the client's «🔕 Не присылать новости» button
+  in the bot, or by staff on the card.
+- `loyalty` is `null` in lists and filled in `GET /clients/:id`: `{ "bonusBalance": 1200, "expiring": { "amount":
+  500, "at": "..." } | null, "birthdayDiscount": { "percent": 10, "until": "2026-10-26" } | null }` — `expiring` is the
+  nearest burning lot; `birthdayDiscount` while today is inside the client's birthday window (see «Birthday and
+  win-back»).
 
 ### Service
 ```json
@@ -416,7 +424,8 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   "items": [ { "id": 1, "type": "product", "productId": 1, "variantId": 5, "variantName": "8 мм",
                "serviceId": null, "name": "Лабрет — 8 мм", "quantity": 1, "price": 1500, "total": 1500 } ],
   "subtotal": 1500, "discount": 0, "total": 1500,
-  "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 0 },
+  "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 0, "bonus": 0, "certificate": 0 },
+  "bonusEarned": 75,
   "status": "completed", "note": null, "refundedAt": null, "refundReason": null, "createdAt": "..." }
 ```
 - `type`: `product` (requires `productId`; decrements the stock of the sold size) | `service` (`serviceId` optional;
@@ -428,7 +437,13 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
 - `status`: `completed` | `refunded`.
 - `payments.qr` — paid by an SBP QR code (Tochka); only set on sales created from a confirmed `QrPayment`.
 - `payments.deposit` — part of the total covered by the appointment's prepayment (money received earlier and
-  already counted when received, so it is not cash in the drawer now). `cash + card + transfer + qr + deposit = total`.
+  already counted when received, so it is not cash in the drawer now).
+- `payments.bonus` — paid with the client's loyalty bonuses; `payments.certificate` — paid with gift certificates.
+  `cash + card + transfer + qr + deposit + bonus + certificate = total`. `bonusEarned` — bonuses credited for this sale
+  (0 when none; taken back on refund).
+- A gift certificate sold in the sale is a line with `certificateId` set. In responses it has `type: "service"`,
+  `serviceId: null`, `name: "Подарочный сертификат MIKAN-7K3Q-9F2D"` (older builds know only `product` | `service`);
+  apps treat any line with `certificateId` as a certificate.
 
 ### OpenReceipt (открытый чек)
 ```json
@@ -1034,9 +1049,17 @@ the background.
 { "clientId": 1, "appointmentId": 4,
   "items": [ { "type": "product", "productId": 1, "variantId": 5, "quantity": 1, "price": 1500 },
              { "type": "service", "serviceId": 3, "name": "Прокол мочки", "quantity": 1, "price": 2500 } ],
-  "discount": 500, "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 2000 }, "note": null,
+  "discount": 500, "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 2000, "bonus": 0,
+  "certificates": [ { "code": "MIKAN-7K3Q-9F2D", "amount": 1000 } ] }, "note": null,
   "receiptId": 7 }
 ```
+- A certificate is sold as an item `{ "type": "certificate", "price": 5000, "recipientName": "Маше", "note": null }`
+  (quantity 1, any nominal 500…100 000): the sale issues it (see «Gift certificates»). A sale with a certificate item
+  cannot be paid with bonuses or certificates (`400`) and earns no bonuses on that item.
+- `payments.bonus` needs `clientId` and loyalty on; at most the client's balance (`409` «На счёте 1 200 бонусов») and
+  at most `maxPaymentPercent` of `total` (`400` «Бонусами можно оплатить не больше 30% чека — 1 500 ₽»).
+- `payments.certificates` — codes and amounts spent: each code active and not expired (`409` «Сертификат … не
+  действует»), amount ≤ its balance (`409` «На сертификате … осталось 800 ₽»); the sum is `payments.certificate`.
 - `receiptId` — the open receipt being paid (optional): deleted together with the sale (see «Open receipts»).
 - `price` per item is the unit price actually charged (defaults to the catalog price if omitted: for a product, the
   size's price ?? the product's).
@@ -1044,7 +1067,8 @@ the background.
   (older builds) the product's only size is sold; a product with several sizes → `409 conflict` «У «Лабрет» несколько
   размеров. Обновите приложение MIKAN, чтобы выбрать размер.». Consumables cannot be sold (`400`).
 - `subtotal = Σ quantity × price`; `total = subtotal − discount` (`0 ≤ discount ≤ subtotal`);
-  `payments.cash + payments.card + payments.transfer + payments.qr + payments.deposit` must equal `total` (`400` otherwise).
+  `cash + card + transfer + qr + deposit + bonus + Σ certificates` must equal `total` (`400` otherwise). Older
+  builds send none of the new keys (= 0).
 - `payments.deposit` — the appointment's held prepayment counted in this receipt: needs `appointmentId` (`400`
   otherwise) and must not exceed the held amount (`409`). The app applies `min(held, total)`; a remainder stays held
   for the appointment (staff refund or retain it). If the appointment holds a prepayment and the body has no
@@ -1122,6 +1146,11 @@ splits each by size (current size name, `""` for a product without sizes), sorte
 `/reports/summary` is kept unchanged for older app builds; current builds read `/reports/analytics`.
 
 #### Analytics
+Loyalty in analytics: `revenue` excludes bonus payments and certificate sales (see «Loyalty bonuses», «Gift
+certificates»); the response adds `"loyalty": { "bonusEarned", "bonusSpent", "bonusExpired", "bonusOutstanding",
+"certificatesSold", "certificatesRedeemed", "certificatesExpired", "certificatesOutstanding" }` for the period
+(outstanding = at the end of it), and `payments` gains `bonus` and `certificate`.
+
 `GET /reports/analytics?from=&to=` (instants, the app sends studio-local day boundaries) — the whole financial
 picture of `[from, to)` plus the headline numbers of the **previous period of the same length**
 `[from − (to − from), from)` for deltas. Same limits and `400` messages as the summary («Конец периода должен быть
@@ -1368,6 +1397,112 @@ Payload: `{ "aps": { "alert": { "title", "body" }, "sound": "default", "thread-i
 Devices of inactive employees get nothing. A device answered `410` / `BadDeviceToken` / `Unregistered` is deleted.
 The app asks for permission after sign-in, registers the token (`POST /devices`), removes it on sign-out, and a tap
 opens the appointment, the chat or the list of online bookings.
+
+### Retention settings
+`GET /settings/retention` · `PUT /settings/retention` (owner, admin; omitted = unchanged, each field validated)
+```json
+{ "loyalty": { "enabled": true, "cashbackPercent": 5, "maxPaymentPercent": 30, "expiryDays": null,
+               "notifyClient": true },
+  "birthday": { "enabled": true, "sendAt": "10:00", "text": "{name}, с днём рождения! 🎂 …",
+                "bonusAmount": 500, "bonusDays": 14, "discountPercent": 10, "discountDaysBefore": 7,
+                "discountDaysAfter": 7 },
+  "winback": { "enabled": true, "afterMonths": 6, "sendAt": "12:00", "text": "{name}, давно не виделись! …",
+               "bonusAmount": 0, "bonusDays": 30, "dailyLimit": 50 },
+  "certificates": { "validityMonths": 12 } }
+```
+- `loyalty`: `cashbackPercent` 0…50, `maxPaymentPercent` 0…100, `expiryDays` (1…3650 or `null` = earned bonuses never
+  burn), `notifyClient` — the bot tells the client what was credited after a paid sale («+75 бонусов, на счёте
+  1 275»). `enabled: false` — nothing is earned or spent; balances stay.
+- `birthday`: greeting text (`{name}` = the client's first name) sent at `sendAt` studio time on the birthday;
+  `bonusAmount` (0 = none) gift bonuses that burn after `bonusDays`; `discountPercent` (0 = none) — the
+  `birthdayDiscount` the app offers at checkout from `discountDaysBefore` days before to `discountDaysAfter` days after.
+- `winback`: `afterMonths` 1…24; `text` with `{name}`; optional gift bonuses; `dailyLimit` 1…500 messages a day.
+- `certificates.validityMonths` 1…60 or `null` (never expire); default 12.
+Defaults as above; texts default to warm Russian greetings.
+
+### Loyalty bonuses
+1 bonus = 1 ₽. A completed sale with a client earns `floor(cashbackPercent × base / 100)`, where `base = total −
+payments.bonus − payments.certificate − certificate items`. Bonuses are spent at checkout (`payments.bonus`), oldest
+lots first. Earned bonuses are available at once; a lot with `expiresAt` burns its unspent rest then (an `expire`
+operation, checked hourly). A refund returns the spent bonuses and takes back the earned ones (never below 0).
+Bonuses paid count as a discount: analytics `revenue` and payroll revenue exclude them (split across the lines like
+the sale discount).
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/clients/:id/bonuses?limit=&offset=` | — | `{ balance, items: [BonusOperation], total }` newest first |
+| POST | `/clients/:id/bonuses` | `{ amount (≠ 0), note, expiresAt? }` | `BonusOperation` (`adjust`) · owner, admin · the balance never goes below 0 (`409`) |
+
+`BonusOperation`: `{ id, type: "earn"|"spend"|"gift"|"expire"|"adjust"|"reverse", amount, remaining, expiresAt,
+saleId, saleNumber, note, employee: EmployeeRef | null, createdAt }`.
+
+### Gift certificates
+Sold at the till as a sale item (see «Sales»): the sale issues a certificate with a code «MIKAN-XXXX-XXXX» (letters
+and digits without look-alikes), `amount` = `balance` = the price, `expiresAt` = now + `validityMonths`. It is spent
+in parts at checkout (`payments.certificates`) until the balance is 0 (`used`); after `expiresAt` it is `expired`
+(checked hourly). Selling counts as money received but not as revenue (analytics `certificatesSold`); spending
+counts as revenue of the sale it pays. Refunds: a sale paid with a certificate gives the amount back to it; a sale that
+sold an unspent certificate cancels it (`409` when it was already spent in part).
+
+`GiftCertificate`: `{ id, code, amount, balance, status: "active"|"used"|"expired"|"cancelled", expiresAt,
+buyer: ClientRef | null, recipientName, note, saleId, saleNumber, operations: [ { type, amount, saleId, saleNumber,
+createdAt } ], createdAt }`.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/certificates?status=&q=&limit=&offset=` | — | `{ items: [GiftCertificate], total }` newest first; `q` — code or recipient |
+| GET | `/certificates/code/:code` | — | `GiftCertificate` (code case- and dash-insensitive) · `404` «Сертификат не найден» |
+| PATCH | `/certificates/:id` | `{ recipientName?, note?, expiresAt? }` | `GiftCertificate` · `expiresAt` owner only |
+| POST | `/certificates/:id/cancel` | `{ reason }` | `GiftCertificate` · owner · the balance burns |
+| POST | `/certificates/:id/send` | `{ chatId? }` | `{ sent: true }` — the bot sends the certificate card to the buyer's linked chat (or `chatId`): «🎁 Подарочный сертификат MIKAN STUDIO на 5 000 ₽ · код MIKAN-7K3Q-9F2D · действует до 19 октября 2027» |
+
+The app renders a certificate card (studio name, amount, code, valid until, recipient) to share or print. The bot
+answers a client who asks about a certificate by code (`certificate_balance { code }`: balance and validity, never
+the buyer).
+
+### Campaigns (рассылки)
+Owner and admin send Telegram messages to a segment of clients. Recipients are clients with a linked Telegram chat,
+`botEnabled`, not `marketingOptOut`, not archived, matching every condition of the segment.
+
+`CampaignSegment` (all optional, combined with AND): `{ "lastVisitMonthsAgoMin": 3, "lastVisitMonthsAgoMax": 12,
+"neverVisited": false, "categories": ["piercing"], "masterIds": [2], "minVisits": 2, "birthdayMonth": 11,
+"hasBonuses": true, "createdWithinDays": 30 }` — last visit = last completed appointment; `categories` / `masterIds`
+— had a completed visit with such a service / master.
+
+`Campaign`: `{ id, title, text, imageUrl, button: { text, kind: "book"|"url", url? } | null, segment, status:
+"draft"|"scheduled"|"sending"|"sent"|"cancelled", scheduledAt, startedAt, finishedAt, stats: { recipients, sent,
+failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/campaigns` | — | `{ items: [Campaign] }` newest first |
+| POST | `/campaigns` | `{ title, text, imageUrl?, button?, segment }` | `Campaign` (draft) |
+| PATCH | `/campaigns/:id` | any of the above | `Campaign` · drafts and scheduled only |
+| POST | `/campaigns/preview` | `{ segment }` | `{ count, sample: [ClientRef] }` (≤ 5) |
+| POST | `/campaigns/:id/test` | — | `{ sent: true }` — to the staff chat of the employee (or the group) |
+| POST | `/campaigns/:id/send` | `{ at? }` | `Campaign` — `sending` now, or `scheduled` for `at` |
+| POST | `/campaigns/:id/cancel` | — | `Campaign` — stops a scheduled or sending one (sent messages stay) |
+| DELETE | `/campaigns/:id` | — | `204` · drafts only |
+
+- `text` ≤ 3 500 characters, light Markdown like other bot messages; `{name}` = the client's first name. An image is
+  sent as a photo with the text as caption (≤ 1 024 characters then). `button.kind: "book"` — «📅 Записаться» (the
+  Mini App when online booking is on, else it asks the AI to book); `url` — any `https://` link.
+- Every campaign message carries «🔕 Не присылать новости» (sets `marketingOptOut`; the bot confirms and offers
+  «Снова получать новости»).
+- Recipients are fixed when sending starts; delivery runs in the background at ≤ 20 messages a second, retries
+  failures up to 3 times; a client who blocked the bot is `blocked`. Messages are stored in the chats as `system`.
+- Audit: `campaign.create` / `campaign.send` / …; staff get a summary in the staff chat when a campaign finishes.
+
+### Birthday and win-back
+- **Birthday** (`birthday.enabled`): at `sendAt` studio time on the client's birthday (by `birthday`), once a year,
+  the bot sends the greeting to linked clients who did not opt out, with the gift line when there is one («Дарим 500
+  бонусов — они действуют до 2 ноября» / «Скидка 10% до 26 октября»), and credits the gift bonuses (`gift`, burning
+  after `bonusDays`). The discount itself is applied by staff at checkout from `loyalty.birthdayDiscount`; the morning
+  staff digest already names birthdays.
+- **Win-back** (`winback.enabled`): daily at `sendAt`, linked clients who did not opt out, whose last completed visit
+  was at least `afterMonths` ago and who have no future appointment get one message per absence (a new visit starts a
+  new period) with «📅 Записаться» and the optional gift bonuses; at most `dailyLimit` a day, the longest absent first.
+- Both are logged (`retention_sends`) so a restart never repeats them.
 
 ### Bot (Telegram + AI)
 | Method | Path | Body | Response |
