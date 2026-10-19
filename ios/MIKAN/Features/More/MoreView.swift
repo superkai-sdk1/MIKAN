@@ -51,6 +51,7 @@ struct MoreView: View {
                             Label("Отчёты", systemImage: "chart.bar.xaxis")
                         }
                     }
+                    CertificatesMoreLink()
                     NavigationLink { EmployeesListView() } label: {
                         Label("Сотрудники", systemImage: "person.3")
                     }

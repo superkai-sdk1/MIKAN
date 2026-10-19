@@ -130,6 +130,7 @@
 		4DF6EC13DD0013B807C63201 /* ReceiptDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64DCC2C0B3204B305023435 /* ReceiptDraft.swift */; };
 		4F5840806B3A3C27855F3581 /* PayrollPeriodHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6534A14A7D1B5A9CAEB4DE56 /* PayrollPeriodHeader.swift */; };
 		4F879CCD469D7D981B92E919 /* AnalyticsDelta.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C5E64C1AE8475764D3AC90 /* AnalyticsDelta.swift */; };
+		50D5F0CFC79B6CD2BD326A78 /* CertificatesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA94C632F993C0FA7A300194 /* CertificatesListView.swift */; };
 		517350F6302B56E11897671E /* WarehouseGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E4F1E0886A06F86A92108C2 /* WarehouseGrouping.swift */; };
 		5268D35943576587C0F41EA4 /* AppointmentDragHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91BD21C331F64EE759AD42D9 /* AppointmentDragHost.swift */; };
 		5326C3F1F02E0DD7387EE307 /* OnlineBookingSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D142AE3511A07CA6F0844273 /* OnlineBookingSection.swift */; };
@@ -229,6 +230,7 @@
 		A2251E2DE3C7995424FF59C6 /* AuditScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA8D231CB22D8B40D521C54 /* AuditScope.swift */; };
 		A23AECA870D9EAC00573329F /* GridScrollStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A999F395F10C25D1E24C69CF /* GridScrollStateTests.swift */; };
 		A23D32AE105AFCDC898B7A75 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C205AFC64CEEB734DEAA36E /* ChatView.swift */; };
+		A2B59B5962C6986A501F7662 /* CertificateDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D29961167DA4C93DC58AF1 /* CertificateDetailView.swift */; };
 		A35ABF3EDBA3D45EBFFD1A6B /* PermissionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5CA08FADB7557BFF0368A5 /* PermissionsTests.swift */; };
 		A3B0E54A624FBE83EC920921 /* OpenReceiptsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2ED265AF7FDEB21ABA50A2 /* OpenReceiptsSection.swift */; };
 		A447B7435E512065F9CEC6FB /* ShiftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7434591F5D261CAEDF661C4F /* ShiftStore.swift */; };
@@ -556,6 +558,7 @@
 		821D504BA84289CC198CEC2E /* StaffBindingMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffBindingMenu.swift; sourceTree = "<group>"; };
 		8302D9E4251B164B428A56A9 /* RevisionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevisionDetailView.swift; sourceTree = "<group>"; };
 		836825577E80C15BA76F849E /* ImagePreparerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreparerTests.swift; sourceTree = "<group>"; };
+		83D29961167DA4C93DC58AF1 /* CertificateDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateDetailView.swift; sourceTree = "<group>"; };
 		843B5CA992CEA3AE0C5D4D73 /* BookingRequestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookingRequestDetailView.swift; sourceTree = "<group>"; };
 		8547BDA4B0CE1E5574BA81CE /* MIKAN.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MIKAN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		85AE9E0B9D1E4C1F94223B6D /* ServiceVariantsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceVariantsEditor.swift; sourceTree = "<group>"; };
@@ -623,6 +626,7 @@
 		B82AC74F4AC11FF620A34C8A /* ProductRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductRow.swift; sourceTree = "<group>"; };
 		B8F652F63A3AC1E0C72CC751 /* ShiftsHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShiftsHistoryView.swift; sourceTree = "<group>"; };
 		BA5178F9E092040DB1A98A93 /* Employee.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Employee.swift; sourceTree = "<group>"; };
+		BA94C632F993C0FA7A300194 /* CertificatesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificatesListView.swift; sourceTree = "<group>"; };
 		BAA8D231CB22D8B40D521C54 /* AuditScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditScope.swift; sourceTree = "<group>"; };
 		BB9205D26DACA02685C77FF5 /* ServicePhotosEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServicePhotosEditor.swift; sourceTree = "<group>"; };
 		BBD6B169F678BAAEA0B808D3 /* CertificateSaleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateSaleSheet.swift; sourceTree = "<group>"; };
@@ -1138,8 +1142,10 @@
 			isa = PBXGroup;
 			children = (
 				99F4FBA98473F6480F3CBD63 /* CertificateCardView.swift */,
+				83D29961167DA4C93DC58AF1 /* CertificateDetailView.swift */,
 				039A253F21279C9BF9D1F070 /* CertificateLookupSheet.swift */,
 				BBD6B169F678BAAEA0B808D3 /* CertificateSaleSheet.swift */,
+				BA94C632F993C0FA7A300194 /* CertificatesListView.swift */,
 				1822CDBF5D74314652E5E834 /* CertificateText.swift */,
 			);
 			path = Certificates;
@@ -1578,9 +1584,11 @@
 				9C2CB053FAC849F1689C4E7F /* CategoryField.swift in Sources */,
 				9EC1839766A47B8D7F4E1B48 /* CategoryMergeSheet.swift in Sources */,
 				44A0DBF6BAD448158C88B5D4 /* CertificateCardView.swift in Sources */,
+				A2B59B5962C6986A501F7662 /* CertificateDetailView.swift in Sources */,
 				61A20EB687B6E4D7A84BF515 /* CertificateLookupSheet.swift in Sources */,
 				086825DC892FAF1443EB2784 /* CertificateSaleSheet.swift in Sources */,
 				4B63E5013D444398BA15EB5D /* CertificateText.swift in Sources */,
+				50D5F0CFC79B6CD2BD326A78 /* CertificatesListView.swift in Sources */,
 				76309DD8F4E8F5D8843615D0 /* ChatBubble.swift in Sources */,
 				C77F7C2827233510FC78C396 /* ChatFilter.swift in Sources */,
 				BDE89E4D2DC5CA5AAD423E12 /* ChatMarkdown.swift in Sources */,
