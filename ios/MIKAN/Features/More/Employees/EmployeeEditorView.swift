@@ -93,6 +93,7 @@ struct EmployeeEditorView: View {
                     Text("Мастера выбираются при записи. Цвет отмечает их записи в календаре.")
                 }
                 EmployeeRoleSection(role: $role, isEditable: access.role)
+                if let employee { WorkScheduleLinkSection(employee: employee) }
                 if !isCreating, permissions.managesEmployees {
                     Section {
                         Toggle("Доступ к приложению", isOn: $active)

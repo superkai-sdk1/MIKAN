@@ -95,7 +95,7 @@ export function ownActiveAppointment(db: DbOrTx, clientId: number, appointmentId
 }
 
 /**
- * Moves the client's appointment to `startsAt` keeping its duration and master. Only inside the working hours,
+ * Moves the client's appointment to `startsAt` keeping its duration and master. Only inside the master's working time,
  * not in the past, through the regular schedule-conflict check; reminders are re-synced by the domain update.
  * `dryRun` (the app's bot test) checks everything and writes nothing.
  */
@@ -116,8 +116,8 @@ export async function rescheduleForClient(
   if (input.startsAt > now + SLOT_HORIZON_DAYS * DAY_MS) {
     return { ok: false, text: `Перенос возможен не дальше чем на ${SLOT_HORIZON_DAYS} дней вперёд — для более поздней даты передай вопрос администратору.` };
   }
-  if (!withinWorkingHours(db, input.startsAt, endsAt)) {
-    return { ok: false, text: 'Это время вне часов работы студии. Возьми время из free_slots.' };
+  if (!withinWorkingHours(db, input.startsAt, endsAt, current.masterId)) {
+    return { ok: false, text: 'Это время вне часов работы мастера. Возьми время из free_slots.' };
   }
   if (input.startsAt === current.startsAt) return { ok: false, text: 'Запись уже назначена на это время.' };
   const before = formatHumanDateTime(current.startsAt, tz);

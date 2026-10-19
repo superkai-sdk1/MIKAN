@@ -153,8 +153,8 @@ export function buildClientToolHandlers(ctx: AppContext, scope: ToolScope, sink:
       if (masterId !== undefined && bookableMasters(db, masterId).length === 0) return error('Такого мастера нет.');
       const result = freeSlots(db, { date: input.date, durationMin, masterId, excludeAppointmentId, now });
       const dayTitle = formatHumanDateTime(day.startOf('day').toMillis(), tz).replace(/ в \d{2}:\d{2}$/, '');
-      const lines = result.map(({ master, starts }) =>
-        `• ${master.name} [id ${master.id}]: ${starts.length ? starts.map((s) => formatTime(s, tz)).join(', ') : 'нет свободного времени'}`,
+      const lines = result.map(({ master, off, starts }) =>
+        `• ${master.name} [id ${master.id}]: ${off ? 'не работает в этот день' : starts.length ? starts.map((s) => formatTime(s, tz)).join(', ') : 'нет свободного времени'}`,
       );
       const anyFree = result.some((r) => r.starts.length > 0);
       return {

@@ -19,6 +19,7 @@ import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncRemin
 import { applyConsumptionNorms, noConsumption, recordListedUsage, usageRecorded } from './consumption.js';
 import { scheduleFollowUps } from './follow-ups.js';
 import { syncRescheduleNotice } from './reschedule-notice.js';
+import { assertWorkingTime } from './working-time.js';
 
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
@@ -217,6 +218,7 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
     if (endsAt <= input.startsAt) throw badRequest('Окончание записи должно быть позже начала');
     const status = input.status ?? 'scheduled';
     if (!input.force && !INACTIVE_FOR_OVERLAP.includes(status)) {
+      assertWorkingTime(tx, input.masterId, input.startsAt, endsAt);
       assertOverlapFree(tx, { masterId: input.masterId, startsAt: input.startsAt, endsAt });
     }
     const now = Date.now();
@@ -292,6 +294,10 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
     const timingChanged =
       next.startsAt !== current.startsAt || next.endsAt !== current.endsAt || next.masterId !== current.masterId;
     const reactivated = INACTIVE_FOR_OVERLAP.includes(current.status) && !INACTIVE_FOR_OVERLAP.includes(next.status);
+    // A master's own schedule is checked on moves only (status changes and edits that keep the time are not).
+    if (!input.force && !INACTIVE_FOR_OVERLAP.includes(next.status) && timingChanged) {
+      assertWorkingTime(tx, next.masterId, next.startsAt, next.endsAt);
+    }
     if (!input.force && !INACTIVE_FOR_OVERLAP.includes(next.status) && (timingChanged || reactivated)) {
       assertOverlapFree(tx, { id, masterId: next.masterId, startsAt: next.startsAt, endsAt: next.endsAt });
     }

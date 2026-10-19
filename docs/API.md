@@ -107,11 +107,15 @@ Everything not listed (reads of catalog, settings, uploads, QR config, …) is o
   - The bot offers and accepts only the master's working time (free slots, `reschedule_appointment`); a master off
     that day is not offered.
   - Creating or moving an appointment (app) outside the master's working time — a day off, outside the hours, into a
-    break — → `409 schedule_conflict` «Фатима не работает 23 октября» / «У Фатимы перерыв 14:00–14:30» unless
-    `force: true` (same flag as the overlap check). Status changes and edits that keep the time are not checked.
+    break — → `409 schedule_conflict` «Фатима не работает 23 октября» / «Фатима работает 21 октября с 12:00 до 21:00» /
+    «У Фатимы перерыв 14:00–14:30» unless `force: true` (same flag as the overlap check). A name the server cannot
+    decline safely (several words, «-ь», Latin) reads «Анна Иванова: перерыв 14:00–14:30». A move = a new `startsAt` /
+    `endsAt` or another `masterId`; status changes and edits that keep the time are not checked. Only dates with an
+    own schedule (`source` `weekly` or `day`) are checked: the studio hours never restrict.
   - The app's calendar shades each master's non-working time and marks masters off for the day.
-  - The morning staff digest lists who works today with hours («Сегодня работают: Амина 11:00–20:00, Фатима
-    12:00–21:00»), when any master has a schedule.
+  - The morning staff digest lists who works today with hours («👥 Сегодня работают: Амина 11:00–20:00, Фатима
+    12:00–21:00»; masters without an own schedule with the studio hours; «Сегодня никто из мастеров не работает» when
+    all are off), when any master has an own schedule for today.
 
 ### PayRules (правила зарплаты)
 ```json
@@ -621,6 +625,12 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | PUT | `/employees/:id/schedule` | `{ weekly: [7 × entry \| null] \| null }` | `WorkSchedule` · owner, admin |
 | PUT | `/employees/:id/schedule/days` | `{ from, to (≤ 62 days), off, start?, end?, breaks?, note? }` | `WorkSchedule` · sets every date in range · owner, admin |
 | DELETE | `/employees/:id/schedule/days?from=&to=` | — | `WorkSchedule` · removes the exceptions in range · owner, admin |
+
+- `to` defaults to `from` (a single date) on `PUT …/days` and `DELETE …/days`; both are inclusive. `off: true` ignores
+  `start` / `end` / `breaks`; `note` ≤ 200 characters. A master writing → `403` «Это доступно владельцу и
+  администратору». `WorkSchedule` from writes lists the exceptions from today on.
+- `GET /schedules`: `from` and `to` required; items sorted by date, then masters by name (the masters are those the
+  bot books with: active `isMaster` employees, every active employee when none is).
 
 `ScheduleDayOut`: `{ "employeeId": 3, "date": "2026-10-21", "working": true, "start": "12:00", "end": "21:00",
 "breaks": [ { "start": "15:00", "end": "15:30" } ], "source": "weekly", "note": null }` — `source`: `weekly` |
@@ -1226,15 +1236,17 @@ answer from the app (`POST /bot/chats/:chatId/messages`). Client tools:
 - `my_appointments {}` — the upcoming scheduled / confirmed appointments of the client card **linked** to this chat
   (deep link or shared phone; a chat merely attributed to a client, e.g. an old account after re-linking, gets
   nothing): number, time, services, master, status. Unidentified chats are asked to share the phone.
-- `free_slots { date, appointmentId?, serviceId?, masterId? }` — free starts on a studio-local date: inside
-  `StudioSettings.workdayStart`–`workdayEnd` (studio timezone), every 30 minutes, at least 1 hour from now, at most 90
+- `free_slots { date, appointmentId?, serviceId?, masterId? }` — free starts on a studio-local date: inside the
+  master's working time (see «WorkSchedule»: their own schedule minus breaks, else `StudioSettings.workdayStart`–
+  `workdayEnd`; studio timezone), every 30 minutes from the start of their working day, at least 1 hour from now, at most 90
   days ahead, not overlapping the master's non-cancelled, non-no-show appointments. With `appointmentId` (the client's
   own) its duration and master are used and its own time does not count as busy; else `serviceId` gives the duration
   (default 60 min) and `masterId` one master (default: every active master — employees with `isMaster`, all active
-  employees when none is).
+  employees when none is). A master off that day is left out (named «не работает в этот день» when asked for by
+  `masterId`).
 - `reschedule_appointment { appointmentId, startsAt }` — `startsAt` is studio-local «YYYY-MM-DD HH:MM» (an ISO instant
   with an offset is accepted). Only the linked client's own future `scheduled` / `confirmed` appointments; the new time
-  must be ≥ 1 hour from now, ≤ 90 days ahead and inside the working hours; duration and master are kept, the regular
+  must be ≥ 1 hour from now, ≤ 90 days ahead and inside the master's working time; duration and master are kept, the regular
   overlap check applies (`schedule_conflict` → the model offers another time), pending reminders are rebuilt and the
   staff chat gets «🔁 Клиент … перенёс запись №…» (before → after). The model calls it only after the client chose a
   time. Cancellations are handed to staff.

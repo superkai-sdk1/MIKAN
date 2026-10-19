@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Create / reschedule an appointment. Handles `409 schedule_conflict` with «Сохранить всё равно».
+/// Create / reschedule an appointment. Handles `409 schedule_conflict` (a busy master or time outside their own
+/// schedule) by asking «Записать всё равно?» and retrying with `force`.
 /// A new appointment that needs a prepayment continues to the prepayment screen instead of closing.
 struct AppointmentEditorView: View {
     @Environment(\.dismiss) private var dismiss
@@ -63,8 +64,8 @@ struct AppointmentEditorView: View {
             }
             .task { await loadReference() }
             .errorAlert($errorMessage)
-            .alert("Время занято", isPresented: conflictBinding) {
-                Button("Сохранить всё равно") { save(force: true) }
+            .alert("Записать всё равно?", isPresented: conflictBinding) {
+                Button("Записать") { save(force: true) }
                 Button("Изменить время", role: .cancel) {}
             } message: {
                 Text(conflictMessage ?? "")
@@ -128,8 +129,11 @@ struct AppointmentEditorView: View {
         } header: {
             Text("Время")
         } footer: {
-            if !reference.workday.contains(start: draft.start, end: draft.end, calendar: .app) {
-                Label("Вне рабочего времени студии (\(reference.workday.title)). Запись сохранится — календарь покажет её.", systemImage: "clock.badge.exclamationmark")
+            VStack(alignment: .leading, spacing: 4) {
+                MasterDayHint(masterId: draft.masterId, start: draft.start, end: draft.end)
+                if !reference.workday.contains(start: draft.start, end: draft.end, calendar: .app) {
+                    Label("Вне рабочего времени студии (\(reference.workday.title)). Запись сохранится — календарь покажет её.", systemImage: "clock.badge.exclamationmark")
+                }
             }
         }
     }
