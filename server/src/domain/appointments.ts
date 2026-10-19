@@ -20,6 +20,7 @@ import { applyConsumptionNorms, noConsumption, recordListedUsage, usageRecorded 
 import { scheduleFollowUps } from './follow-ups.js';
 import { syncRescheduleNotice } from './reschedule-notice.js';
 import { assertWorkingTime } from './working-time.js';
+import { markWaitlistBooked, noteFreedTime } from './waitlist-hooks.js';
 
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
@@ -248,6 +249,7 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
       .get();
     writeLines(tx, row.id, lines);
     syncReminder(tx, row, now);
+    markWaitlistBooked(tx, row, lines.map((l) => l.serviceId), now);
     return row;
   });
 }
@@ -324,6 +326,7 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
       timingChanged || next.status !== current.status || next.clientId !== current.clientId || replaced !== undefined;
     if (reminderRelevant) syncReminder(tx, row, now);
     syncRescheduleNotice(tx, current, row, input.notifyClient === true, now);
+    noteFreedTime(tx, current, row, now);
     const closedWithoutVisit =
       INACTIVE_FOR_OVERLAP.includes(next.status) && !INACTIVE_FOR_OVERLAP.includes(current.status);
     return (closedWithoutVisit ? autoRetainDeposit(tx, row, now, actorId) : null) ?? row;

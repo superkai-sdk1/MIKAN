@@ -744,10 +744,14 @@ p {
   color: inherit;
 }
 
+/* A busy day: still tappable, it offers the waitlist. */
 .day-off {
   background: transparent;
-  opacity: 0.4;
-  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.day-off.selected {
+  opacity: 0.7;
 }
 
 .day-off .day-num {
@@ -1190,4 +1194,21 @@ p {
   .step-title {
     font-size: 30px;
   }
+}
+
+/* ---- waitlist ---- */
+
+.date-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.date-field {
+  display: grid;
+  gap: 4px;
+}
+
+.date-field input {
+  min-width: 0;
 }

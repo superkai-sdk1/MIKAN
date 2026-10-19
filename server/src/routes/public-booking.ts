@@ -72,7 +72,7 @@ export function maskPhone(phone: string | null): string | null {
   return digits.length === 11 && digits.startsWith('7') ? `+7 *** ***-**-${tail}` : `+${digits[0]}*** ***-**-${tail}`;
 }
 
-function telegramUser(ctx: AppContext, request: FastifyRequest): TelegramWebAppUser | null {
+export function telegramUser(ctx: AppContext, request: FastifyRequest): TelegramWebAppUser | null {
   const header = request.headers[INIT_DATA_HEADER];
   if (header === undefined) return null;
   const user = validateInitData(Array.isArray(header) ? header[0] : header, ctx.config.telegram.token);

@@ -13,6 +13,10 @@ struct MoreView: View {
                         Label("Онлайн-записи", systemImage: "globe")
                     }
                     .badge(appState.badges.onlineAwaiting)
+                    NavigationLink { WaitlistView() } label: {
+                        Label("Лист ожидания", systemImage: "hourglass")
+                    }
+                    .badge(appState.badges.waitlist)
                     NavigationLink { BookingLinkView() } label: {
                         Label("Ссылка для записи", systemImage: "link")
                     }

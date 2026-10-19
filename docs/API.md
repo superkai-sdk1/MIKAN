@@ -673,7 +673,7 @@ one (`POST /auth/logout`); devices still on a token without `sid` stay signed in
 ### Badges & dashboard
 | Method | Path | Response |
 |---|---|---|
-| GET | `/badges` | `{ "unreadChats": 2, "needsAttention": 1, "newBookingRequests": 1, "lowStock": 3, "onlineAwaiting": 2, "waitlist": 4 }` (the app polls every 30 s; `lowStock` — active products with at least one low size; `onlineAwaiting` — online bookings in the future waiting for staff confirmation; `waitlist` — entries still waiting) |
+| GET | `/badges` | `{ "unreadChats": 2, "needsAttention": 1, "newBookingRequests": 1, "lowStock": 3, "onlineAwaiting": 2, "waitlist": 4 }` (the app polls every 30 s; `lowStock` — active products with at least one low size; `onlineAwaiting` — online bookings in the future waiting for staff confirmation; `waitlist` — open waitlist entries, `waiting` or `notified`) |
 | GET | `/dashboard` | `{ "date": "2026-10-15", "appointments": [Appointment] (today, studio tz, excl. cancelled), "revenueToday": 12000 (revenue as in analytics: without bonus payments and certificates sold), "salesCountToday": 4, "openShift": CashShift \| null, "badges": {…same as /badges} }` |
 
 ### Employees
@@ -746,7 +746,7 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   next to it): «Запись №1846 (Анна Иванова) перенесена с … на …», «Продажа №1580 возвращена: 3 500 ₽»,
   «Цена «Мочка»: 1 600 → 1 800 ₽», «Фатиме назначена роль «Мастер»». Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
   `service`, `product`, `stock`, `category`, `aftercare`, `knowledge`, `employee`, `schedule`, `payroll`,
-  `settings`, `bot`, `campaign`, `certificate`. A manual bonus adjustment is `client.bonus_adjust` on the client
+  `settings`, `bot`, `campaign`, `certificate`, `waitlist`. A manual bonus adjustment is `client.bonus_adjust` on the client
   («Начислено 500 бонусов клиенту «Анна Иванова»: Компенсация»); certificates log `certificate.update` /
   `certificate.cancel` / `certificate.send`; a sale paid with bonuses or certificates says so («… Оплачено бонусами
   300 ₽, сертификатом 1 000 ₽»). `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
@@ -1473,7 +1473,8 @@ One mobile-first page in Russian: service (categories → groups → services wi
 → master or «Любой мастер» → a day strip and free starts → name, phone, comment → confirm. With a prepayment it shows
 the QR / bank link, a countdown to `holdUntil` and waits for the payment; otherwise «Ждёт подтверждения». Then the
 booking page `/book/b/<token>`: status, details, «Добавить в календарь» (`.ics`), «Получать уведомления в Telegram»
-(`https://t.me/<bot>?start=b_<token>`), «Отменить запись». `?service=<id>&master=<id>` preselects. Inside Telegram
+(`https://t.me/<bot>?start=b_<token>`), «Отменить запись». `?service=<id>&master=<id>` preselects (`?wait=…&start=…` — the waitlist's
+freed-time button, see «Waitlist»). Inside Telegram
 (opened from the bot's menu button «📅 Записаться» or `https://t.me/<bot>/book`) it uses the Telegram theme, the
 MainButton, skips name and phone for a linked chat and sends the Mini App init data; the bot confirms in the chat.
 Link previews (Open Graph): «Запись в MIKAN STUDIO».
@@ -1580,29 +1581,69 @@ page shows a master's works on the master step and «Работы мастеро
 
 ### Waitlist (лист ожидания)
 When the wanted time is taken, a client (or staff for a client) puts a wish on the waitlist: items, a master or any,
-a date range of at most 30 days. At most 3 waiting entries per client.
+a date range of at most 30 days. At most 3 open (`waiting` / `notified`) entries per client.
 
 `WaitlistEntry`: `{ id, client: ClientRef, items: [ { serviceId, variant?, name } ], master: EmployeeRef | null,
 dateFrom, dateTo, status: "waiting"|"notified"|"booked"|"cancelled"|"expired", channel, notifiedAt, appointmentId,
-note, createdAt }`; `WaitlistEntryPublic` — the same without `client`.
+note, createdAt }`; `WaitlistEntryPublic` — the same without `client`. `items[].name` — the service's name (`variant`
+— the variant's name or `null`); `channel` — `app` | `bot` | `miniapp` | `web`; `dateFrom` / `dateTo` — studio-local
+`"YYYY-MM-DD"`, inclusive; `notifiedAt` — the last freed-time message (instant or `null`).
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/waitlist?status=` | — | `{ items: [WaitlistEntry] }` oldest first |
+| GET | `/waitlist?status=` | — | `{ items: [WaitlistEntry] }` oldest first · `status` — one or a comma-separated list; closed entries (`booked`, `cancelled`, `expired`) only of the last 90 days |
 | POST | `/waitlist` | `{ clientId, items, masterId?, dateFrom, dateTo, note? }` | `WaitlistEntry` (`channel: app`) |
-| PATCH | `/waitlist/:id` | `{ status: "cancelled" }` | `WaitlistEntry` |
-| POST | `/public/booking/waitlist` | `{ items, masterId?, dateFrom, dateTo, name, phone, note? }` (+ init data) | `WaitlistEntryPublic` · rate-limited like bookings |
+| PATCH | `/waitlist/:id` | `{ status: "cancelled" }` | `WaitlistEntry` · an open entry only (`cancelled` again → as is; `booked` / `expired` → `409` «Эта запись листа ожидания уже закрыта») |
+| POST | `/public/booking/waitlist` | `{ items, masterId?, dateFrom, dateTo, name, phone, note?, website? }` (+ init data) | `WaitlistEntryPublic` + `telegramLink` · rate-limited like bookings |
 
-- **Freed time.** When an appointment is cancelled, marked no-show, moved, deleted or an online hold is released —
-  and when a work schedule or exception adds time — the server looks for waiting entries (oldest first) whose range
-  covers that date and whose items now fit a free start (the online booking rules). Up to 3 entries per freed slot are
-  told in Telegram: «Освободилось время: 21 октября, 15:00 у Фатимы — записаться?» with «📅 Записаться» (the Mini App
-  opened on that time) → status `notified`. Whoever books first gets it; an entry is told at most once a day.
-- A booking by the client (any channel) that matches an entry marks it `booked` (`appointmentId`). Entries past
-  `dateTo` become `expired` (checked hourly).
-- Only clients with a linked Telegram chat can be told; the booking page asks a website client to open the bot link
-  (`/start` deep link) after joining. The bot tool `join_waitlist { items, masterId?, dateFrom, dateTo, note? }`.
-- Staff see the list in the app (More → «Лист ожидания», badge `waitlist`) and can add or cancel entries.
+- Every staff role may read, add and cancel entries.
+- **Rules** (`400` with the reason unless said otherwise): `items` — 1–5 active services, a variant where the service
+  has variants (as in online booking); `masterId` — an active master (`isMaster`) or none («any»); `dateFrom` not
+  before today (studio), `dateTo` not before `dateFrom`, at most 30 days inclusive («Период — не больше 30 дней»);
+  staff may pick dates up to a year ahead, clients (page, Mini App, bot) up to the last bookable date (`horizonDays`);
+  `note` ≤ 500. A fourth open entry of a client → `409 conflict` «В листе ожидания уже 3 заявки этого клиента» (the
+  page and the bot: «У вас уже 3 заявки в листе ожидания — дождитесь сообщения или отмените одну из них»). The same
+  wish again (same client, items, master and dates, still open) returns the existing entry instead of a copy.
+- **The public join** works like `POST /public/booking`: the client by a linked Mini App chat (no `name` / `phone`),
+  else by phone — the card with it or a new one (`name` 1…100, source `онлайн-запись` / `telegram`); `website` is the
+  honeypot (answered as if joined, nothing stored); 5 joins an hour per IP (only joins made and honeypot hits count)
+  besides the 20 writes a minute; `enabled: false` → `403`; invalid init data → `401`. An unlinked Mini App chat is then
+  asked in the bot to share its phone («Чтобы сообщение о свободном времени пришло сюда, нажмите «📱 Поделиться
+  номером» внизу 👇»). `telegramLink` — `https://t.me/<bot>?start=w_<id>` (`null` while the bot's username is unknown):
+  the page shows it on the website so the client can receive the message.
+- `/start w_<id>` in the bot: a chat linked to the entry's client gets «Анна, вы в листе ожидания ✅ Мочка, 21–25
+  октября. Напишу сюда, как только освободится время.»; any other chat — «Чтобы получить сообщение о свободном
+  времени, поделитесь номером — так я найду вашу заявку.» with the share-phone hint (the shared contact links the chat
+  to the card with that phone). The link names nothing of the entry to a chat that is not its client's.
+- **Freed time.** When an appointment is cancelled, marked no-show, moved (its old time) or an online hold is released
+  or rejected, and when a work schedule or an exception adds working time (`PUT /employees/:id/schedule`,
+  `PUT …/schedule/days`, `DELETE …/schedule/days`), the freed time is queued and checked within a minute (only while
+  online booking is on and the bot runs; freed time that is past or beyond `horizonDays` is dropped). For each freed
+  piece (a master, a date, the freed interval) the server looks for open entries (oldest first) whose range covers that
+  date, whose master is that master or «any», whose client has a linked Telegram chat (`botEnabled`), told no sooner
+  than 24 h ago, and whose items fit a free start of that master that day overlapping the freed interval (the online
+  booking rules). Up to 3 entries per freed piece are told in Telegram: «Освободилось время: 21 октября, 15:00 у
+  Фатимы — записаться?» + «Мочка — вы в листе ожидания. Время достанется тому, кто запишется первым.» with «📅
+  Записаться» (`web_app` → `PUBLIC_URL/book?wait=<id>&start=<iso>&items=<items>&master=<id>`; a plain link when
+  `PUBLIC_URL` is not `https://`, no button without it) → status `notified`, `notifiedAt`. Whoever books first gets
+  it; an entry is told at most once a day (it stays open and may be told again later).
+- **Booked.** Any appointment created for the client (any channel, staff included, not cancelled / no-show) that
+  starts inside an open entry's range, with its master when one was chosen and with at least one of its services, marks
+  the entry `booked` (`appointmentId`). Entries whose `dateTo` is before today become `expired` (checked hourly).
+- **Booking page.** On the time step a day without free time (busy days can be tapped) and «В ближайшие дни всё
+  занято» offer «Встать в лист ожидания»: the date range (preset to the day, or the next two weeks; ≤ 30 days), a note
+  and, unless the Mini App chat is linked, name and phone → «Вы в листе ожидания ✅» and, on the website, «Получить
+  сообщение в Telegram» (`telegramLink`). `?wait=<id>&start=<iso>&items=<items>&master=<id>` (the freed-time button;
+  `items` as in `/days`, `master` absent for «any») opens the flow on the time step with those services, the master,
+  the day and the time chosen; if the time was taken meanwhile the page says «Это время уже заняли — выберите другое».
+- **Bot.** The tool `join_waitlist { items, masterId?, dateFrom, dateTo, note? }` (a client who shared the phone;
+  offered when nothing free suits); the chat is linked, so the client is told there.
+- **Staff.** The staff chat hears about client joins (bot, Mini App, website): «⏳ Анна Иванова встал(а) в лист
+  ожидания (сайт): Мочка, 21–25 октября, мастер Фатима». The app: More → «Лист ожидания» (badge `waitlist` — open
+  entries) grouped by status; add for a client (search, services, master or any, dates, note), cancel, open the
+  appointment of a booked entry.
+- **Audit** (entity `waitlist`, `entityId` the entry): `waitlist.create` (app; `bot` / `online` for client joins),
+  `waitlist.cancel` (app), `waitlist.notify` and `waitlist.book` (`system`). Expiry is not logged.
 
 ### Offline mode (app)
 The app keeps the last loaded schedule (today ± 7 days, with appointment details), clients, the catalog and settings

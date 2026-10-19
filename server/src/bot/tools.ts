@@ -16,6 +16,7 @@ import { buildClientToolHandlers } from './client-tools.js';
 import { photoMessageText, serviceCaptionTitle, servicePhotoSource } from './media.js';
 import { HISTORY_LIMIT } from './prompt.js';
 import { clientLabel, notifyStaff } from './staff.js';
+import { buildWaitlistToolHandler, JOIN_WAITLIST_TOOL } from './waitlist-tool.js';
 
 export const MAX_PRODUCTS_PER_CALL = 5;
 
@@ -134,6 +135,7 @@ export const TOOLS: Anthropic.Tool[] = [
     },
   },
   BOOK_APPOINTMENT_TOOL,
+  JOIN_WAITLIST_TOOL,
   {
     name: 'reschedule_appointment',
     description:
@@ -197,7 +199,7 @@ export interface ToolSink {
   carousels: JewelryList[];
   notes: string[];
   /** Live actions that succeeded (used to confirm them if the model ends without text). */
-  done: Set<'booking' | 'handoff' | 'reschedule' | 'online_booking'>;
+  done: Set<'booking' | 'handoff' | 'reschedule' | 'online_booking' | 'waitlist'>;
   /** Messages sent after the reply (the payment request of an online booking). */
   after: Array<() => Promise<unknown>>;
 }
@@ -239,6 +241,7 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
   return {
     ...buildClientToolHandlers(ctx, scope, sink),
     book_appointment: buildBookingToolHandler(ctx, scope, sink),
+    join_waitlist: buildWaitlistToolHandler(ctx, scope, sink),
     create_booking_request: async (raw) => {
       const parsed = bookingInput.safeParse(raw);
       if (!parsed.success) {
