@@ -117,7 +117,7 @@ export async function followUpButton(deps: CallbackDeps, query: CallbackQueryInp
       await notifyStaff(
         ctx,
         `🩹 ${clientFullName(client)}: вопрос по заживлению после ${what}, запись №${appointment.id}`,
-        clientMessagePush(ctx.db, chat, `вопрос по заживлению после ${what}`),
+        () => clientMessagePush(ctx.db, chat, `вопрос по заживлению после ${what}`),
       );
       return { text: 'Передали мастеру 🙏' };
     }

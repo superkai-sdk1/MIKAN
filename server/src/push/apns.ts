@@ -154,13 +154,15 @@ export function createHttp2Transport(options: Http2TransportOptions = {}): Http2
   const idleMs = options.idleMs ?? APNS_IDLE_MS;
   const sessions = new Map<string, ClientHttp2Session>();
 
+  const drop = (origin: string, session: ClientHttp2Session) => {
+    if (sessions.get(origin) === session) sessions.delete(origin);
+  };
+
   const sessionFor = (origin: string): ClientHttp2Session => {
     const open = sessions.get(origin);
     if (open && !open.closed && !open.destroyed) return open;
     const session = http2.connect(origin);
-    const forget = () => {
-      if (sessions.get(origin) === session) sessions.delete(origin);
-    };
+    const forget = () => drop(origin, session);
     // A connection error also fails its streams, which reject their sends.
     session.on('error', forget);
     session.on('goaway', forget);
@@ -172,7 +174,9 @@ export function createHttp2Transport(options: Http2TransportOptions = {}): Http2
 
   const send = (request: ApnsRequest): Promise<ApnsResponse> =>
     new Promise<ApnsResponse>((resolve, reject) => {
-      const stream = sessionFor(origins[request.environment]).request({
+      const origin = origins[request.environment];
+      const session = sessionFor(origin);
+      const stream = session.request({
         ':method': 'POST',
         ':path': `/3/device/${request.deviceToken}`,
         'content-type': 'application/json',
@@ -180,7 +184,9 @@ export function createHttp2Transport(options: Http2TransportOptions = {}): Http2
       });
       const timer = setTimeout(() => {
         reject(new Error(`APNs не ответил за ${timeoutMs} мс`));
-        stream.close(http2.constants.NGHTTP2_CANCEL);
+        // A connection that stopped answering (e.g. half-open) is not reused: the next push connects anew.
+        drop(origin, session);
+        session.destroy();
       }, timeoutMs);
       let status = 0;
       let body = '';

@@ -130,9 +130,39 @@ async function deliver(
   return 'failed';
 }
 
+/** A push, or how to build it — built only when pushes are on, and a failure to build it is only logged. */
+export type StaffPushSource = StaffPush | (() => StaffPush);
+
+/** Pushes still talking to Apple, per app. */
+const inFlight = new WeakMap<AppContext, Set<Promise<PushOutcome>>>();
+
 /**
- * Pushes the event to the staff it is for (docs/API.md «Push notifications»). Off without `config.apns` or a
- * transport. Never throws: a failed push is logged and never fails the action that triggered it.
+ * Starts the push in the background: the action that triggered it never waits for Apple and never fails because of
+ * it. Does nothing (not even building the push) without `config.apns` or a transport.
+ */
+export function sendStaffPush(ctx: AppContext, source: StaffPushSource): void {
+  if (!ctx.config.apns || !ctx.apns) return;
+  let push: StaffPush;
+  try {
+    push = typeof source === 'function' ? source() : source;
+  } catch (err) {
+    ctx.log.error({ err: errorMessage(err) }, 'staff push not built');
+    return;
+  }
+  const pending = inFlight.get(ctx) ?? new Set<Promise<PushOutcome>>();
+  inFlight.set(ctx, pending);
+  const run: Promise<PushOutcome> = pushToStaff(ctx, push).finally(() => pending.delete(run));
+  pending.add(run);
+}
+
+/** Resolves once every push started so far has finished (tests). */
+export async function pushesSettled(ctx: AppContext): Promise<void> {
+  await Promise.all([...(inFlight.get(ctx) ?? [])]);
+}
+
+/**
+ * Pushes the event to the staff it is for (docs/API.md «Push notifications») and resolves when Apple answered. Off
+ * without `config.apns` or a transport. Never throws: a failed push is logged.
  */
 export async function pushToStaff(ctx: AppContext, push: StaffPush): Promise<PushOutcome> {
   const { apns: config } = ctx.config;

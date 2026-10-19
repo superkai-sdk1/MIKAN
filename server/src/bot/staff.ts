@@ -4,20 +4,16 @@ import type { DbOrTx } from '../db/client.js';
 import { clearStaffCode, getStaffChatId, getStaffCode, setStaffChatId, setStaffCode } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
 import { MINUTE_MS } from '../lib/time.js';
-import { pushToStaff, type StaffPush } from '../push/staff-push.js';
+import { sendStaffPush, type StaffPushSource } from '../push/staff-push.js';
 
 export const STAFF_CODE_TTL_MS = 15 * MINUTE_MS;
 
 /**
- * Sends a notification to the bound staff chat and, given the event (`push/staff-events.ts`), pushes it to the staff
- * iPhones at the same time; never throws. Returns whether the staff chat got it.
+ * Sends a notification to the bound staff chat; never throws. Returns whether it was delivered. Given the event
+ * (`push/staff-events.ts`, best as `() => …Push(…)`), it is also pushed to the staff iPhones in the background.
  */
-export async function notifyStaff(ctx: AppContext, text: string, push?: StaffPush): Promise<boolean> {
-  const [delivered] = await Promise.all([toStaffChat(ctx, text), push ? pushToStaff(ctx, push) : null]);
-  return delivered;
-}
-
-async function toStaffChat(ctx: AppContext, text: string): Promise<boolean> {
+export async function notifyStaff(ctx: AppContext, text: string, push?: StaffPushSource): Promise<boolean> {
+  if (push) sendStaffPush(ctx, push);
   const chatId = getStaffChatId(ctx.db);
   if (chatId === null) {
     ctx.log.info({ notification: text.split('\n')[0] }, 'staff chat not bound; notification skipped');

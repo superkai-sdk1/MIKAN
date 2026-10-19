@@ -1304,7 +1304,7 @@ logged once at start).
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| POST | `/devices` | `{ token, environment: "production"\|"sandbox" }` | `204` — registers the device for the current employee (a token registered by someone else moves to them) · `400` «Некорректный токен устройства» unless `token` is hex (32–200 digits, any case) |
+| POST | `/devices` | `{ token, environment: "production"\|"sandbox" }` | `204` — registers the device for the current employee (a token registered by someone else moves to them) · `400` «Некорректный токен устройства» unless `token` is hex (32–100 digits, any case); an employee keeps their 10 most recently registered devices |
 | DELETE | `/devices/:token` | — | `204` — on sign-out; removes only the current employee's own device (an unknown token is fine) |
 
 Events (sent next to the staff chat message about the same thing; a failed push never fails anything):

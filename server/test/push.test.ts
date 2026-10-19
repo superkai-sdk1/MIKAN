@@ -23,7 +23,7 @@ import {
   type ApnsTransport,
 } from '../src/push/apns.js';
 import { clientCancelledPush, onlineBookingPush } from '../src/push/staff-events.js';
-import { pushToStaff, type StaffPush } from '../src/push/staff-push.js';
+import { pushesSettled, pushToStaff, type StaffPush } from '../src/push/staff-push.js';
 import { createTestApp, FakeQrProvider, make, message, ScriptedAi, testConfig, text, toolUse, type TestApp } from './helpers.js';
 
 const NOW = Date.parse('2026-10-15T09:00:00.000Z'); // Thu 12:00 Moscow
@@ -250,6 +250,8 @@ describe('APNs HTTP/2 transport', () => {
       expect(seen[0]!.body).toBe('{"aps":{}}');
       expect(await transport.send(request(2))).toEqual({ status: 410, reason: 'Unregistered' });
       await expect(transport.send(request(3))).rejects.toThrow(/APNs/);
+      // The connection that stopped answering is dropped; the next push connects anew and gets through.
+      expect(await transport.send(request(1))).toEqual({ status: 200, reason: null });
     } finally {
       transport.close();
     }
@@ -304,6 +306,7 @@ describe('push devices', () => {
       { token: 'z'.repeat(64), environment: 'production' },
       { token: deviceToken(1), environment: 'development' },
       { token: deviceToken(1) },
+      { token: 'ab'.repeat(51), environment: 'production' }, // 102 digits: longer than a path parameter may be
     ]) {
       const res = await t.api('POST', '/api/devices', body);
       expect(res.statusCode).toBe(400);
@@ -330,6 +333,22 @@ describe('push devices', () => {
     expect(devicesOf(t)).toEqual([
       expect.objectContaining({ employeeId: admin.employee.id, environment: 'production', lastSeenAt: NOW + 120_000 }),
     ]);
+  });
+
+  it('accepts tokens up to 100 hex digits and keeps the 10 most recently seen devices of an employee', async () => {
+    const long = 'cd'.repeat(50);
+    expect((await t.api('POST', '/api/devices', { token: long, environment: 'production' })).statusCode).toBe(204);
+    expect((await t.api('DELETE', `/api/devices/${long}`)).statusCode).toBe(204);
+    expect(devicesOf(t)).toEqual([]);
+
+    for (let n = 1; n <= 11; n++) {
+      vi.setSystemTime(NOW + n * 1000);
+      await t.api('POST', '/api/devices', { token: deviceToken(n), environment: 'production' });
+    }
+    const tokens = devicesOf(t).map((d) => d.token);
+    expect(tokens).toHaveLength(10);
+    expect(tokens).not.toContain(deviceToken(1));
+    expect(tokens).toContain(deviceToken(11));
   });
 
   it('signs out only the own device', async () => {
@@ -424,11 +443,34 @@ describe('push delivery to staff', () => {
   it('pushes even when the staff chat is not bound, next to the staff chat message', async () => {
     await setup();
     expect(await notifyStaff(t.ctx, 'текст', event({ type: 'booking_request', data: { bookingRequestId: 1 }, masterId: null }))).toBe(false);
+    await pushesSettled(t.ctx);
     expect(apns.tokens()).toEqual([deviceToken(1), deviceToken(2)]);
     setStaffChatId(t.ctx.db, STAFF_CHAT);
     expect(await notifyStaff(t.ctx, 'без push')).toBe(true);
+    await pushesSettled(t.ctx);
     expect(t.gateway.textsTo(STAFF_CHAT)).toEqual(['без push']);
     expect(apns.requests).toHaveLength(2);
+  });
+
+  it('never makes the triggering action wait for Apple or fail on a broken push', async () => {
+    await setup();
+    setStaffChatId(t.ctx.db, STAFF_CHAT);
+    let sends = 0;
+    t.ctx.apns = {
+      send: () => {
+        sends += 1;
+        return new Promise<ApnsResponse>(() => undefined); // Apple never answers
+      },
+    };
+    expect(await notifyStaff(t.ctx, 'сразу', event())).toBe(true);
+    expect(sends).toBe(4);
+    expect(t.gateway.textsTo(STAFF_CHAT)).toEqual(['сразу']);
+
+    const broken = () => {
+      throw new Error('cannot build');
+    };
+    expect(await notifyStaff(t.ctx, 'и так', broken)).toBe(true);
+    expect(t.gateway.textsTo(STAFF_CHAT)).toEqual(['сразу', 'и так']);
   });
 });
 
@@ -460,6 +502,7 @@ describe('staff events', () => {
   const say = async (pipeline: BotPipeline, msg: string) => {
     pipeline.receive(from, msg);
     await pipeline.idle();
+    await pushesSettled(t.ctx);
   };
   const chatRow = async () => (await t.api('GET', '/api/bot/chats')).json().items.find((c: { chatId: number }) => c.chatId === CHAT);
 
@@ -507,6 +550,7 @@ describe('staff events', () => {
     await handleCallback({ ctx: t.ctx, pipeline: new BotPipeline(t.ctx, 0) }, {
       from, data: `hq:${a.id}`, message: { messageId: check.messageId, isPhoto: false },
     });
+    await pushesSettled(t.ctx);
     expect(t.gateway.textsTo(STAFF_CHAT).at(-1)).toContain('вопрос по заживлению');
     expect(apns.tokens()).toEqual([deviceToken(1), deviceToken(2)]);
     expect(apns.payloads()[0]).toEqual({
@@ -545,6 +589,7 @@ describe('staff events', () => {
     apns.fallback = new Error('APNs down'); // a failing push never undoes the payment
     bank.statuses.set('QR1', 'paid');
     expect((await t.api('GET', `/api/qr-payments/${qr.payment.id}`)).json().status).toBe('paid');
+    await pushesSettled(t.ctx);
     expect((await t.api('GET', `/api/appointments/${a.id}`)).json().deposit).toBe(2000);
     expect(t.gateway.textsTo(STAFF_CHAT)[0]).toContain('💳 Предоплата 2 000 ₽ по СБП получена');
     expect(apns.tokens()).toEqual([deviceToken(1), deviceToken(2)]);
@@ -583,7 +628,8 @@ describe('staff events', () => {
       masterId: master.id,
     });
 
-    await notifyStaff(t.ctx, '❌ Клиент отменил онлайн-запись', clientCancelledPush(t.ctx.db, getAppointmentRow(t.ctx.db, a.id)));
+    await notifyStaff(t.ctx, '❌ Клиент отменил онлайн-запись', () => clientCancelledPush(t.ctx.db, getAppointmentRow(t.ctx.db, a.id)));
+    await pushesSettled(t.ctx);
     expect(apns.tokens()).toEqual([deviceToken(1), deviceToken(2)]);
   });
 });

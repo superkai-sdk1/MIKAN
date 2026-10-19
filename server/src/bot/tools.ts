@@ -262,7 +262,7 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
           ...(input.comment ? [`Комментарий: ${input.comment}`] : []),
           `Telegram: ${who}`,
         ].join('\n'),
-        bookingRequestPush(row),
+        () => bookingRequestPush(row),
       );
       sink.done.add('booking');
       return { content: `Заявка №${row.id} создана. Администратор свяжется с клиентом, чтобы подтвердить время.` };
@@ -281,7 +281,7 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
         ctx,
         `🙋 Бот передал диалог администратору\nКлиент: ${who}\nПричина: ${parsed.data.reason}\n` +
           `Последнее сообщение: «${truncate(scope.lastUserText, 500)}»\nОтветьте в приложении MIKAN.`,
-        chat ? clientMessagePush(ctx.db, chat, scope.lastUserText) : undefined,
+        chat ? () => clientMessagePush(ctx.db, chat, scope.lastUserText) : undefined,
       );
       sink.done.add('handoff');
       return { content: 'Администратор уведомлён и скоро ответит в этом чате.' };

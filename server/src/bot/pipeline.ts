@@ -371,7 +371,7 @@ export class BotPipeline {
       `⚠️ Бот не ответил клиенту ${clientLabel(chat.telegramName, chat.username)}: ${reason}.\n` +
         (last ? `Последнее сообщение: «${truncate(last.text, 500)}»\n` : '') +
         'Ответьте в приложении MIKAN.',
-      clientMessagePush(this.ctx.db, flagged, last?.text ?? reason),
+      () => clientMessagePush(this.ctx.db, flagged, last?.text ?? reason),
     );
   }
 

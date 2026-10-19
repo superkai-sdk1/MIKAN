@@ -109,7 +109,7 @@ export async function announceQrDeposit(ctx: AppContext, code: QrPaymentRow): Pr
     await notifyStaff(
       ctx,
       `💳 Предоплата ${formatRub(code.amount)} по СБП получена: ${clientFullName(client)}, запись ${formatShortDateTime(appointment.startsAt, tz)}`,
-      depositPaidPush(ctx.db, appointment, code.amount),
+      () => depositPaidPush(ctx.db, appointment, code.amount),
     );
     if (code.error || !DEPOSIT_OPEN_STATUSES.includes(appointment.status) || !ctx.gateway.isRunning()) return;
     const chatId = findClientChat(ctx.db, client)?.chatId;
