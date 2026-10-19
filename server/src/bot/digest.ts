@@ -3,13 +3,15 @@ import { DateTime } from 'luxon';
 import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, botChats } from '../db/schema.js';
+import { certificatesIssued } from '../domain/analytics-loyalty.js';
+import { loadPeriodSales, revenueSection } from '../domain/analytics-sales.js';
 import { listAppointments } from '../domain/appointments.js';
 import { bookableMasters } from '../domain/free-slots.js';
 import { chatEmployee, storeMessage } from '../domain/bot-chats.js';
 import { getOpenShift, serializeShift } from '../domain/cash.js';
 import { listReceipts } from '../domain/receipts.js';
 import { clientsByIds, serializeAppointments } from '../domain/refs.js';
-import { badges, reportSummary } from '../domain/reports.js';
+import { badges } from '../domain/reports.js';
 import { getBotSettings, getDigestsSent, setDigestsSent, studioTimezone, type DigestsSent } from '../domain/settings.js';
 import { whoWorksText } from '../domain/working-time.js';
 import { errorMessage } from '../lib/errors.js';
@@ -155,34 +157,47 @@ export function morningDigest(db: DbOrTx, now: number, employee: EmployeeRow): s
   ].join('\n');
 }
 
+/**
+ * «💰 Выручка» of the day as analytics counts it (docs/API.md «Analytics»): sales made minus refunds made that day,
+ * without bonuses paid and certificates sold; the payment split of the sales made, certificates sold, refunds.
+ */
+function moneyBlock(db: DbOrTx, from: number, to: number): string {
+  const revenue = revenueSection(loadPeriodSales(db, from, to));
+  const refunds = revenue.refunds ? `• ↩️ Возвраты: ${formatRub(revenue.refunds)}` : null;
+  if (revenue.salesCount === 0) return ['💰 Продаж сегодня не было', ...(refunds ? [refunds] : [])].join('\n');
+  const p = revenue.payments;
+  const methods = (
+    [
+      ['наличные', p.cash],
+      ['перевод', p.transfer],
+      ['QR', p.qr],
+      ['карта', p.card],
+      ['предоплатой', p.deposit],
+      ['бонусами', p.bonus],
+      ['сертификатом', p.certificate],
+    ] as const
+  )
+    .filter(([, amount]) => amount > 0)
+    .map(([label, amount]) => `${label} ${formatRub(amount)}`);
+  const sold = certificatesIssued(db, from, to);
+  return [
+    `💰 **Выручка — ${formatRub(revenue.net)}**`,
+    `• ${plural(revenue.salesCount, 'чек', 'чека', 'чеков')} · средний ${formatRub(revenue.averageCheck)}`,
+    ...(methods.length ? [`• ${capitalize(methods.join(' · '))}`] : []),
+    ...(sold.count ? [`• 🎁 Продано сертификатов: ${sold.count} на ${formatRub(sold.amount)}`] : []),
+    ...(refunds ? [refunds] : []),
+  ].join('\n');
+}
+
 export function eveningDigest(db: DbOrTx, now: number, employee: EmployeeRow): string {
   const tz = studioTimezone(db);
   const today = localDayBounds(now, tz);
   const tomorrow = localDayBounds(today.end, tz);
   const all = dayAppointments(db, today.start, today.end, [...OPEN, 'cancelled', 'no_show']);
   const tomorrowRows = dayAppointments(db, tomorrow.start, tomorrow.end);
-  const report = reportSummary(db, today.start, today.end);
   const shift = getOpenShift(db);
   const receipts = listReceipts(db).length;
   const unpaid = all.filter((a) => a.saleId == null && OPEN.includes(a.status) && Date.parse(a.startsAt!) < now);
-
-  const methods = [
-    ['наличные', report.payments.cash],
-    ['перевод', report.payments.transfer],
-    ['QR', report.payments.qr],
-    ['карта', report.payments.card],
-    ['предоплатой', report.payments.deposit],
-  ]
-    .filter(([, amount]) => (amount as number) > 0)
-    .map(([label, amount]) => `${label} ${formatRub(amount as number)}`);
-  const money = report.salesCount
-    ? [
-        `💰 **Выручка — ${formatRub(report.revenue)}**`,
-        `• ${plural(report.salesCount, 'чек', 'чека', 'чеков')} · средний ${formatRub(report.averageCheck)}`,
-        ...(methods.length ? [`• ${capitalize(methods.join(' · '))}`] : []),
-        ...(report.refunds ? [`• ↩️ Возвраты: ${formatRub(report.refunds)}`] : []),
-      ].join('\n')
-    : '💰 Продаж сегодня не было';
 
   const count = (status: string) => all.filter((a) => a.status === status).length;
   const outcome = [
@@ -195,7 +210,7 @@ export function eveningDigest(db: DbOrTx, now: number, employee: EmployeeRow): s
     `🌙 **Итоги дня, ${employee.name}**`,
     dayTitle(now, tz),
     '',
-    money,
+    moneyBlock(db, today.start, today.end),
     '',
     all.length ? `📅 **Визиты:** ${outcome.length ? outcome.join(' · ') : visits(all.length)}` : '📅 Визитов сегодня не было',
   ];

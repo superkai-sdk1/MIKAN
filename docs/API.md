@@ -2179,8 +2179,10 @@ without the AI (no AI cost), personalised with the employee's name (their own ap
   open receipts left from earlier days, new booking requests, chats waiting for staff, low stock, the cash shift
   (yesterday's left open / none open), clients with a birthday among today's visits — or «Всё спокойно»; tomorrow's
   count and first appointment.
-- **Evening** (`eveningDigestAt`): revenue of the day with the number of sales, the average check and the payment
-  split (with bonuses and gift certificates when there were any), certificates sold, refunds; visits done / no-shows / cancelled; today's visits left unpaid; open receipts; the open cash shift
+- **Evening** (`eveningDigestAt`): revenue of the day as analytics counts it (`net`: sales made minus refunds made that
+  day, without bonus payments and certificates sold) with the number of sales, the average check and the payment
+  split (with bonuses and gift certificates when there were any), certificates sold («🎁 Продано сертификатов: 2 на
+  8 000 ₽», when any), refunds; visits done / no-shows / cancelled; today's visits left unpaid; open receipts; the open cash shift
   with the expected cash («не забудьте закрыть»); tomorrow's appointments and prepayments still awaited for them.
 Each digest is sent once per studio day when its time comes (not later than 3 hours after it, e.g. after a server
 restart), only while the bot is running; it is stored in the chat as an `assistant` message.

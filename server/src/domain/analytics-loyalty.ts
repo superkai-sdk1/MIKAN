@@ -1,4 +1,4 @@
-import { lt, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, gte, lt, sql, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { bonusOperations, certificateOperations } from '../db/schema.js';
 
@@ -66,4 +66,15 @@ export function loyaltySection(db: DbOrTx, from: number, to: number): LoyaltySec
     certificatesCancelled: -(certificates?.cancelled ?? 0),
     certificatesOutstanding: certificates?.outstanding ?? 0,
   };
+}
+
+/** Gift certificates sold in `[from, to)`: how many and their nominals (`certificatesSold`). */
+export function certificatesIssued(db: DbOrTx, from: number, to: number): { count: number; amount: number } {
+  const c = certificateOperations;
+  const row = db
+    .select({ count: count(), amount: sql<number>`coalesce(sum(${c.amount}), 0)` })
+    .from(c)
+    .where(and(eq(c.type, 'issue'), gte(c.createdAt, from), lt(c.createdAt, to)))
+    .get();
+  return { count: row?.count ?? 0, amount: row?.amount ?? 0 };
 }
