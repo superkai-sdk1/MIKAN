@@ -63,15 +63,13 @@ const REVIEW_SITES = [
 const LINK = /^https?:\/\/\S+$/i;
 
 /**
- * A link button per review site staff filled in (`StudioSettings.reviewLinks`), one per row. Read from the stored
- * studio settings as they are; anything but an http(s) link is skipped, since Telegram would reject the whole message.
+ * A link button per review site staff filled in (`StudioSettings.reviewLinks`), one per row. Anything but an
+ * http(s) link is skipped, since Telegram would reject the whole message.
  */
 export function reviewKeyboard(db: DbOrTx): InlineKeyboard {
-  const stored = (getStudioSettings(db) as { reviewLinks?: unknown }).reviewLinks;
-  const links = stored !== null && typeof stored === 'object' ? (stored as Record<string, unknown>) : {};
+  const links = getStudioSettings(db).reviewLinks;
   return REVIEW_SITES.flatMap(({ key, label }) => {
-    const value = links[key];
-    const url = typeof value === 'string' ? value.trim() : '';
+    const url = links[key].trim();
     return LINK.test(url) ? [[{ text: label, url }]] : [];
   });
 }
