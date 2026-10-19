@@ -201,6 +201,34 @@ struct CheckoutCreditsTests {
         #expect(cart.activeLoyalty == nil)
     }
 
+    @Test("A discount above the saved lines survives a reload of the same receipt with a certificate to sell")
+    func reloadKeepsDiscount() throws {
+        let cart = try makeCart()
+        cart.load(Self.receipt(id: 7))
+        cart.addCertificate(amount: 5_000, recipientName: "")
+        cart.discount = 6_000
+
+        let saved = cart.makeReceiptBody()
+        #expect(saved.discount == 5_000, "capped to the receipt's own 5 000 ₽ line")
+        cart.load(Self.receipt(id: 7, discount: saved.discount))
+        #expect(cart.discount == 6_000)
+
+        cart.load(Self.receipt(id: 7, discount: 1_000))
+        #expect(cart.discount == 1_000, "a discount changed on another phone wins")
+    }
+
+    @Test("Another receipt is not opened over a certificate to sell")
+    func certificateBlocksSwitching() async throws {
+        let cart = try makeCart()
+        let server = try #require(URL(string: "https://example.invalid"))
+        let store = OpenReceiptsStore(api: APIClient(serverURL: server), cart: cart)
+        cart.addCertificate(amount: 5_000, recipientName: "")
+
+        await #expect(throws: CertificateInCartError.self) { try await store.openNew() }
+        await #expect(throws: CertificateInCartError.self) { try await store.open(Self.receipt(id: 8)) }
+        #expect(cart.sellsCertificate, "the certificate is still in the cart")
+    }
+
     @Test("Clearing the cart forgets bonuses, certificates and the client's loyalty but keeps the studio's rules")
     func clearForgetsCredits() throws {
         let cart = try loyalCart()
@@ -287,10 +315,11 @@ struct CheckoutCreditsTests {
         )
     }
 
-    private static func receipt(id: Int) -> OpenReceipt {
+    private static func receipt(id: Int, discount: Int = 0) -> OpenReceipt {
         let line = OpenReceiptItem(type: .service, serviceId: 3, name: "Хеликс", quantity: 1, price: 5_000, total: 5_000)
         return OpenReceipt(
-            id: id, appointment: nil, client: ivan, items: [line], subtotal: 5_000, discount: 0, total: 5_000,
+            id: id, appointment: nil, client: ivan, items: [line], subtotal: 5_000, discount: discount,
+            total: 5_000 - discount,
             itemCount: 1, note: nil, openedBy: nil, createdAt: Fixtures.referenceDate, updatedAt: Fixtures.referenceDate
         )
     }

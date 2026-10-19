@@ -38,6 +38,8 @@ enum CheckoutLoyaltyLoading {
         } catch is CancellationError {
             return
         } catch {
+            // Rules of another session or an older answer must not be used: no bonuses until they load.
+            cart.setLoyaltyRules(nil)
             logger.notice("Loyalty rules failed: \(error.userMessage, privacy: .public)")
         }
     }

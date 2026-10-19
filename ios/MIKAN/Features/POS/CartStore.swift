@@ -161,7 +161,8 @@ final class CartStore {
 
     // MARK: Bonuses and gift certificates (see `CartStore+Loyalty.swift`)
 
-    func setLoyaltyRules(_ rules: CheckoutLoyaltyRules) {
+    /// `nil` — unknown (not loaded, or the server did not answer): no bonuses are offered.
+    func setLoyaltyRules(_ rules: CheckoutLoyaltyRules?) {
         loyaltyRules = rules
     }
 
@@ -348,7 +349,7 @@ final class CartStore {
         let kept = (
             paymentMode: paymentMode, manualSplit: manualSplit, cashReceived: cashReceived,
             completesAppointment: completesAppointment, sendsAftercare: sendsAftercare,
-            certificateLines: lines.filter(\.isCertificate), bonusRequested: bonusRequested,
+            certificateLines: lines.filter(\.isCertificate), discount: discount, bonusRequested: bonusRequested,
             certificateCharges: certificateCharges, clientLoyalty: clientLoyalty
         )
         clear()
@@ -368,6 +369,10 @@ final class CartStore {
         sendsAftercare = kept.sendsAftercare
         // Certificates to sell live only here (the open receipt does not hold them); spent ones stay chosen.
         lines += kept.certificateLines
+        // The receipt was saved with the discount capped to its own lines: the one typed here still holds.
+        if !kept.certificateLines.isEmpty, receipt.discount == min(kept.discount, receipt.subtotal) {
+            discount = kept.discount
+        }
         bonusRequested = kept.bonusRequested
         certificateCharges = kept.certificateCharges
         clientLoyalty = kept.clientLoyalty

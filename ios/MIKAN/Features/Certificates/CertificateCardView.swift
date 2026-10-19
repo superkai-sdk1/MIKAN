@@ -121,8 +121,9 @@ struct CertificateCardActions: View {
 
     private var canSend: Bool { certificate.buyer?.telegramLinked == true }
 
+    /// One list row: modifiers on several rows would run the render and show the alert once per row.
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 12) {
             if let image {
                 Image(uiImage: image)
                     .resizable()
@@ -150,6 +151,7 @@ struct CertificateCardActions: View {
             }
             sendRow
         }
+        .padding(.vertical, 4)
         .task(id: certificate) {
             await loadStudioName()
             image = CertificateCardRenderer.image(for: certificate, studioName: studioName)
@@ -160,15 +162,18 @@ struct CertificateCardActions: View {
 
     @ViewBuilder
     private var sendRow: some View {
+        // Bordered buttons: in one list row each answers only its own taps.
         Button(action: send) {
             HStack {
                 Label(sentCount > 0 ? "Отправлено в Telegram" : "Отправить в Telegram", systemImage: sentCount > 0 ? "checkmark.circle.fill" : "paperplane")
                 if isSending {
-                    Spacer()
                     ProgressView()
                 }
             }
+            .frame(maxWidth: .infinity)
         }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
         .disabled(!canSend || isSending)
         if !canSend {
             Text(certificate.buyer == nil
@@ -232,20 +237,27 @@ private struct IssuedCertificateSection: View {
             if let value = certificate.value {
                 CertificateCardActions(certificate: value)
             } else if let failure = certificate.failure {
-                Text(failure).foregroundStyle(.secondary)
-                Button("Повторить") { Task { await load() } }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(failure).foregroundStyle(.secondary)
+                    Button("Повторить") { Task { await load() } }
+                        .buttonStyle(.bordered)
+                }
             } else if item.certificateCode == nil {
-                Text(item.name)
-                Text("Карточка сертификата — в «Ещё» → «Сертификаты».")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.name)
+                    Text("Карточка сертификата — в «Ещё» → «Сертификаты».")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else {
-                ProgressView().frame(maxWidth: .infinity)
+                // Loads when the placeholder row shows (a task on the section would run once per row).
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .task { await load() }
             }
         } header: {
             Text("Подарочный сертификат")
         }
-        .task { await load() }
     }
 
     /// The contract has no `GET /certificates/:id`: the line's name carries the code, which is looked up.

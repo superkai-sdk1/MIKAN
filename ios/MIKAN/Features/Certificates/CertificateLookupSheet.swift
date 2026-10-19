@@ -106,19 +106,30 @@ struct CertificateLookupSheet: View {
         isSearching = true
         lookedUp = normalized
         Task {
-            defer { isSearching = false }
-            do {
-                let found = try await api.certificate(code: normalized)
-                withAnimation(.snappy) {
-                    certificate = found
-                    code = found.code
-                    amount = cart.suggestedCertificateAmount(balance: found.balance, code: found.code)
-                }
-                focusesCode = false
-            } catch {
-                certificate = nil
-                errorMessage = error.userMessage
+            await find(normalized)
+            isSearching = false
+            // A complete code typed or pasted while this one was looked up gets its own lookup now.
+            if CertificateCode.isComplete(code), CertificateCode.normalize(code) != lookedUp { lookup() }
+        }
+    }
+
+    /// Shows the certificate for `normalized`, unless another code was typed meanwhile.
+    private func find(_ normalized: String) async {
+        do {
+            let found = try await api.certificate(code: normalized)
+            let current = CertificateCode.normalize(code)
+            guard current == normalized || current == found.code else { return }
+            withAnimation(.snappy) {
+                certificate = found
+                code = found.code
+                amount = cart.suggestedCertificateAmount(balance: found.balance, code: found.code)
             }
+            lookedUp = found.code
+            focusesCode = false
+        } catch {
+            guard CertificateCode.normalize(code) == normalized else { return }
+            certificate = nil
+            errorMessage = error.userMessage
         }
     }
 

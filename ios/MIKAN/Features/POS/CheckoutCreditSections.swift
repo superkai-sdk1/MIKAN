@@ -91,17 +91,18 @@ struct CheckoutCertificatesSection: View {
                 ForEach(Array(cart.certificateCharges.enumerated()), id: \.element.id) { index, charge in
                     CertificateChargeRow(charge: charge, applied: amounts.indices.contains(index) ? amounts[index] : 0)
                 }
+                // The sheet hangs on this one row: on a section it would be attached to every row.
                 Button("Оплатить сертификатом", systemImage: PaymentLine.certificateSymbol) { showsLookup = true }
                     .disabled(cart.amountDue == 0)
+                    .sheet(isPresented: $showsLookup) {
+                        CertificateLookupSheet()
+                    }
             } header: {
                 Text("Подарочные сертификаты")
             } footer: {
                 if zip(cart.certificateCharges, cart.certificateAmounts).contains(where: { $0.1 < $0.0.amount }) {
                     Text("С сертификата спишется не больше его остатка и того, что осталось оплатить.")
                 }
-            }
-            .sheet(isPresented: $showsLookup) {
-                CertificateLookupSheet()
             }
         } else if !cart.certificateCharges.isEmpty {
             Section {

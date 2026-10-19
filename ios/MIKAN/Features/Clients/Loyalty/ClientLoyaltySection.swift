@@ -37,15 +37,16 @@ struct ClientLoyaltySection: View {
                     Label("История бонусов", systemImage: "list.bullet.rectangle")
                 }
                 if permissions.adjustsBonuses {
+                    // The sheet hangs on this one row: on a section it would be attached to every row.
                     Button("Начислить или списать", systemImage: "plusminus.circle") { showsAdjust = true }
+                        .sheet(isPresented: $showsAdjust) {
+                            BonusAdjustSheet(clientId: client.id, balance: loyalty.bonusBalance) {
+                                Task { await onChange() }
+                            }
+                        }
                 }
             } header: {
                 Text("Бонусы")
-            }
-            .sheet(isPresented: $showsAdjust) {
-                BonusAdjustSheet(clientId: client.id, balance: loyalty.bonusBalance) {
-                    Task { await onChange() }
-                }
             }
         }
     }
