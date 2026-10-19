@@ -1,20 +1,19 @@
 import { randomBytes } from 'node:crypto';
-import { and, count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, lt, notInArray } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, qrPayments, sales } from '../db/schema.js';
+import { appointments, qrPayments } from '../db/schema.js';
 import { AppError, badRequest, conflict, errorMessage, scheduleConflict } from '../lib/errors.js';
 import type { AppointmentRow, ClientRow, QrPaymentRow } from '../lib/serialize.js';
 import { pluralWord } from '../lib/text.js';
 import { localDate, MINUTE_MS } from '../lib/time.js';
 import type { CreatedQr } from '../payments/qr-provider.js';
 import { createAppointment } from './appointments.js';
-import { chatEmployee, findChat } from './bot-chats.js';
-import { createClient, findClientByChat, findClientByPhone, linkTelegram } from './clients.js';
+import { createClient, findClientByChat, findClientByPhone } from './clients.js';
 import { forbidden } from './permissions.js';
 import { auditOnlineBooked } from './online-booking-audit.js';
 import { resolveItems, type BookingItem, type ResolvedItems } from './online-booking-items.js';
-import { announceBooking } from './online-booking-messages.js';
+import { announceBooking, askToShareNumber } from './online-booking-messages.js';
 import { assertOnlineMaster, bookingDates, chooseMaster, freeStart } from './online-booking-slots.js';
 import { registerBankCode } from './qr-payments.js';
 import { getClientRow } from './refs.js';
@@ -37,6 +36,7 @@ export const MAX_UNSETTLED_PER_CLIENT = 2;
 export const ONLINE_DISABLED = 'Онлайн-запись временно недоступна';
 export const SLOT_TAKEN = 'Это время только что заняли — выберите другое';
 export const TOO_MANY_UNSETTLED = 'У вас уже есть записи, которые ждут подтверждения — дождитесь ответа студии';
+export const CLIENT_BUSY = 'У вас уже есть запись на это время';
 /** Where a card created by online booking says it came from. */
 const CLIENT_SOURCES: Record<OnlineChannel, string> = { bot: 'telegram', miniapp: 'telegram', web: 'онлайн-запись' };
 const OPEN_STATUSES = ['scheduled', 'confirmed'];
@@ -53,9 +53,8 @@ export interface OnlineBookingInput {
   /** …else by phone (normalized): the card with it, or a new one with this name. */
   name?: string | null;
   phone?: string | null;
-  /** The Mini App chat (the Telegram user id): told about the booking, linked to a new card. */
+  /** The Mini App chat (the Telegram user id): told about the booking. */
   chatId?: number | null;
-  username?: string | null;
   now?: number;
 }
 
@@ -109,16 +108,21 @@ export function unsettledCount(db: DbOrTx, clientId: number): number {
   );
 }
 
-/**
- * Whether a booking's link (`/start b_<token>`) or the Mini App may link a Telegram chat to this card. Anyone may type
- * any phone, so only a card without Telegram and without studio history (appointments made by staff, purchases) is
- * linked this way; anyone else shares the phone in the bot.
- */
-export function mayLinkByBooking(db: DbOrTx, client: ClientRow): boolean {
-  if (client.telegramChatId != null) return false;
-  const staffMade = db.select({ n: count() }).from(appointments).where(and(eq(appointments.clientId, client.id), eq(appointments.channel, 'app'))).get();
-  const bought = db.select({ n: count() }).from(sales).where(eq(sales.clientId, client.id)).get();
-  return (staffMade?.n ?? 0) === 0 && (bought?.n ?? 0) === 0;
+/** A double submit (or the AI calling twice) must not book the same person twice at once with another master. */
+function assertClientFree(db: DbOrTx, clientId: number, startsAt: number, endsAt: number): void {
+  const clash = db
+    .select({ id: appointments.id })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.clientId, clientId),
+        lt(appointments.startsAt, endsAt),
+        gt(appointments.endsAt, startsAt),
+        notInArray(appointments.status, ['cancelled', 'no_show']),
+      ),
+    )
+    .get();
+  if (clash) throw conflict(CLIENT_BUSY);
 }
 
 function assertBookableTime(db: DbOrTx, startsAt: number, now: number, settings: OnlineBookingSettings): void {
@@ -169,14 +173,6 @@ async function registerHoldCode(ctx: AppContext, amount: number, holdMinutes: nu
   }
 }
 
-/** The Mini App chat becomes the client's when it has no client yet and the card may be linked this way. */
-function linkMiniAppChat(db: DbOrTx, input: OnlineBookingInput, client: ClientRow, created: boolean): void {
-  const chatId = input.chatId!;
-  if (findClientByChat(db, chatId) || chatEmployee(db, findChat(db, chatId))) return;
-  if (!created && !mayLinkByBooking(db, client)) return;
-  linkTelegram(db, client.id, chatId, input.username ?? null);
-}
-
 /** Writes the booking in one transaction, checking the time and the limit again (the bank call took a while). */
 function commit(ctx: AppContext, input: OnlineBookingInput, check: BookingCheck, code: CreatedQr | null, started: number): OnlineBookingResult {
   const { db } = ctx;
@@ -189,6 +185,7 @@ function commit(ctx: AppContext, input: OnlineBookingInput, check: BookingCheck,
     const existing = existingClient(tx, input);
     const client = existing ?? createClient(tx, { name: input.name!.trim(), phone: input.phone!, source: CLIENT_SOURCES[input.channel] });
     if (unsettledCount(tx, client.id) >= MAX_UNSETTLED_PER_CLIENT) throw conflict(TOO_MANY_UNSETTLED);
+    assertClientFree(tx, client.id, input.startsAt, check.endsAt);
     let created: AppointmentRow;
     try {
       created = createAppointment(tx, {
@@ -241,7 +238,6 @@ function commit(ctx: AppContext, input: OnlineBookingInput, check: BookingCheck,
           .returning()
           .get()
       : null;
-    if (input.chatId != null) linkMiniAppChat(tx, input, client, existing === null);
     return { appointment, payment, client: getClientRow(tx, client.id) };
   });
 }
@@ -263,5 +259,9 @@ export async function createOnlineBooking(ctx: AppContext, input: OnlineBookingI
     toClient: input.channel !== 'bot',
     chatId: input.channel === 'miniapp' ? input.chatId : null,
   });
+  // A typed phone proves nothing: the Mini App chat is linked to a card only by sharing its own contact in the bot.
+  if (input.channel === 'miniapp' && input.chatId != null && !findClientByChat(ctx.db, input.chatId)) {
+    await askToShareNumber(ctx, input.chatId);
+  }
   return result;
 }

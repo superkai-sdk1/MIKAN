@@ -77,6 +77,7 @@ describe('online booking: settings, catalog and free time', () => {
       note: '',
       leadMinutes: 120,
       horizonDays: 60,
+      holdMinutes: 15,
       stepMinutes: 30,
       cancellationText: 'Бесплатно отменить или перенести запись можно не позднее чем за 24 часа; при более поздней отмене предоплата не возвращается, при неявке — тоже.',
       botUsername: 'mikan_test_bot',
@@ -306,6 +307,49 @@ describe('online booking: booking from the page', () => {
     expect(sixth.statusCode).toBe(429);
     expect(sixth.json().error.code).toBe('rate_limited');
     expect((await book({ phone: '+79990000030', startsAt: '2026-10-17T09:00:00.000Z' }, '10.9.9.10')).statusCode).toBe(200);
+  });
+
+  it('counts only bookings made: taken times and invalid input do not use up the limit', async () => {
+    expect((await book({}, '10.8.8.8')).statusCode).toBe(200);
+    for (let i = 0; i < 6; i++) expect((await book({ phone: `+7999000004${i}` }, '10.8.8.8')).statusCode).toBe(409); // taken
+    expect((await book({ phone: '+79990000049', startsAt: '2026-10-16T13:00:00.000Z' }, '10.8.8.8')).statusCode).toBe(200);
+  });
+
+  it('never books one person twice at the same time (a double submit for «any master»)', async () => {
+    const [first, second] = await Promise.all([book({ masterId: null }), book({ masterId: null })]);
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error.message).toBe('У вас уже есть запись на это время');
+    expect((await t.api('GET', '/api/appointments?onlineState=awaiting_confirmation')).json().items).toHaveLength(1);
+  });
+
+  it('replays a booking retried with the same Idempotency-Key', async () => {
+    const key = '3f9b7c1e-2a4d-4e8f-9b6a-1c2d3e4f5a6b';
+    const body = { items: `${lobe.id}`, masterId: fatima.id, startsAt: FRIDAY_NOON, name: 'Анна', phone: '+79991234567' };
+    const [first, raced] = await Promise.all([
+      pub(t, 'POST', '', body, { idempotencyKey: key }),
+      pub(t, 'POST', '', body, { idempotencyKey: key }),
+    ]);
+    expect(first.statusCode).toBe(200);
+    expect(raced.statusCode).toBe(200);
+    const again = await pub(t, 'POST', '', body, { idempotencyKey: key.toUpperCase() });
+    expect(again.statusCode).toBe(200);
+    expect(again.headers['idempotent-replayed']).toBe('true');
+    expect(again.json()).toEqual(first.json());
+    expect(raced.json()).toEqual(first.json());
+    expect((await t.api('GET', '/api/appointments?onlineState=awaiting_confirmation')).json().items).toHaveLength(1);
+    expect(t.gateway.textsTo(STAFF_CHAT).filter((m) => m.startsWith('🆕'))).toHaveLength(1);
+
+    const changed = await pub(t, 'POST', '', { ...body, comment: 'другое' }, { idempotencyKey: key });
+    expect(changed.statusCode).toBe(409);
+    expect(changed.json().error.message).toBe('Повторный запрос отличается от исходного. Обновите экран и попробуйте снова.');
+    expect((await pub(t, 'POST', '', body, { idempotencyKey: 'not-a-uuid' })).statusCode).toBe(400);
+    // A failed request is not stored: the same key runs again once the time is free.
+    const busyKey = '0e1d2c3b-4a59-4687-9a8b-7c6d5e4f3a2b';
+    const taken = await pub(t, 'POST', '', { ...body, phone: '+79990000060' }, { idempotencyKey: busyKey });
+    expect(taken.statusCode).toBe(409);
+    await t.api('POST', `/api/appointments/${first.json().number}/online/reject`, {});
+    expect((await pub(t, 'POST', '', { ...body, phone: '+79990000060' }, { idempotencyKey: busyKey })).statusCode).toBe(200);
   });
 
   it('is closed while staff have online booking off', async () => {

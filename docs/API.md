@@ -28,7 +28,8 @@ If the implementation must deviate, update this file in the same change.
   with a Russian message («Это доступно владельцу студии», «Можно менять только свои записи»).
 - Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /receipts`, `POST /cash/operations`,
   `POST /products/:id/movements`, `POST /products/:id/movements/batch`, `POST /products/:id/purchases`
-  and the prepayment writes `POST /appointments/:id/deposit`, `…/deposit/refund`, `…/deposit/retain` accept an optional `Idempotency-Key: <UUID>` header. The app generates one key per user action and resends the
+  and the prepayment writes `POST /appointments/:id/deposit`, `…/deposit/refund`, `…/deposit/retain` accept an optional `Idempotency-Key: <UUID>` header
+  (so does the public `POST /public/booking`, without an employee — see «Online booking»). The app generates one key per user action and resends the
   same key when it retries that action (timeout, dropped connection, repeated tap after an unclear outcome).
   - The first request with a key runs normally; its successful response is stored for **24 h**, scoped to the
     employee (key + endpoint + employee + response).
@@ -1243,11 +1244,13 @@ that day, then the lowest id.
 
 **The client.** By phone (normalized): the existing client card, else a new one (`name`, `phone`, source
 `онлайн-запись` from the page, `telegram` from the Mini App). In the bot and the Mini App the chat's linked client is
-used (the phone was shared at start); a Mini App chat without one sends name and phone like the page, and the chat is
-linked to that card — but, since a typed phone proves nothing, only to a card without Telegram and without studio
-history (no appointments made by staff, no purchases); otherwise the booking is made and answered in the chat, and the
-person links Telegram by sharing the phone in the bot. At most 2 unsettled online bookings per client: a third →
-`409` «У вас уже есть записи, которые ждут подтверждения — дождитесь ответа студии».
+used (the phone was shared at start); a Mini App chat without one sends name and phone like the page. A typed phone
+proves nothing, so that chat is **not** linked to the card by it: the bot answers the booking in that chat and then asks
+«Чтобы уведомления о записи приходили сюда, нажмите «📱 Поделиться номером» внизу 👇 Это нужно сделать один раз.»
+with the phone button — the person's own contact links the chat to the card with that phone (see «Staff chats»). At
+most 2 unsettled online bookings per client: a third → `409` «У вас уже есть записи, которые ждут подтверждения —
+дождитесь ответа студии». One person is never booked twice at overlapping times (a double submit for «any master»):
+`409` «У вас уже есть запись на это время».
 
 **Settlement.**
 - `depositRequired > 0` and QR payments configured → `onlineState: awaiting_payment`, `holdUntil = now +
@@ -1288,13 +1291,13 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
 
 | Method | Path (no auth) | Body | Response |
 |---|---|---|---|
-| GET | `/public/booking/config` | — | `{ enabled, studio: { name, address, phone, workingHours, timezone }, note, leadMinutes, horizonDays, stepMinutes, cancellationText, botUsername }` |
+| GET | `/public/booking/config` | — | `{ enabled, studio: { name, address, phone, workingHours, timezone }, note, leadMinutes, horizonDays, holdMinutes, stepMinutes, cancellationText, botUsername }` |
 | GET | `/public/booking/services` | — | `{ items: [PublicService] }` active services in catalog order |
 | GET | `/public/booking/masters` | — | `{ items: [ { id, name, color } ] }` active masters |
 | GET | `/public/booking/days?from=&to=&items=&masterId=` | — | `{ items: [ { date, available } ] }` ≤ 31 dates (default: 14 from today); `items` = `serviceId[:variant]` comma-separated (variant URL-encoded) |
 | GET | `/public/booking/slots?date=&items=&masterId=` | — | `{ date, durationMin, items: [ { startsAt, masterIds: [3, 5] } ] }` |
 | GET | `/public/booking/me` | header `X-Telegram-Init-Data` | `{ linked: true, name: "Анна", phone: "+7 *** ***-**-01" }` (`{ linked: false, name: null, phone: null }` for an unknown chat) · `401` for missing or invalid init data |
-| POST | `/public/booking` | `{ items: [ { serviceId, variant? } ], masterId?, startsAt, name, phone, comment?, website? }` (+ `X-Telegram-Init-Data` in the Mini App; `items` may also be the query-string form) | `PublicBooking` · `409 schedule_conflict` «Это время только что заняли — выберите другое» · `400` · `401` for invalid init data · `429` (5 per hour per IP) |
+| POST | `/public/booking` | `{ items: [ { serviceId, variant? } ], masterId?, startsAt, name, phone, comment?, website? }` (+ `X-Telegram-Init-Data` in the Mini App; `items` may also be the query-string form) | `PublicBooking` · `409 schedule_conflict` «Это время только что заняли — выберите другое» · `400` · `401` for invalid init data · `429` (5 per hour per IP) · accepts `Idempotency-Key` |
 | GET | `/public/booking/b/:token` | — | `PublicBooking` (a pending payment is checked with the bank, at most every 2 s) |
 | POST | `/public/booking/b/:token/cancel` | — | `PublicBooking` · until the start; staff are told («❌ Клиент отменил онлайн-запись №…»), a held prepayment stays for staff to refund or keep by the rules |
 | GET | `/public/booking/b/:token/calendar.ics` | — | `text/calendar` event |
@@ -1314,16 +1317,21 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
   active master, a start before `leadMinutes` or past `horizonDays` → `400`; a start that is not free (taken, off the
   grid, outside working time) → `409 schedule_conflict` — never naming another client. `enabled: false` → `403`
   «Онлайн-запись временно недоступна» (`days`, `slots`, booking; `config`, `services`, `masters` still answer).
-- Every public route is limited per IP (120 reads / 20 writes a minute); booking itself 5 an hour per IP (counted after
-  the body is valid, honeypot hits included).
+- Every public route is limited per IP (120 reads / 20 writes a minute); booking itself 5 an hour per IP — only
+  bookings made count (honeypot hits included), so taken times and invalid input never lock a person out.
+- `POST /public/booking` accepts an optional `Idempotency-Key: <UUID>` like the app's writes (see «Conventions»), scoped
+  to the key and the endpoint (no employee): a retry with the same key and body gets the stored `PublicBooking` with
+  `Idempotent-Replayed: true` and books nothing; a retry arriving while the first is still running waits for it; the same
+  key with another body → `409 conflict`; a malformed key → `400`. Errors are not stored.
 - Mini App init data is checked as Telegram documents (HMAC-SHA256 with the key `HMAC("WebAppData", bot token)`,
   `auth_date` within 24 h); the Telegram user id is the chat id.
-- `/start b_<token>` in the bot links the chat to the booking's client (when the chat has no client yet, and only a
-  card the Mini App could link — see «The client») and answers «Анна, нашёл вашу запись ✅» with the number, time,
-  services, master and status («ждёт предоплату до 14:35» / «ждёт подтверждения студии» / «подтверждена ✅» /
-  «отменена» / «завершена»); later notices of that booking go to Telegram. Otherwise it answers with the status and the
-  usual request to share the phone; an unknown token — «Не нашёл эту запись — возможно, ссылка устарела.» and the
-  greeting.
+- `/start b_<token>` in the bot answers with the booking: number, time, services, master and status («ждёт предоплату
+  до 14:35» / «ждёт подтверждения студии» / «подтверждена ✅» / «отменена» / «завершена»). A booking link proves
+  nothing about who opens it, so it does not link the chat itself: a chat not linked to any client also gets the usual
+  request to share the phone, and the shared contact links it to the card with that phone — later notices of the
+  booking then go to Telegram. A chat already linked to the booking's client is greeted «Анна, нашёл вашу запись ✅ …
+  Сюда придут уведомления о ней и напоминание перед визитом.» An unknown token — «Не нашёл эту запись — возможно, ссылка
+  устарела.» and the greeting.
 - The bot sets its menu button to the Mini App («📅 Записаться», `web_app` → `PUBLIC_URL/book`) at start (only for an
   `https://` `PUBLIC_URL`; a failure is logged). After the `/start` greeting a client chat also gets «📅 Записаться можно
   прямо здесь: выберите услугу, мастера и свободное время — это займёт минуту.» with the inline `web_app` button

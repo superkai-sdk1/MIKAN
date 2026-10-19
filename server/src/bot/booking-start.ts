@@ -1,7 +1,7 @@
 import type { AppContext } from '../context.js';
-import { chatEmployee, findChat, storeMessage } from '../domain/bot-chats.js';
-import { findClientByChat, linkTelegram } from '../domain/clients.js';
-import { findBookingByToken, mayLinkByBooking } from '../domain/online-booking.js';
+import { storeMessage } from '../domain/bot-chats.js';
+import { findClientByChat } from '../domain/clients.js';
+import { findBookingByToken } from '../domain/online-booking.js';
 import { BOOKING_WEB_APP_BUTTON, bookingWebAppUrl } from '../domain/online-booking-links.js';
 import { bookingFacts } from '../domain/online-booking-messages.js';
 import { bookingStatusText } from '../domain/online-booking-public.js';
@@ -16,20 +16,16 @@ import type { IncomingFrom } from './pipeline.js';
 export const BOOKING_OFFER_TEXT = '📅 Записаться можно прямо здесь: выберите услугу, мастера и свободное время — это займёт минуту.';
 
 /**
- * `/start b_<token>`: links the chat to the booking's client (when the chat has no client yet and the card may be
- * linked this way, see `mayLinkByBooking`) and answers with the booking's status; null for an unknown token.
+ * `/start b_<token>`: the booking's status, null for an unknown token. A booking link proves nothing about who opens
+ * it, so the chat is not linked here: the greeting asks an unlinked chat to share its phone (onboarding.ts), and the
+ * shared contact links it to the card with that phone.
  */
 export function bookingStartText(ctx: AppContext, from: IncomingFrom, token: string): string | null {
   const { db } = ctx;
   const booking = findBookingByToken(db, token);
   if (!booking) return null;
   const client = getClientRow(db, booking.clientId);
-  const own = findClientByChat(db, from.chatId);
-  let linked = own?.id === client.id;
-  if (!own && !chatEmployee(db, findChat(db, from.chatId)) && mayLinkByBooking(db, client)) {
-    linkTelegram(db, client.id, from.chatId, from.username);
-    linked = true;
-  }
+  const linked = findClientByChat(db, from.chatId)?.id === client.id;
   const f = bookingFacts(db, booking);
   const details = `Запись №${booking.id}: ${f.when} — ${f.what}, мастер ${f.master}\nСтатус: ${bookingStatusText(db, booking)}`;
   return linked ? `${client.name}, нашёл вашу запись ✅\n\n${details}\n\nСюда придут уведомления о ней и напоминание перед визитом.` : details;

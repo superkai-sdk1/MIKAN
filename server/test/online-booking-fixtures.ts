@@ -24,7 +24,7 @@ export function pub(
   method: InjectOptions['method'],
   path: string,
   payload?: unknown,
-  opts: { ip?: string; initData?: string } = {},
+  opts: { ip?: string; initData?: string; idempotencyKey?: string } = {},
 ) {
   return t.app.inject({
     method,
@@ -32,6 +32,7 @@ export function pub(
     headers: {
       ...(opts.ip ? { 'x-forwarded-for': opts.ip } : {}),
       ...(opts.initData !== undefined ? { 'x-telegram-init-data': opts.initData } : {}),
+      ...(opts.idempotencyKey !== undefined ? { 'idempotency-key': opts.idempotencyKey } : {}),
     },
     ...(payload === undefined ? {} : { payload: payload as InjectOptions['payload'] }),
   });

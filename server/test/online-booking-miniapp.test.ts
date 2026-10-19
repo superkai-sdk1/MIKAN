@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { handleContact } from '../src/bot/onboarding.js';
 import { initDataHash, validateInitData } from '../src/lib/telegram-webapp.js';
 import { createTestApp, make, type TestApp } from './helpers.js';
 import {
@@ -76,17 +77,24 @@ describe('online booking in the Mini App', () => {
     expect((await pub(t, 'GET', '/me', undefined, { initData: me })).json()).toEqual({ linked: true, name: 'Анна', phone: '+7 *** ***-**-67' });
   });
 
-  it('books a new client by name and phone, links the chat to the new card and confirms in the chat', async () => {
+  it('books a new client by name and phone, confirms in the chat and asks for the own contact to link it', async () => {
     const res = await book({ name: 'Анна', phone: '+79991234567' });
     expect(res.statusCode).toBe(200);
     const booking = res.json();
     const appointment = (await t.api('GET', `/api/appointments/${booking.number}`)).json();
-    expect(appointment).toMatchObject({ channel: 'miniapp', onlineState: 'awaiting_confirmation', client: { name: 'Анна', telegramLinked: true } });
-    expect((await t.api('GET', `/api/clients/${appointment.client.id}`)).json()).toMatchObject({ telegramUsername: 'anna', source: 'telegram' });
-    expect(t.gateway.textsTo(USER)).toEqual([
+    // A typed phone proves nothing: the chat is not linked to the card by it.
+    expect(appointment).toMatchObject({ channel: 'miniapp', onlineState: 'awaiting_confirmation', client: { name: 'Анна', telegramLinked: false } });
+    expect((await t.api('GET', `/api/clients/${appointment.client.id}`)).json()).toMatchObject({ source: 'telegram' });
+    const toChat = t.gateway.sent.filter((m) => m.chatId === USER);
+    expect(toChat.map((m) => m.text)).toEqual([
       'Заявка принята, время за вами 🙌 Подтвердим в ближайшее время.\n\n**16 октября, 12:00** — Мочка\nМастер: Фатима',
+      'Чтобы уведомления о записи приходили сюда, нажмите «📱 Поделиться номером» внизу 👇 Это нужно сделать один раз.',
     ]);
-    expect((await pub(t, 'GET', '/me', undefined, { initData: initData({ id: USER }) })).json().linked).toBe(true);
+    expect(toChat[1]!.replyKeyboard).toEqual([[{ text: '📱 Поделиться номером', requestContact: true }]]);
+    expect((await pub(t, 'GET', '/me', undefined, { initData: initData({ id: USER }) })).json().linked).toBe(false);
+    // The shared contact links the chat to the card with that phone.
+    await handleContact(t.ctx, { chatId: USER, telegramName: 'Анна', username: 'anna', userId: USER }, { userId: USER, phone: '+79991234567', firstName: 'Анна', lastName: undefined });
+    expect((await pub(t, 'GET', '/me', undefined, { initData: initData({ id: USER }) })).json()).toEqual({ linked: true, name: 'Анна', phone: '+7 *** ***-**-67' });
   });
 
   it('a linked chat books without name and phone', async () => {
@@ -97,13 +105,13 @@ describe('online booking in the Mini App', () => {
     expect((await t.api('GET', `/api/appointments/${res.json().number}`)).json().client.id).toBe(anna.id);
   });
 
-  it('never links the chat to a card with studio history by a typed phone, but still answers in the chat', async () => {
+  it('never links the chat to an existing card by a typed phone, but still answers in the chat', async () => {
     const regular = await make(t, '/api/clients', { name: 'Ольга', phone: '+79995550000' });
     await make(t, '/api/appointments', { clientId: regular.id, masterId: 1, title: 'Хеликс', startsAt: '2026-10-01T09:00:00.000Z', endsAt: '2026-10-01T10:00:00.000Z' });
     const res = await book({ name: 'Ольга', phone: '+79995550000' });
     expect(res.statusCode).toBe(200);
     expect((await t.api('GET', `/api/clients/${regular.id}`)).json().telegramLinked).toBe(false);
-    expect(t.gateway.textsTo(USER)).toHaveLength(1);
+    expect(t.gateway.textsTo(USER)).toHaveLength(2);
   });
 
   it('refuses forged init data and writes nothing', async () => {

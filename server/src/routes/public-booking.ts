@@ -21,12 +21,14 @@ import {
   publicMasters,
   publicServices,
   publicStatus,
+  type PublicBooking,
 } from '../domain/online-booking-public.js';
 import { assertOnlineMaster, availableDays, availableStarts, bookingDates } from '../domain/online-booking-slots.js';
 import { refreshQrPayment } from '../domain/qr-payments.js';
 import { getAppointmentRow } from '../domain/refs.js';
 import { getStudioSettings } from '../domain/settings.js';
 import { AppError, badRequest, errorMessage, notFound } from '../lib/errors.js';
+import { idempotentAsync, PUBLIC_IDEMPOTENCY_SCOPE } from '../lib/idempotency.js';
 import { validateInitData, type TelegramWebAppUser } from '../lib/telegram-webapp.js';
 import { toIso } from '../lib/time.js';
 import { calendarDate, instant, parse, phoneInput } from '../lib/validation.js';
@@ -126,16 +128,12 @@ export function publicBookingRoutes(app: FastifyInstance, ctx: AppContext): void
     return client ? { linked: true, name: client.name, phone: maskPhone(client.phone) } : { linked: false, name: null, phone: null };
   });
 
-  app.post('/', WRITE_LIMIT, async (request) => {
+  app.post('/', WRITE_LIMIT, async (request, reply) => {
     const body = parse(bookBody, request.body);
     const user = telegramUser(ctx, request);
     const linked = user ? findClientByChat(db, user.id) : null;
     if (!linked && !body.name) throw badRequest('«Имя»: обязательное поле');
     if (!linked && !body.phone) throw badRequest('«Телефон»: обязательное поле');
-    const limit = await bookingLimit(request);
-    if (!limit.isAllowed && limit.isExceeded) {
-      throw new AppError('rate_limited', 'Слишком много записей с этого устройства — попробуйте позже или позвоните в студию');
-    }
     const input: OnlineBookingInput = {
       channel: user ? 'miniapp' : 'web',
       items: typeof body.items === 'string' ? parseItemsParam(body.items) : body.items,
@@ -146,16 +144,25 @@ export function publicBookingRoutes(app: FastifyInstance, ctx: AppContext): void
       name: body.name ?? null,
       phone: body.phone ?? null,
       chatId: user?.id ?? null,
-      username: user?.username ?? null,
     };
-    if (body.website?.trim()) {
-      // A bot: answered as if booked, nothing stored.
-      const check = checkOnlineBooking(ctx, input);
-      request.log.info({ ip: request.ip }, 'online booking honeypot triggered');
-      return decoyBooking(ctx, check, input.masterId ?? null);
-    }
-    const result = await createOnlineBooking(ctx, input);
-    return publicBookingOut(ctx, result.appointment);
+    // A retry with the same Idempotency-Key gets the booking already made, not a second one.
+    return idempotentAsync(db, request, reply, PUBLIC_IDEMPOTENCY_SCOPE, async (): Promise<PublicBooking> => {
+      // Only bookings made (and honeypot hits) count, so a few taken times do not lock a person out.
+      const limit = await bookingLimit(request, { increment: false });
+      if (!limit.isAllowed && limit.remaining <= 0) {
+        throw new AppError('rate_limited', 'Слишком много записей с этого устройства — попробуйте позже или позвоните в студию');
+      }
+      if (body.website?.trim()) {
+        // A bot: answered as if booked, nothing stored.
+        const check = checkOnlineBooking(ctx, input);
+        await bookingLimit(request);
+        request.log.info({ ip: request.ip }, 'online booking honeypot triggered');
+        return decoyBooking(ctx, check, input.masterId ?? null);
+      }
+      const result = await createOnlineBooking(ctx, input);
+      await bookingLimit(request);
+      return publicBookingOut(ctx, result.appointment);
+    });
   });
 
   app.get('/b/:token', READ_LIMIT, async (request) => {

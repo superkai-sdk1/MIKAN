@@ -71,6 +71,7 @@ export function publicConfig(ctx: AppContext) {
     note: online.note,
     leadMinutes: online.leadMinutes,
     horizonDays: online.horizonDays,
+    holdMinutes: online.holdMinutes,
     stepMinutes: online.stepMinutes,
     cancellationText: cancellationPolicyText(studio.cancellation),
     botUsername: ctx.gateway.username(),

@@ -1,4 +1,5 @@
-import type { InlineKeyboard } from '../bot/gateway.js';
+import type { InlineKeyboard, ReplyKeyboard } from '../bot/gateway.js';
+import { BUTTONS, PHONE_KEYBOARD } from '../bot/keyboards.js';
 import { notifyStaff } from '../bot/staff.js';
 import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
@@ -83,6 +84,8 @@ export function staffClientCancelText(db: DbOrTx, a: AppointmentRow, f: BookingF
 export interface ClientMessage {
   text: string;
   keyboard?: InlineKeyboard;
+  /** The keyboard under the input field (ignored with `keyboard`). */
+  replyKeyboard?: ReplyKeyboard;
 }
 
 export const clientBookedText = (f: BookingFacts): string =>
@@ -133,7 +136,7 @@ export const clientReleasedText = (ctx: AppContext, f: BookingFacts): string =>
 export async function deliverToChat(ctx: AppContext, chatId: number, message: ClientMessage): Promise<boolean> {
   if (!ctx.gateway.isRunning()) return false;
   try {
-    await ctx.gateway.sendText(chatId, message.text, message.keyboard ? { keyboard: message.keyboard } : {});
+    await ctx.gateway.sendText(chatId, message.text, { keyboard: message.keyboard, replyKeyboard: message.replyKeyboard });
     if (!findChat(ctx.db, chatId)) upsertChat(ctx.db, chatId);
     storeMessage(ctx.db, chatId, 'system', message.text);
     return true;
@@ -161,6 +164,13 @@ export async function safely(ctx: AppContext, what: string, send: () => Promise<
 /** The client's message right after booking: the payment request, else «Заявка принята…». */
 export function clientBookingMessage(db: DbOrTx, a: AppointmentRow, f: BookingFacts, payment: QrPaymentRow | null): ClientMessage {
   return payment ? clientPaymentMessage(db, a, f, payment) : { text: clientBookedText(f) };
+}
+
+export const SHARE_NUMBER_TEXT = `Чтобы уведомления о записи приходили сюда, нажмите «${BUTTONS.contact}» внизу 👇 Это нужно сделать один раз.`;
+
+/** A Mini App chat not linked to a card: linking needs the person's own contact (the bot's phone button). */
+export async function askToShareNumber(ctx: AppContext, chatId: number): Promise<void> {
+  await safely(ctx, 'share number request', () => deliverToChat(ctx, chatId, { text: SHARE_NUMBER_TEXT, replyKeyboard: PHONE_KEYBOARD }));
 }
 
 /** The payment request with the «💳 Оплатить предоплату» button (the bot sends it after the AI's reply). */

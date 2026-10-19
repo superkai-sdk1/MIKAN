@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bookingOffer } from '../src/bot/booking-start.js';
 import { buildClientToolHandlers } from '../src/bot/client-tools.js';
 import { BotController } from '../src/bot/index.js';
-import { handleStart, SHARE_PHONE_HINT } from '../src/bot/onboarding.js';
+import { handleContact, handleStart, SHARE_PHONE_HINT } from '../src/bot/onboarding.js';
 import { BotPipeline } from '../src/bot/pipeline.js';
 import { buildStablePrompt } from '../src/bot/prompt.js';
 import { emptySink } from '../src/bot/tools.js';
@@ -193,38 +193,33 @@ describe('bot: booking links and the Mini App button', () => {
   const book = async (phone = '+79991234567', startsAt = FRIDAY_NOON) =>
     (await pub(t, 'POST', '', { items: [{ serviceId: lobe.id }], masterId: 1, startsAt, name: 'Анна', phone })).json();
 
-  it('/start b_<token> links a new card to the chat and answers with the status', async () => {
+  it('/start b_<token> answers with the status and links only through the shared contact', async () => {
     const booking = await book();
     const reply = handleStart(t.ctx, from, `b_${booking.token}`);
+    // A booking link proves nothing about who opens it: the chat is asked for its own phone.
     expect(reply).toEqual({
-      text:
-        `Анна, нашёл вашу запись ✅\n\nЗапись №${booking.number}: 16 октября, 12:00 — Мочка, мастер Админ\nСтатус: ждёт подтверждения студии\n\n` +
-        'Сюда придут уведомления о ней и напоминание перед визитом.',
-      linked: true,
+      text: `Запись №${booking.number}: 16 октября, 12:00 — Мочка, мастер Админ\nСтатус: ждёт подтверждения студии\n\n${SHARE_PHONE_HINT}`,
+      linked: false,
     });
-    expect((await t.api('GET', `/api/appointments/${booking.number}`)).json().client.telegramLinked).toBe(true);
-    // Later notices go to Telegram.
+    expect((await t.api('GET', `/api/appointments/${booking.number}`)).json().client.telegramLinked).toBe(false);
+    // Sharing the own contact links the card with that phone; later notices go to Telegram.
+    const shared = await handleContact(t.ctx, { ...from, userId: CHAT }, { userId: CHAT, phone: '79991234567', firstName: 'Анна', lastName: undefined });
+    expect(shared.linked).toBe(true);
+    expect(handleStart(t.ctx, from, `b_${booking.token}`).text).toBe(
+      `Анна, нашёл вашу запись ✅\n\nЗапись №${booking.number}: 16 октября, 12:00 — Мочка, мастер Админ\nСтатус: ждёт подтверждения студии\n\n` +
+        'Сюда придут уведомления о ней и напоминание перед визитом.',
+    );
     await t.api('POST', `/api/appointments/${booking.number}/online/confirm`);
     expect(t.gateway.textsTo(CHAT).at(-1)).toBe('✅ Запись подтверждена: 16 октября, 12:00, мастер Админ\nМочка');
   });
 
-  it('/start b_<token> does not link a card with studio history or a chat of another client', async () => {
-    const regular = await make(t, '/api/clients', { name: 'Ольга', phone: '+79995550000' });
-    await make(t, '/api/appointments', { clientId: regular.id, masterId: 1, title: 'x', startsAt: '2026-10-01T09:00:00.000Z', endsAt: '2026-10-01T10:00:00.000Z' });
-    const booking = await book('+79995550000');
-    const reply = handleStart(t.ctx, from, `b_${booking.token}`);
-    expect(reply.linked).toBe(false);
-    expect(reply.text).toBe(
-      `Запись №${booking.number}: 16 октября, 12:00 — Мочка, мастер Админ\nСтатус: ждёт подтверждения студии\n\n${SHARE_PHONE_HINT}`,
-    );
-    expect((await t.api('GET', `/api/clients/${regular.id}`)).json().telegramLinked).toBe(false);
-
+  it('/start b_<token> never links a chat of another client; an unknown token falls back to the greeting', async () => {
     const other = await make(t, '/api/clients', { name: 'Пётр', phone: '+79990000001' });
     await linkChat(t, other.id, 730_009);
-    const fresh = await book('+79990000077', '2026-10-16T11:00:00.000Z');
-    expect(handleStart(t.ctx, { chatId: 730_009, telegramName: 'Пётр', username: null }, `b_${fresh.token}`).text).toContain('Статус: ждёт');
+    const fresh = await book('+79990000077');
+    const reply = handleStart(t.ctx, { chatId: 730_009, telegramName: 'Пётр', username: null }, `b_${fresh.token}`);
+    expect(reply).toEqual({ text: `Запись №${fresh.number}: 16 октября, 12:00 — Мочка, мастер Админ\nСтатус: ждёт подтверждения студии`, linked: true });
     expect((await t.api('GET', `/api/appointments/${fresh.number}`)).json().client.telegramLinked).toBe(false);
-
     expect(handleStart(t.ctx, from, 'b_unknown-token-xxxxxxxx').text).toMatch(/^Не нашёл эту запись — возможно, ссылка устарела\./);
   });
 
