@@ -17,6 +17,8 @@ nonisolated struct Client: Codable, Hashable, Identifiable, Sendable {
     var telegramLinked: Bool
     var telegramUsername: String?
     var botEnabled: Bool
+    /// The client asked for no news and offers (campaigns, birthday, win-back); `nil` from a server without campaigns.
+    var marketingOptOut: Bool? = nil
     var archived: Bool
     let createdAt: Date
     var updatedAt: Date

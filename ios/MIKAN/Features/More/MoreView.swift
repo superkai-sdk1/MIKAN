@@ -45,6 +45,7 @@ struct MoreView: View {
                         Label("Настройки бота", systemImage: "gearshape.2")
                     }
                 }
+                RetentionMoreSection()
                 Section("Студия") {
                     if permissions.seesReports {
                         NavigationLink { ReportsView() } label: {
