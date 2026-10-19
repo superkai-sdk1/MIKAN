@@ -36,6 +36,7 @@ import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { receiptRoutes } from './routes/receipts.js';
 import { salesRoutes } from './routes/sales.js';
 import { scheduleRoutes } from './routes/schedules.js';
+import { retentionSettingsRoutes } from './routes/retention-settings.js';
 import { settingsRoutes } from './routes/settings.js';
 import { uploadRoutes } from './routes/uploads.js';
 
@@ -187,6 +188,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         cashRoutes(secured, ctx);
         botRoutes(secured, ctx);
         settingsRoutes(secured, ctx);
+        retentionSettingsRoutes(secured, ctx);
         auditRoutes(secured, ctx);
         payrollRoutes(secured, ctx);
         deviceRoutes(secured, ctx);

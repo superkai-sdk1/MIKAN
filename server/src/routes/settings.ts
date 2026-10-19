@@ -37,7 +37,7 @@ const text = (max: number) =>
     .transform((v) => (v == null ? v : v.trim()));
 
 /** "HH:MM" in the studio timezone, normalized to two-digit hours ("9:00" → "09:00"). */
-const timeOfDay = z.string().transform((value, ctx) => {
+export const timeOfDay = z.string().transform((value, ctx) => {
   const minutes = parseTimeOfDay(value);
   if (minutes === null) {
     ctx.addIssue({ code: 'custom', message: 'время должно быть в формате ЧЧ:ММ (например, 10:00)' });

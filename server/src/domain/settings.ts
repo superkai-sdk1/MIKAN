@@ -146,6 +146,7 @@ const KEY_STAFF_CODE = 'staffCode';
 const KEY_BOT_USERNAME = 'botUsername';
 const KEY_DIGESTS_SENT = 'digestsSent';
 const KEY_ALERTS = 'alerts';
+const KEY_RETENTION = 'retention';
 
 function readKey<T>(db: DbOrTx, key: string): T | null {
   const row = db.select().from(settings).where(eq(settings.key, key)).get();
@@ -297,4 +298,13 @@ export function setCachedBotUsername(db: DbOrTx, username: string): void {
 export function ensureDefaultSettings(db: DbOrTx): void {
   if (readKey(db, KEY_STUDIO) === null) writeKey(db, KEY_STUDIO, DEFAULT_STUDIO);
   if (readKey(db, KEY_BOT) === null) writeKey(db, KEY_BOT, DEFAULT_BOT);
+}
+
+/** The stored retention settings as saved (domain/retention-settings.ts fills in the defaults). */
+export function readRetentionStored(db: DbOrTx): unknown {
+  return readKey<unknown>(db, KEY_RETENTION);
+}
+
+export function writeRetentionStored(db: DbOrTx, value: unknown): void {
+  writeKey(db, KEY_RETENTION, value);
 }

@@ -65,6 +65,7 @@ const RESTRICTED_ROUTES: ReadonlyMap<string, readonly Role[]> = new Map([
   ['GET /reports/analytics', MANAGERS],
   // Settings, the knowledge base, staff chat binding and the bot test.
   ['PUT /settings/studio', MANAGERS],
+  ['PUT /settings/retention', MANAGERS],
   ['PUT /settings/bot', MANAGERS],
   ['POST /knowledge', MANAGERS],
   ['PATCH /knowledge/:id', MANAGERS],
