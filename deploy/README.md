@@ -120,6 +120,52 @@ BACKUP_ENCRYPTION_KEY=... node dist/scripts/offsite-backup.js decrypt mikan-2026
 баланс ИИ, ИИ не отвечает три раза подряд, не создался бэкап, копия не ушла во внешнее хранилище или на диске
 меньше 1 ГБ. Повтор — не чаще раза в 6 часов; когда всё восстановилось, приходит одно сообщение «✅ …».
 
+## Проверка доступности сервера
+
+Сервер не может сам сообщить, что он упал или пропала сеть, поэтому его проверяет снаружи Cloudflare Worker
+`mikan-telegram-proxy` (тот же, через который ходит бот). Каждые 5 минут он открывает `HEALTH_URL`
+(`/api/health`, ждёт ответа 10 секунд). После двух неудачных проверок подряд (около 10 минут) в рабочую группу
+приходит «⚠️ Сервер MIKAN не отвечает: приложение и бот недоступны». Пока сервер не отвечает — повтор не чаще раза
+в 6 часов; когда ответил — одно сообщение «✅ Сервер MIKAN снова работает». Состояние хранится в KV `UPTIME`.
+
+Настройка — один раз, со своего компьютера, в каталоге `cloudflare/telegram-proxy/`, под аккаунтом Cloudflare
+владельца (`npx wrangler login`):
+
+1. Создайте KV-хранилище и вставьте выданный `id` в `wrangler.toml` вместо `REPLACE_WITH_UPTIME_KV_ID`
+   (без этого `wrangler deploy` не пройдёт):
+   ```bash
+   npx wrangler kv namespace create UPTIME
+   ```
+2. Токен бота — тот же, что `TELEGRAM_BOT_TOKEN` в `.env` сервера. Команда передаёт его, не показывая на экране:
+   ```bash
+   ssh mikan "grep '^TELEGRAM_BOT_TOKEN=' /opt/mikan/deploy/.env | cut -d= -f2-" | tr -d '\r\n' | npx wrangler secret put TELEGRAM_BOT_TOKEN
+   ```
+3. Id рабочей группы — бот запоминает его после `/staff <код>` (см. «Первый запуск», п. 5). Узнать его:
+   ```bash
+   ssh mikan 'cd /opt/mikan/deploy && docker compose exec -T api node -e "console.log(new (require(\"better-sqlite3\"))(\"/app/data/mikan.db\", { readonly: true }).prepare(\"select value from settings where key = ?\").get(\"staffChatId\")?.value)"'
+   ```
+   Должно напечататься число вида `-1001234567890` (`undefined` — группа ещё не привязана). Сохраните его:
+   ```bash
+   npx wrangler secret put ALERT_CHAT_ID
+   ```
+4. `HEALTH_URL` задан в `wrangler.toml` (`[vars]`), расписание — там же (`[triggers]`, `*/5 * * * *`).
+5. Выкатите: `npx wrangler deploy`. Прокси для бота продолжает работать как раньше.
+
+Проверка:
+
+- Логика без сети и без Cloudflare: `npm test` (зависимостей нет, `npm install` не нужен).
+- Локально, с настоящей отправкой в Telegram: создайте `cloudflare/telegram-proxy/.dev.vars` (в git не попадает)
+  ```
+  TELEGRAM_BOT_TOKEN=<токен>
+  ALERT_CHAT_ID=<id группы>
+  HEALTH_URL=http://127.0.0.1:9/api/health
+  ```
+  (заведомо недоступный адрес), запустите `npx wrangler dev --test-scheduled` и в другом окне дважды выполните
+  `curl "http://localhost:8787/__scheduled?cron=*/5+*+*+*+*"` — после второго раза в группу придёт «⚠️ …».
+  Уберите строку `HEALTH_URL` из `.dev.vars`, перезапустите `wrangler dev` и выполните `curl` ещё раз — придёт «✅ …».
+  KV при этом локальный, рабочее состояние не трогается. После проверки удалите `.dev.vars`.
+- После выката запуски и ошибки видны в `npx wrangler tail` и в панели Cloudflare на странице воркера.
+
 ## Восстановление из копии
 
 ```bash
@@ -167,6 +213,8 @@ docker compose start api
 2. В `/opt/mikan/deploy/.env` поменяйте `DOMAIN=` и `PUBLIC_URL=`.
 3. `ssh mikan 'cd /opt/mikan/deploy && docker compose up -d'` — Caddy сам выпустит сертификат.
 4. В iOS-приложении укажите новый адрес сервера.
+5. Поменяйте `HEALTH_URL` в `cloudflare/telegram-proxy/wrangler.toml` и выполните там `npx wrangler deploy`
+   (см. «Проверка доступности сервера»), иначе придёт ложное «⚠️ Сервер MIKAN не отвечает».
 
 По умолчанию используется `95-170-124-192.sslip.io` (sslip.io резолвит имя в IP, сертификат выдаётся Let's Encrypt).
 
