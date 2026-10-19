@@ -6,6 +6,7 @@ struct AppointmentDetailView: View {
     @Environment(ScheduleStore.self) private var schedule
     @Environment(ReferenceStore.self) private var reference
     @Environment(\.openURL) private var openURL
+    @Environment(\.permissions) private var permissions
 
     @State private var appointment: Appointment
     @State private var isWorking = false
@@ -33,7 +34,7 @@ struct AppointmentDetailView: View {
             servicesSection
             detailsSection
             if DepositSummary.showsSection(appointment) {
-                AppointmentDepositSection(appointment: appointment, qrEnabled: reference.qrPaymentsEnabled) { flow in
+                AppointmentDepositSection(appointment: appointment, qrEnabled: reference.qrPaymentsEnabled, showsActions: canChange) { flow in
                     depositFlow = flow
                 }
             }
@@ -42,13 +43,13 @@ struct AppointmentDetailView: View {
             }
             paymentSection
             if !actions.isEmpty {
-                actionsSection
+                if canChange { actionsSection } else { ReadOnlyNotice(text: "Чужие записи меняют владелец и администратор.") }
             }
         }
         .navigationTitle("Запись")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if appointment.isOpen {
+            if appointment.isOpen, canChange {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Изменить") { editorDraft = .edit(appointment, catalog: reference.services) }
                 }
@@ -196,6 +197,9 @@ struct AppointmentDetailView: View {
             }
         }
     }
+
+    /// A master sees every appointment but changes only their own.
+    private var canChange: Bool { permissions.canChange(appointment) }
 
     private enum Action: Hashable {
         case confirm, complete, reschedule, noShow, cancel, restore

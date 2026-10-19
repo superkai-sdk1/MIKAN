@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MoreView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.permissions) private var permissions
     @State private var confirmsSignOut = false
 
     var body: some View {
@@ -19,22 +20,27 @@ struct MoreView: View {
                     NavigationLink { ScheduledMessagesView() } label: {
                         Label("Запланированные сообщения", systemImage: "clock.badge")
                     }
-                    NavigationLink { KnowledgeListView() } label: {
-                        Label("База знаний", systemImage: "books.vertical")
-                    }
-                    NavigationLink { AftercareTemplatesView() } label: {
-                        Label("Шаблоны ухода", systemImage: "cross.case")
-                    }
-                    NavigationLink { BotTestView() } label: {
-                        Label("Проверить бота", systemImage: "sparkles")
+                    // A master does not change the bot's knowledge, memos or test it.
+                    if permissions.editsSettings {
+                        NavigationLink { KnowledgeListView() } label: {
+                            Label("База знаний", systemImage: "books.vertical")
+                        }
+                        NavigationLink { AftercareTemplatesView() } label: {
+                            Label("Шаблоны ухода", systemImage: "cross.case")
+                        }
+                        NavigationLink { BotTestView() } label: {
+                            Label("Проверить бота", systemImage: "sparkles")
+                        }
                     }
                     NavigationLink { BotSettingsView() } label: {
                         Label("Настройки бота", systemImage: "gearshape.2")
                     }
                 }
                 Section("Студия") {
-                    NavigationLink { ReportsView() } label: {
-                        Label("Отчёты", systemImage: "chart.bar.xaxis")
+                    if permissions.seesReports {
+                        NavigationLink { ReportsView() } label: {
+                            Label("Отчёты", systemImage: "chart.bar.xaxis")
+                        }
                     }
                     NavigationLink { EmployeesListView() } label: {
                         Label("Сотрудники", systemImage: "person.3")
@@ -49,7 +55,7 @@ struct MoreView: View {
                             InitialsAvatar(name: employee.name, color: .master(employee.color), size: 44)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(employee.name).font(.headline)
-                                Text("@\(employee.login)").font(.subheadline).foregroundStyle(.secondary)
+                                Text("@\(employee.login) · \(employee.role.title)").font(.subheadline).foregroundStyle(.secondary)
                             }
                         }
                         .accessibilityElement(children: .combine)

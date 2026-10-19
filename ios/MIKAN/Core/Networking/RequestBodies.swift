@@ -31,14 +31,17 @@ nonisolated struct LoginBody: Encodable, Sendable {
     let password: String
 }
 
+/// `POST /employees`, `PATCH /employees/:id`. Fields the signed-in employee may not change are omitted
+/// (see `EmployeeBody.make`).
 nonisolated struct EmployeeBody: Encodable, Sendable {
     var name: String
-    var login: String
+    var login: String?
     /// Omitted when not changing the password.
     var password: String?
     var phone: Nullable<String>
     var color: Nullable<String>
-    var isMaster: Bool
+    var isMaster: Bool?
+    var role: EmployeeRole?
     var active: Bool?
 }
 

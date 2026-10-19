@@ -11,6 +11,7 @@ struct CheckoutView: View {
     @Environment(ShiftStore.self) private var shift
     @Environment(ScheduleStore.self) private var schedule
     @Environment(ReferenceStore.self) private var reference
+    @Environment(\.permissions) private var permissions
 
     @State private var completedSale: Sale?
     @State private var qrPayment: QrPayment?
@@ -152,7 +153,9 @@ struct CheckoutView: View {
         let saleBody = cart.makeSaleBody()
         // The same cart resends the same key, so a retry after a lost response cannot create a second sale.
         let key = cart.saleIdempotencyKey(for: saleBody)
-        let completeBody = cart.makeCompleteBody()
+        // A master completes only their own appointment; the sale still marks another master's one completed.
+        let completesHere = cart.appointment.map { permissions.canChange($0) } ?? true
+        let completeBody = completesHere ? cart.makeCompleteBody() : nil
         let appointmentId = cart.appointmentId
         let cashChange = cart.cashChange
         isSubmitting = true

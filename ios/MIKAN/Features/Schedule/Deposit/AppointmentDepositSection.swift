@@ -4,6 +4,8 @@ import SwiftUI
 struct AppointmentDepositSection: View {
     let appointment: Appointment
     let qrEnabled: Bool
+    /// Off for another master's appointment: a master takes prepayments only of their own.
+    var showsActions = true
     let onAction: (DepositFlow) -> Void
 
     var body: some View {
@@ -15,8 +17,10 @@ struct AppointmentDepositSection: View {
             if let note = DepositLinkNote.of(appointment) {
                 linkRow(note)
             }
-            ForEach(DepositFlow.available(for: appointment, qrEnabled: qrEnabled), id: \.self) { flow in
-                actionButton(flow)
+            if showsActions {
+                ForEach(DepositFlow.available(for: appointment, qrEnabled: qrEnabled), id: \.self) { flow in
+                    actionButton(flow)
+                }
             }
         } header: {
             Text("Предоплата")

@@ -5,6 +5,7 @@ import SwiftUI
 struct ServiceDetailView: View {
     @Environment(APIClient.self) private var api
     @Environment(ReferenceStore.self) private var reference
+    @Environment(\.permissions) private var permissions
 
     let groupSuggestions: [ServiceCategory: [String]]
     let onChange: (Service) -> Void
@@ -54,8 +55,10 @@ struct ServiceDetailView: View {
         .navigationTitle(service.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Изменить") { showsEditor = true }
+            if permissions.editsCatalog {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Изменить") { showsEditor = true }
+                }
             }
         }
         .refreshable { await refresh() }
@@ -108,21 +111,25 @@ struct ServiceDetailView: View {
                 .disabled(service.imageUrl.nonEmpty == nil)
                 .accessibilityLabel(service.imageUrl.nonEmpty == nil ? "Картинки нет" : "Открыть картинку")
 
-                Button {
-                    showsGenerator = true
-                } label: {
-                    Label(
-                        service.imageUrl.nonEmpty == nil ? "Сгенерировать картинку" : "Сгенерировать заново",
-                        systemImage: "wand.and.sparkles"
-                    )
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.glass)
-                .controlSize(.large)
+                if permissions.editsCatalog { generateButton }
             }
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
+    }
+
+    private var generateButton: some View {
+        Button {
+            showsGenerator = true
+        } label: {
+            Label(
+                service.imageUrl.nonEmpty == nil ? "Сгенерировать картинку" : "Сгенерировать заново",
+                systemImage: "wand.and.sparkles"
+            )
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.glass)
+        .controlSize(.large)
     }
 
     private var photosSection: some View {
