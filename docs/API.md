@@ -652,19 +652,22 @@ The token lives 90 days. On first start, if there are no employees, the server c
 #### Sessions
 Every login opens a session (one device) and the token carries its id (`sid`). A request with a token of an ended
 session → `401` «Сессия завершена — войдите снова». Tokens issued before sessions existed (no `sid`) keep working
-until they expire or the password changes. The app sends `X-Device: <model> · MIKAN <build>` on login.
+until they expire or the password changes. The app sends `X-Device: <model> · MIKAN <build>` on login (UTF-8; without
+the header the session is named by the user agent; ≤ 200 characters).
 
 | Method | Path | Body | Response |
 |---|---|---|---|
 | POST | `/auth/logout` | — | `204` — ends the current session (signing out of this phone only) |
-| GET | `/auth/sessions` | — | `{ items: [Session] }` — the employee's own active sessions; the owner gets everyone's (`?employeeId=` filters) |
-| DELETE | `/auth/sessions/:id` | — | `204` — ends a session: your own, or anyone's for the owner |
+| GET | `/auth/sessions` | — | `{ items: [Session] }` — the employee's own active sessions; the owner gets everyone's (`?employeeId=` filters) · most recently used first · someone else's `employeeId` for anyone but the owner → `403` |
+| DELETE | `/auth/sessions/:id` | — | `204` — ends a session: your own, or anyone's for the owner (else `403` «Это доступно владельцу студии») · unknown → `404` · an ended one → `204`, unchanged |
 
 `Session`: `{ id, employee: EmployeeRef, device, ip, createdAt, lastSeenAt, current: true }` (`current` — the session
 of this request). `lastSeenAt` is updated at most once a minute. A password change or deactivation ends all of the
 employee's sessions (as before). Sessions unused for 90 days end by themselves. Face ID is an app-only lock: after
 the app was in the background for more than 5 minutes (or after a restart) it asks for Face ID / the passcode before
-showing anything; on by default after the first sign-in, switchable in More → «Безопасность».
+showing anything; on by default after the first sign-in, switchable in More → «Безопасность». «Выйти на всех
+устройствах» there ends each of the employee's other sessions (`DELETE /auth/sessions/:id`), then signs out of this
+one (`POST /auth/logout`); devices still on a token without `sid` stay signed in until the password changes.
 
 ### Badges & dashboard
 | Method | Path | Response |
@@ -735,7 +738,9 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   reschedule, confirm «Приду», «🔕 Не присылать новости» / «Снова получать новости» — `client.marketing_opt_out` /
   `client.marketing_opt_in`) as `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed
   QR payments, an online hold confirmed by its prepayment and an unpaid hold released as `system`. Staff confirming / rejecting an online booking
-  in the app is `appointment.online_confirm` / `appointment.online_reject`.
+  in the app is `appointment.online_confirm` / `appointment.online_reject`. Signing out is `employee.logout`
+  («Выход из приложения на устройстве «iPhone 16 Pro · MIKAN 13»»), ending a session from the list
+  `employee.session_end` («Сессия «Анна» на устройстве «…» завершена»), both with the id of the session's employee.
 - `summary` is written for people, in Russian, impersonal (the employee's gender is not stored; the app shows who
   next to it): «Запись №1846 (Анна Иванова) перенесена с … на …», «Продажа №1580 возвращена: 3 500 ₽»,
   «Цена «Мочка»: 1 600 → 1 800 ₽», «Фатиме назначена роль «Мастер»». Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,

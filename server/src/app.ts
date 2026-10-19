@@ -10,6 +10,7 @@ import { ZodError } from 'zod';
 import type { AppContext } from './context.js';
 import { employees } from './db/schema.js';
 import { authorize } from './domain/permissions.js';
+import { SESSION_DAYS, touchSession } from './domain/sessions.js';
 import { AppError, unauthorized } from './lib/errors.js';
 import type { EmployeeRow } from './lib/serialize.js';
 import { formatZodError } from './lib/validation.js';
@@ -49,13 +50,15 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 declare module 'fastify' {
   interface FastifyRequest {
     employee: EmployeeRow;
+    /** The sign-in session of the token; `null` for tokens issued before sessions existed. */
+    sessionId: number | null;
   }
 }
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
-    payload: { sub: string; tv: number };
-    user: { sub: string; tv: number };
+    payload: { sub: string; tv: number; sid?: number };
+    user: { sub: string; tv: number; sid?: number };
   }
 }
 
@@ -115,9 +118,9 @@ function tolerantJson(app: FastifyInstance) {
 function authenticate(ctx: AppContext) {
   return async (request: FastifyRequest) => {
     if (!request.headers.authorization) throw unauthorized('Требуется вход в систему');
-    let payload: { sub: string; tv?: number };
+    let payload: { sub: string; tv?: number; sid?: unknown };
     try {
-      payload = await request.jwtVerify<{ sub: string; tv?: number }>();
+      payload = await request.jwtVerify<{ sub: string; tv?: number; sid?: unknown }>();
     } catch {
       throw unauthorized('Сессия истекла — войдите снова');
     }
@@ -126,6 +129,8 @@ function authenticate(ctx: AppContext) {
     if (!employee || !employee.active) throw unauthorized('Учётная запись отключена — обратитесь к администратору');
     // Password change / deactivation bumps tokenVersion, revoking every token issued before it.
     if ((payload.tv ?? 0) !== employee.tokenVersion) throw unauthorized('Сессия истекла — войдите снова');
+    // Signed out on this device or ended by the owner (docs/API.md «Sessions»); tokens without `sid` predate sessions.
+    request.sessionId = payload.sid === undefined ? null : touchSession(ctx.db, payload.sid, employee.id);
     request.employee = employee;
   };
 }
@@ -142,13 +147,14 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
     bodyLimit: 1024 * 1024,
   });
   app.decorateRequest('employee', null as unknown as EmployeeRow);
+  app.decorateRequest('sessionId', null);
   handleError(app);
   tolerantJson(app);
 
   const uploads = uploadsDir(ctx);
   fs.mkdirSync(uploads, { recursive: true });
 
-  await app.register(fastifyJwt, { secret: ctx.config.jwtSecret, sign: { expiresIn: '90d' } });
+  await app.register(fastifyJwt, { secret: ctx.config.jwtSecret, sign: { expiresIn: `${SESSION_DAYS}d` } });
   await app.register(rateLimit, { global: false });
   await app.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 10 } });
   await app.register(fastifyStatic, {

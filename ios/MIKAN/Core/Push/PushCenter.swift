@@ -67,22 +67,13 @@ final class PushCenter {
         }
     }
 
-    /// `DELETE /devices/:token` with the session that is ending: call it before the session token is cleared.
-    /// Sent by its own client, so a refused (already expired) session does not sign anyone out again. The employee's
-    /// notifications already shown on this iPhone are cleared too.
-    func unregister(from api: APIClient) {
+    /// Signing out: forgets this session's registration and clears the employee's notifications already shown on
+    /// this iPhone. Returns the device token to remove from the server (`DELETE /devices/:token`, sent with the
+    /// ending session — see `AppState.endServerSession`).
+    func endRegistration() -> String? {
         registeredKey = nil
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
-        guard let deviceToken, let session = api.token else { return }
-        let client = APIClient(serverURL: api.serverURL, token: session, session: .shared)
-        let logger = logger
-        Task {
-            do {
-                try await client.unregisterDevice(token: deviceToken)
-            } catch {
-                logger.notice("Device removal failed: \(error.userMessage, privacy: .public)")
-            }
-        }
+        return deviceToken
     }
 
     /// APNs hands the token as bytes; the server keeps it as lowercase hex.

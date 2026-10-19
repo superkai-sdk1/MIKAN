@@ -31,6 +31,7 @@ extension View {
             .environment(state.schedule)
             .environment(state.reference)
             .environment(state.workSchedules)
+            .environment(state.lock)
             .environment(\.locale, .app)
             .environment(\.calendar, .app)
     }

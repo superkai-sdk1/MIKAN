@@ -7,6 +7,7 @@ import type { DbOrTx } from '../db/client.js';
 import { employees } from '../db/schema.js';
 import { BCRYPT_ROUNDS, EMPLOYEE_PALETTE } from '../db/seed.js';
 import { assertEmployeeChangeAllowed, assertOwnerRemains, ROLES } from '../domain/permissions.js';
+import { endEmployeeSessions } from '../domain/sessions.js';
 import { conflict, notFound } from '../lib/errors.js';
 import { employeeOut } from '../lib/serialize.js';
 import { hexColor, idParams, nonNull, parse, phoneInput, queryBool, requiredText } from '../lib/validation.js';
@@ -106,6 +107,8 @@ export function employeeRoutes(app: FastifyInstance, ctx: AppContext): void {
       if (input.login !== undefined) assertLoginFree(tx, input.login, id);
       assertOwnerRemains(tx, current, { role: input.role ?? current.role, active: input.active ?? current.active });
       const deactivated = input.active === false && current.active;
+      const signsOut = Boolean(passwordHash) || deactivated;
+      if (signsOut) endEmployeeSessions(tx, id);
       return tx
         .update(employees)
         .set({
@@ -117,8 +120,8 @@ export function employeeRoutes(app: FastifyInstance, ctx: AppContext): void {
           isMaster: input.isMaster ?? current.isMaster,
           role: input.role ?? current.role,
           active: input.active ?? current.active,
-          // A new password or deactivation revokes all previously issued tokens.
-          tokenVersion: passwordHash || deactivated ? current.tokenVersion + 1 : current.tokenVersion,
+          // A new password or deactivation revokes all previously issued tokens and ends every session.
+          tokenVersion: signsOut ? current.tokenVersion + 1 : current.tokenVersion,
           updatedAt: Date.now(),
         })
         .where(eq(employees.id, id))
