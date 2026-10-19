@@ -95,6 +95,7 @@ struct TimeGridPage: View {
                 if isActive, phase == .interacting { scroll.userScrolled = true }
             }
             .refreshable { await store.reload(query) }
+            .appointmentDragging(position: $position)
         }
         .onAppear(perform: syncPosition)
         .onChange(of: isActive) { _, active in if active { syncPosition() } }

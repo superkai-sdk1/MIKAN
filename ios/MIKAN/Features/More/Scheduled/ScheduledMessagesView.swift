@@ -119,6 +119,7 @@ private extension ScheduledKind {
         case .reminder: .blue
         case .healingCheck: .pink
         case .jewelryChange: .purple
+        case .rescheduleNotice: .orange
         case .other: .gray
         }
     }

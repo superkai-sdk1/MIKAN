@@ -830,8 +830,10 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
   client has Telegram linked and `botEnabled`, the server queues a `reschedule_notice` scheduled message sent at once
   (the sender delivers it within 30 s, with retries) with the «✅ Приду» / «🔁 Перенести» buttons:
   «Анна, ваша запись перенесена 🗓\n\nБыло: 20 октября, 14:00\nСтало: **21 октября, 15:00**\nМастер: Фатима\n\nЕсли
-  новое время не подходит — нажмите «🔁 Перенести».» A pending notice of the same appointment is replaced. Without
-  Telegram (or without the flag) nothing is sent. Reminders are rescheduled as before either way.
+  новое время не подходит — нажмите «🔁 Перенести».» A pending notice of the same appointment is replaced (a move
+  without the flag just drops it). Without Telegram (or without the flag) nothing is sent, nor for a move into the past
+  or of an appointment that is not `scheduled` / `confirmed`; the sender skips a notice whose appointment is no longer
+  active. Reminders are rescheduled as before either way.
 - Consumption: `consumables` **omitted or `null`** → the server deducts the norms of the appointment's services
   (Σ over its service lines of each service's `consumables`, quantity-mode only), never failing: a consumable short of
   stock gives what it has and is reported. `consumables` given (an array, `[]` included) → exactly those, and a shortage
@@ -857,10 +859,11 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 Long press on an appointment in the day / 3-day / week calendar lifts it; dragging moves it in time (snapped to 15
 minutes; the duration is kept) and, in views with several days, to another day; in the day view with master columns,
 to another master (owner and admin only). On release the app asks «Перенести запись Анны на 21 октября, 15:00?»
-with «Уведомить клиента в Telegram» (on by default; hidden when the client has no Telegram) and sends `PATCH`
-with `startsAt`, `endsAt` (and `masterId`), `notifyClient`. A `schedule_conflict` asks «Записать всё равно?» and
-retries with `force: true`; cancelling or an error puts the appointment back. A master can lift only their own
-appointments; completed, cancelled and no-show appointments are not draggable.
+with «Уведомить клиента в Telegram» (on by default; hidden when the client has no Telegram or the new time has
+already passed) and sends `PATCH` with `startsAt`, `endsAt` (and `masterId`), `notifyClient`. A `schedule_conflict`
+asks «Записать всё равно?» and retries with `force: true`; cancelling or an error puts the appointment back. A master
+can lift only their own appointments; completed, cancelled and no-show appointments are not draggable (nor one that
+runs past midnight — it is moved in the editor).
 
 ### Prepayments (deposits)
 Every prepayment movement is a `DepositOperation`; the appointment's `deposit` (held amount) and `depositStatus` are
