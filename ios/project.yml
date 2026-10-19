@@ -62,6 +62,9 @@ targets:
           CODE_SIGN_ENTITLEMENTS: MIKAN/Resources/MIKAN-Debug.entitlements
         Release:
           CODE_SIGN_ENTITLEMENTS: MIKAN/Resources/MIKAN-Release.entitlements
+          # Xcode 26: the multithreaded whole-module build produced an invalid LLVM module («Instruction does not
+          # dominate all uses») in its first output file and failed the archive; per-file optimization builds fine.
+          SWIFT_COMPILATION_MODE: singlefile
     scheme:
       testTargets:
         - MIKANTests
