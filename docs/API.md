@@ -859,10 +859,11 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 Long press on an appointment in the day / 3-day / week calendar lifts it; dragging moves it in time (snapped to 15
 minutes; the duration is kept) and, in views with several days, to another day; in the day view with master columns,
 to another master (owner and admin only). On release the app asks «Перенести запись Анны на 21 октября, 15:00?»
-with «Уведомить клиента в Telegram» (on by default; hidden when the client has no Telegram) and sends `PATCH`
-with `startsAt`, `endsAt` (and `masterId`), `notifyClient`. A `schedule_conflict` asks «Записать всё равно?» and
-retries with `force: true`; cancelling or an error puts the appointment back. A master can lift only their own
-appointments; completed, cancelled and no-show appointments are not draggable.
+with «Уведомить клиента в Telegram» (on by default; hidden when the client has no Telegram or the new time has
+already passed) and sends `PATCH` with `startsAt`, `endsAt` (and `masterId`), `notifyClient`. A `schedule_conflict`
+asks «Записать всё равно?» and retries with `force: true`; cancelling or an error puts the appointment back. A master
+can lift only their own appointments; completed, cancelled and no-show appointments are not draggable (nor one that
+runs past midnight — it is moved in the editor).
 
 ### Prepayments (deposits)
 Every prepayment movement is a `DepositOperation`; the appointment's `deposit` (held amount) and `depositStatus` are
