@@ -14,7 +14,7 @@ import { getAlertStates, getStaffChatId, setAlertStates } from './settings.js';
  * restart neither repeats an alert nor forgets one.
  */
 
-export type AlertKind = 'ai_balance' | 'ai_errors' | 'backup' | 'offsite_backup' | 'disk';
+export type AlertKind = 'ai_balance' | 'ai_errors' | 'backup' | 'offsite_backup' | 'offsite_uploads' | 'disk';
 
 export const ALERT_REPEAT_MS = 6 * 60 * 60_000;
 /** AI failures in a row before staff hear about it (a single hiccup is retried by the client SDK already). */

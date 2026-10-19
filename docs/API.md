@@ -2160,8 +2160,8 @@ bot off for themselves, and skipped if the visit is no longer `completed` when i
 #### Alerts
 The staff chat (bound with `/staff`; else every staff chat) is told when something needs a person: the AI provider
 refuses for lack of balance («⚠️ Закончился баланс ИИ (Polza) — бот отвечает заглушкой»), the AI fails several times
-in a row, a daily backup or its off-site copy fails, free disk space runs low. Each kind at most once every 6 hours,
-and once more when it recovers.
+in a row, a daily backup or its off-site copy (the database or the photo archive) fails, free disk space runs low.
+Each kind at most once every 6 hours, and once more when it recovers.
 
 #### Formatting
 Bot messages may use light Markdown that the server renders for Telegram (HTML parse mode): `**bold**`, a heading

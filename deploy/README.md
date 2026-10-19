@@ -109,12 +109,28 @@ curl https://95-170-124-192.sslip.io/api/health
    ```
 
 Вместе с базой раз в день уходит и архив загруженных фото (`data/uploads`): `mikan-uploads-ГГГГ-ММ-ДД.tar.enc`, тем же
-ключом, только если с прошлого раза что-то изменилось; хранятся последние 7 архивов.
+ключом, только если с прошлого раза что-то изменилось; хранятся последние 7 архивов. Архив собирается во временный файл
+в `data/backups/` (нужно свободное место размером с папку фото) и удаляется после выгрузки; если выгрузка не удалась, в
+рабочий чат приходит предупреждение, а архив уйдёт на следующий день. Отправить архив сразу, не дожидаясь утра:
 
-Расшифровать скачанную копию (на сервере или у себя, с тем же ключом):
+```bash
+docker compose exec api node dist/scripts/offsite-backup.js upload-uploads           # только если фото менялись
+docker compose exec api node dist/scripts/offsite-backup.js upload-uploads --force   # в любом случае
+```
+
+Расшифровать скачанную копию (на сервере или у себя, с тем же ключом) — базу или архив фото:
 
 ```bash
 BACKUP_ENCRYPTION_KEY=... node dist/scripts/offsite-backup.js decrypt mikan-2026-10-19.db.enc mikan.db
+BACKUP_ENCRYPTION_KEY=... node dist/scripts/offsite-backup.js decrypt mikan-uploads-2026-10-19.tar.enc uploads.tar
+```
+
+Архив фото — обычный tar, внутри папка `uploads/`. Посмотреть и восстановить на сервере (при остановленном `api`):
+
+```bash
+tar -tf uploads.tar | head                          # список файлов
+tar -xf uploads.tar -C /opt/mikan/deploy/data       # → /opt/mikan/deploy/data/uploads/
+chown -R 1000:1000 /opt/mikan/deploy/data/uploads   # владелец — пользователь node в контейнере
 ```
 
 ## Push-уведомления

@@ -156,6 +156,7 @@ const KEY_ALERTS = 'alerts';
 const KEY_RETENTION = 'retention';
 const KEY_DISMISSED_DUPLICATES = 'clientDuplicatesDismissed';
 const KEY_WAITLIST_FREED = 'waitlistFreed';
+const KEY_OFFSITE_UPLOADS = 'offsiteUploads';
 
 function readKey<T>(db: DbOrTx, key: string): T | null {
   const row = db.select().from(settings).where(eq(settings.key, key)).get();
@@ -335,4 +336,21 @@ export function readWaitlistFreed(db: DbOrTx): unknown {
 
 export function writeWaitlistFreed(db: DbOrTx, value: unknown): void {
   writeKey(db, KEY_WAITLIST_FREED, value);
+}
+
+/** The last photo archive sent off-site (domain/offsite-uploads.ts): the manifest hash of its file set. */
+export interface OffsiteUploadsState {
+  hash: string;
+  key: string;
+  files: number;
+  uploadedAt: number;
+}
+
+export function getOffsiteUploads(db: DbOrTx): OffsiteUploadsState | null {
+  const value = readKey<OffsiteUploadsState>(db, KEY_OFFSITE_UPLOADS);
+  return value && typeof value.hash === 'string' ? value : null;
+}
+
+export function setOffsiteUploads(db: DbOrTx, value: OffsiteUploadsState): void {
+  writeKey(db, KEY_OFFSITE_UPLOADS, value);
 }
