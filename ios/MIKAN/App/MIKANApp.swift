@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct MIKANApp: App {
-    @State private var appState = AppState.live()
+    /// Owns the app state, so push notifications reach it from launch on.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         // Service covers and work photos (AsyncImage → URLSession.shared) repeat across the catalog, POS grid and
@@ -13,7 +14,7 @@ struct MIKANApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .appEnvironment(appState)
+                .appEnvironment(appDelegate.appState)
         }
     }
 }

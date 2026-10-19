@@ -60,12 +60,13 @@ private extension AuditSource {
         switch self {
         case .app, .botStaff: "person.fill"
         case .bot: "paperplane.fill"
+        case .online: "globe"
         case .system, .other: "gearshape.fill"
         }
     }
 
     var tint: Color {
-        self == .bot ? .blue : .gray
+        self == .bot || self == .online ? .blue : .gray
     }
 }
 

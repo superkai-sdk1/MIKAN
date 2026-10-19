@@ -55,6 +55,12 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_PREVIEWS: YES
         CODE_SIGN_STYLE: Automatic
+      # Push Notifications: sandbox APNs for Debug builds, production for TestFlight / App Store.
+      configs:
+        Debug:
+          CODE_SIGN_ENTITLEMENTS: MIKAN/Resources/MIKAN-Debug.entitlements
+        Release:
+          CODE_SIGN_ENTITLEMENTS: MIKAN/Resources/MIKAN-Release.entitlements
     scheme:
       testTargets:
         - MIKANTests

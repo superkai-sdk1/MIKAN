@@ -23,6 +23,10 @@ struct RootView: View {
             await appState.refreshSession()
             await appState.runPolling()
         }
+        // After sign-in (and on launch with a saved session): ask about notifications and register this iPhone.
+        .task(id: appState.phase) {
+            await appState.activatePush()
+        }
     }
 }
 

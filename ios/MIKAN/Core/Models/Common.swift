@@ -11,8 +11,26 @@ nonisolated struct Badges: Codable, Hashable, Sendable {
     let needsAttention: Int
     let newBookingRequests: Int
     let lowStock: Int
+    /// Future online bookings waiting for staff confirmation; 0 from a server without online booking.
+    var onlineAwaiting = 0
 
     static let zero = Badges(unreadChats: 0, needsAttention: 0, newBookingRequests: 0, lowStock: 0)
+}
+
+nonisolated extension Badges {
+    private enum CodingKeys: String, CodingKey {
+        case unreadChats, needsAttention, newBookingRequests, lowStock, onlineAwaiting
+    }
+
+    /// Tolerates servers that predate online booking (no `onlineAwaiting`).
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        unreadChats = try c.decode(Int.self, forKey: .unreadChats)
+        needsAttention = try c.decode(Int.self, forKey: .needsAttention)
+        newBookingRequests = try c.decode(Int.self, forKey: .newBookingRequests)
+        lowStock = try c.decode(Int.self, forKey: .lowStock)
+        onlineAwaiting = try c.decodeIfPresent(Int.self, forKey: .onlineAwaiting) ?? 0
+    }
 }
 
 nonisolated struct Dashboard: Codable, Sendable {
