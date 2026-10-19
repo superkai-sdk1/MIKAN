@@ -20,6 +20,7 @@ import { renderContacts } from './views/contacts.js';
 import { renderMaster } from './views/master.js';
 import { renderServices } from './views/services.js';
 import { renderTime } from './views/time.js';
+import { createWorks } from './views/works.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const root = byId('app');
@@ -55,6 +56,8 @@ const app = {
   completed: false,
   /** @type {null | { body: string, key: string }} The booking being sent and its `Idempotency-Key`. */
   attempt: null,
+  /** @type {null | ReturnType<typeof createWorks>} Opens the galleries of masters' works. */
+  works: null,
 };
 
 function announce(text) {
@@ -132,10 +135,10 @@ function renderStep() {
   let view;
   switch (state.step) {
     case 'services':
-      view = renderServices({ ...base, services: data.services });
+      view = renderServices({ ...base, services: data.services, onWorks: app.works?.service });
       break;
     case 'master':
-      view = renderMaster({ ...base, masters: data.masters });
+      view = renderMaster({ ...base, masters: data.masters, onWorks: app.works?.master });
       break;
     case 'time':
       view = renderTime({
@@ -364,6 +367,7 @@ async function startFlow() {
 async function boot() {
   app.tg = await initTelegram();
   app.api = createApi({ initData: app.tg.initData });
+  app.works = createWorks({ api: app.api, tg: app.tg, onClosed: updateChrome });
   barButton.addEventListener('click', goNext);
   backButton.addEventListener('click', goBack);
   window.addEventListener('popstate', onPopState);
