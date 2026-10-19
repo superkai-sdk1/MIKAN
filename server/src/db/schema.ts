@@ -918,3 +918,24 @@ export const retentionSends = sqliteTable(
   },
   (t) => [uniqueIndex('retention_sends_unique').on(t.clientId, t.kind, t.periodKey)],
 );
+
+/**
+ * Sign-ins of employees (docs/API.md «Sessions»): one row per login on a device. The JWT carries the session id, so
+ * signing out ends that device only and the owner can end any session.
+ */
+export const authSessions = sqliteTable(
+  'auth_sessions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    employeeId: integer('employee_id')
+      .notNull()
+      .references(() => employees.id),
+    /** «iPhone 16 Pro · MIKAN 13» — from the app's `X-Device` header, else the user agent. */
+    device: text('device'),
+    ip: text('ip'),
+    createdAt: ms('created_at').notNull(),
+    lastSeenAt: ms('last_seen_at').notNull(),
+    revokedAt: ms('revoked_at'),
+  },
+  (t) => [index('auth_sessions_employee_idx').on(t.employeeId, t.revokedAt)],
+);

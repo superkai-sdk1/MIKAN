@@ -649,6 +649,23 @@ carry the inline buttons «✅ Приду» and «🔁 Перенести» (see
 
 The token lives 90 days. On first start, if there are no employees, the server creates one from `ADMIN_LOGIN` / `ADMIN_PASSWORD` / `ADMIN_NAME` env.
 
+#### Sessions
+Every login opens a session (one device) and the token carries its id (`sid`). A request with a token of an ended
+session → `401` «Сессия завершена — войдите снова». Tokens issued before sessions existed (no `sid`) keep working
+until they expire or the password changes. The app sends `X-Device: <model> · MIKAN <build>` on login.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/auth/logout` | — | `204` — ends the current session (signing out of this phone only) |
+| GET | `/auth/sessions` | — | `{ items: [Session] }` — the employee's own active sessions; the owner gets everyone's (`?employeeId=` filters) |
+| DELETE | `/auth/sessions/:id` | — | `204` — ends a session: your own, or anyone's for the owner |
+
+`Session`: `{ id, employee: EmployeeRef, device, ip, createdAt, lastSeenAt, current: true }` (`current` — the session
+of this request). `lastSeenAt` is updated at most once a minute. A password change or deactivation ends all of the
+employee's sessions (as before). Sessions unused for 90 days end by themselves. Face ID is an app-only lock: after
+the app was in the background for more than 5 minutes (or after a restart) it asks for Face ID / the passcode before
+showing anything; on by default after the first sign-in, switchable in More → «Безопасность».
+
 ### Badges & dashboard
 | Method | Path | Response |
 |---|---|---|
@@ -750,6 +767,22 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 | GET | `/clients/:id/history` | — | `{ items: [HistoryEntry], appointments: [Appointment], sales: [Sale] }` newest first (see History) |
 | GET | `/clients/:id/chat` | — | `{ "chat": BotChat \| null }` — the client's Telegram bot chat (the linked chat, else the latest chat attributed to the client); `null` if the client has never written to the bot |
 | POST | `/clients/:id/telegram-link` | — | `{ "url": "https://t.me/<bot>?start=c<token>" }` — opening it links the Telegram chat to this client |
+| GET | `/clients/duplicates` | — | `{ items: [DuplicateGroup] }` — likely duplicate cards, strongest first · owner, admin |
+| POST | `/clients/:id/merge` | `{ intoId }` | `Client` (the one kept) — merges card `:id` into `intoId` · owner, admin |
+
+**Duplicates.** `DuplicateGroup`: `{ reason: "same_full_name" | "phoneless_same_name" | "same_telegram" |
+"same_instagram", clients: [ Client with `stats` ] }`. Names compare case-insensitively, `ё` = `е`, spaces collapsed;
+`same_full_name` needs a last name on both; `phoneless_same_name` — the same first (+ last when both have one) name
+where one card has no phone; first-name-only matches between two cards with different phones are not offered. A pair
+the staff dismissed is not offered again (`POST /clients/duplicates/dismiss { clientIds: [a, b] }` → `204`).
+
+**Merge** `:id` (the source) into `intoId` (kept), in one transaction: every appointment, sale, open receipt, bot chat
+attribution, bonus operation, certificate (as buyer), campaign recipient, retention send and audit reference of the
+source moves to the kept card; the kept card's empty fields take the source's values (`phone`, `lastName`,
+`birthday`, `telegramNick`, `instagram`, `source`; the Telegram link when the kept card has none), `notes` are joined;
+then the source card is deleted. Both linked to different Telegram chats → the kept card keeps its own link, the
+source's chat stays attributed to the kept card. The same card, an unknown card → `400` / `404`. Audited as
+`client.merge` («Карточка «Анна» (+7 999…) объединена с «Анна Иванова»»).
 
 ### Services
 | Method | Path | Body | Response |
@@ -1149,6 +1182,34 @@ sale refunded).
 | GET | `/cash/shifts/:id` | — | `CashShift` with `operations` |
 
 ### Reports
+`GET /reports/growth?from=&to=` (instants; owner, admin; ≤ 400 days) — how the studio grows:
+```json
+{ "from": "...", "to": "...",
+  "funnel": { "bookingRequests": { "created": 12, "processed": 9, "rejected": 2, "open": 1 },
+              "online": { "created": 20, "byChannel": { "bot": 8, "miniapp": 7, "web": 5 }, "confirmed": 15,
+                          "rejected": 2, "expired": 1, "cancelledByClient": 1, "completed": 11, "awaiting": 1 },
+              "appointments": { "created": 80, "byChannel": { "app": 60, "bot": 8, "miniapp": 7, "web": 5 },
+                                "completed": 62, "cancelled": 9, "noShow": 3 } },
+  "load": [ { "employee": { EmployeeRef }, "workingMinutes": 9600, "bookedMinutes": 6240, "completedMinutes": 5400,
+              "loadPercent": 65, "byWeekday": [ { "weekday": 1, "workingMinutes": 1440, "bookedMinutes": 900 } ] } ],
+  "retention": { "newClients": 14, "returnedWithin90Days": 5, "repeatRatePercent": 35.7, "averageDaysBetweenVisits": 74,
+                 "cohorts": [ { "month": "2026-05", "clients": 30, "returned30": 4, "returned90": 9, "returned180": 12 } ] },
+  "value": { "clientsWithVisits": 610, "averageRevenuePerClient": 5300, "averageVisitsPerClient": 2.1,
+             "top10PercentShare": 38.5 },
+  "sources": [ { "source": "instagram", "newClients": 6, "revenue": 42000 } ] }
+```
+- `funnel.online` — online bookings created in the period by channel and what became of them; `appointments` — all
+  appointments created in the period by `channel`.
+- `load` — every active master: working time from their work schedule (studio hours when none) in the period,
+  booked = non-cancelled, non-no-show appointments inside it, `loadPercent = booked / working`.
+- `retention` — `newClients` had their first completed visit in the period; `returnedWithin90Days` came back within
+  90 days of it (counted up to now); `cohorts` — the 12 months up to `to`, by the month of the first completed visit.
+- `value` — over all time up to `to`: revenue per client with at least one completed visit or sale, visits per client,
+  the share of revenue from the top 10 % of clients.
+- `sources` — new clients of the period by the card's `source` (empty → «не указан») and the revenue they brought in
+  the period.
+The app shows it in Analytics → «Рост» (owner, admin).
+
 `GET /reports/summary?from=&to=` (instants; the app sends studio-local day boundaries)
 ```json
 { "from": "...", "to": "...",
@@ -1709,6 +1770,12 @@ answer from the app (`POST /bot/chats/:chatId/messages`). Client tools:
   and until when it is valid, or that it is used / expired / cancelled / unknown — never the buyer. Read-only.
 - The client context names the linked client's bonuses while loyalty is on: «Бонусы клиента: 1 200 (1 бонус = 1 ₽,
   ими можно оплатить до 30% чека в студии); 200 из них действуют до 2 ноября.» The model speaks of bonuses only from it.
+- **AI quality check** (development, not an API): `server/eval/cases.json` holds ≥ 30 reference client questions
+  (prices, aftercare, complications and red flags, booking, jewelry, opening hours, prepayment and cancellation) with
+  expectations — words the answer must or must not contain, the tool it should call, whether it hands off to staff.
+  `npm run eval:ai` runs them against the configured model with the real prompt and tools in test mode (nothing is
+  written or sent) and prints a pass/fail table; run it after every model or prompt change. It costs one AI call per
+  case.
 - `/bot/test` runs these tools without writing anything (no booking, no reschedule, no messages) and lists what would
   have happened.
 
