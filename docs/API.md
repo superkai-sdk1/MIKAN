@@ -1480,6 +1480,8 @@ saleId, saleNumber, note, employee: EmployeeRef | null, createdAt }`.
   `expiresAt` — when that rest burns (`null` — never; always `null` on debits). `balance` = Σ `remaining` of credits
   that have not burnt: a lot past `expiresAt` leaves the balance at once, its `expire` operation (one per lot, with the
   `saleId` of the sale that earned it) is written by the hourly job.
+- Bonuses that burn after N days (`loyalty.expiryDays`, a gift's `bonusDays`) burn at the end of the studio day N days
+  from the day they are credited — the client is told «действуют до <that day>».
 - `earn` — the cashback of a sale (burns after `loyalty.expiryDays`, never when `null`); `spend` — paid in a sale;
   `gift` — birthday and win-back gifts; `adjust` — by staff: `note` is required, a credit burns at `expiresAt` when
   given (in the future, else `400` «Срок сгорания должен быть в будущем»), a debit takes from the oldest lots.
@@ -1489,7 +1491,7 @@ saleId, saleNumber, note, employee: EmployeeRef | null, createdAt }`.
   work with loyalty off too.
 - After a paid sale that earned bonuses (`POST /sales`, a confirmed QR code) the bot tells the client in the
   **linked** Telegram chat, when `loyalty.notifyClient`, the client's `botEnabled` and the card is not archived:
-  «Спасибо за покупку! 🎁 +75 бонусов, на счёте 1 275» (+ « — начисленные сгорят 14 ноября» when they burn). An
+  «Спасибо за покупку! 🎁 +75 бонусов, на счёте 1 275» (+ « — начисленные действуют до 14 ноября» when they burn). An
   idempotent replay sends nothing.
 
 ### Gift certificates
@@ -1691,7 +1693,7 @@ answer from the app (`POST /bot/chats/:chatId/messages`). Client tools:
 - `certificate_balance { code }` — a gift certificate by its code (case, dashes and spaces ignored): what is left of it
   and until when it is valid, or that it is used / expired / cancelled / unknown — never the buyer. Read-only.
 - The client context names the linked client's bonuses while loyalty is on: «Бонусы клиента: 1 200 (1 бонус = 1 ₽,
-  ими можно оплатить до 30% чека в студии); 200 сгорят 2 ноября.» The model speaks of bonuses only from it.
+  ими можно оплатить до 30% чека в студии); 200 из них действуют до 2 ноября.» The model speaks of bonuses only from it.
 - `/bot/test` runs these tools without writing anything (no booking, no reschedule, no messages) and lists what would
   have happened.
 

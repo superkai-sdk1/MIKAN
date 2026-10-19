@@ -1,11 +1,12 @@
-import { and, asc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import { DateTime } from 'luxon';
 import type { DbOrTx } from '../db/client.js';
 import { bonusOperations } from '../db/schema.js';
 import { badRequest, conflict } from '../lib/errors.js';
 import type { SaleRow } from '../lib/serialize.js';
 import { formatAmount, formatRub, pluralWord } from '../lib/text.js';
-import { DAY_MS } from '../lib/time.js';
 import { getRetentionSettings, type LoyaltySettings } from './retention-settings.js';
+import { studioTimezone } from './settings.js';
 
 /**
  * The loyalty bonus ledger (docs/API.md «Loyalty bonuses»). 1 bonus = 1 ₽. Credits (`earn`, `gift`, a positive
@@ -32,6 +33,13 @@ function liveLots(db: DbOrTx, clientId: number, now: number): BonusRow[] {
     .orderBy(asc(bonusOperations.createdAt), asc(bonusOperations.id))
     .all();
 }
+
+/**
+ * SQL «the client has bonuses now» for a client id expression (e.g. sql`c.id` in a segment query): a lot with an
+ * unspent rest that has not burnt — exactly when `bonusBalance` > 0.
+ */
+export const hasBonusBalanceSql = (clientId: SQL, now: number): SQL =>
+  sql`exists (select 1 from bonus_operations b where b.client_id = ${clientId} and b.remaining > 0 and (b.expires_at is null or b.expires_at > ${now}))`;
 
 /** What the client can spend now: the unspent rest of the lots that have not burnt. */
 export function bonusBalance(db: DbOrTx, clientId: number, now = Date.now()): number {
@@ -95,9 +103,18 @@ function insertOperation(db: DbOrTx, v: OperationValues): BonusRow {
     .get();
 }
 
+/**
+ * When bonuses given now for `days` burn: the end of the studio day `days` days from today, so a client told «они
+ * действуют до 2 ноября» (`lastDay`) has the whole of that day. Earned, returned and gift bonuses all burn this way.
+ */
+export function bonusExpiry(now: number, days: number, tz: string): { lastDay: string; expiresAt: number } {
+  const lastDay = DateTime.fromMillis(now, { zone: tz }).startOf('day').plus({ days });
+  return { lastDay: lastDay.toISODate() ?? '', expiresAt: lastDay.plus({ days: 1 }).toMillis() };
+}
+
 /** When bonuses earned now burn under the loyalty settings (`null` — never). */
-export const earnedExpiry = (loyalty: LoyaltySettings, now: number): number | null =>
-  loyalty.expiryDays == null ? null : now + loyalty.expiryDays * DAY_MS;
+const earnedExpiry = (db: DbOrTx, loyalty: LoyaltySettings, now: number): number | null =>
+  loyalty.expiryDays == null ? null : bonusExpiry(now, loyalty.expiryDays, studioTimezone(db)).expiresAt;
 
 /**
  * Checks a bonus payment of a checkout (nothing is written): a client, loyalty on, at most `maxPaymentPercent` of the
@@ -138,7 +155,7 @@ export function earnBonuses(db: DbOrTx, sale: SaleRow, base: number, employeeId:
     clientId: sale.clientId,
     type: 'earn',
     amount: earned,
-    expiresAt: earnedExpiry(loyalty, now),
+    expiresAt: earnedExpiry(db, loyalty, now),
     saleId: sale.id,
     employeeId,
     createdAt: now,
@@ -161,7 +178,7 @@ export function reverseSaleBonuses(db: DbOrTx, sale: SaleRow, employeeId: number
       clientId: sale.clientId,
       type: 'reverse',
       amount: spent,
-      expiresAt: earnedExpiry(getRetentionSettings(db).loyalty, now),
+      expiresAt: earnedExpiry(db, getRetentionSettings(db).loyalty, now),
       saleId: sale.id,
       note: `Возврат чека №${sale.number}: бонусы, оплаченные в чеке, вернулись`,
       employeeId,
@@ -189,8 +206,8 @@ export function reverseSaleBonuses(db: DbOrTx, sale: SaleRow, employeeId: number
 }
 
 /**
- * Gift bonuses (birthday, win-back): a lot of `amount` that burns after `days` days. The caller decides whether gifts
- * are on (retention settings); this only writes the lot. Returns the operation.
+ * Gift bonuses (birthday, win-back): a lot of `amount` that burns at the end of the studio day `days` days from today
+ * (`bonusExpiry`). The caller decides whether gifts are on (retention settings); this only writes the lot.
  */
 export function creditGiftBonuses(
   db: DbOrTx,
@@ -201,8 +218,9 @@ export function creditGiftBonuses(
   now = Date.now(),
 ): BonusRow {
   if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error(`gift bonuses must be a positive integer, got ${amount}`);
-  if (!Number.isFinite(days) || days <= 0) throw new Error(`gift bonuses must burn after a positive number of days, got ${days}`);
-  return insertOperation(db, { clientId, type: 'gift', amount, expiresAt: now + days * DAY_MS, note, createdAt: now });
+  if (!Number.isSafeInteger(days) || days <= 0) throw new Error(`gift bonuses must burn after a positive number of days, got ${days}`);
+  const { expiresAt } = bonusExpiry(now, days, studioTimezone(db));
+  return insertOperation(db, { clientId, type: 'gift', amount, expiresAt, note, createdAt: now });
 }
 
 /** A manual correction by staff: a credit (optionally burning at `expiresAt`) or a debit within the balance. */

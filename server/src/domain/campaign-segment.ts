@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { DbOrTx } from '../db/client.js';
 import { clientRef, type ClientRef } from '../lib/serialize.js';
 import { DAY_MS } from '../lib/time.js';
+import { hasBonusBalanceSql } from './bonuses.js';
 import { SERVICE_CATEGORIES } from './categories.js';
 import { clientsByIds } from './refs.js';
 
@@ -125,10 +126,8 @@ function conditions(segment: CampaignSegment, now: number, tz: string): SQL[] {
       where a.client_id = c.id and a.status = 'completed' and a.master_id in (${listOf(s.masterIds)}))`);
   }
   if (s.birthdayMonth != null) where.push(sql`substr(c.birthday, 6, 2) = ${String(s.birthdayMonth).padStart(2, '0')}`);
-  if (s.hasBonuses === true) {
-    where.push(sql`exists (select 1 from bonus_operations b
-      where b.client_id = c.id and b.remaining > 0 and (b.expires_at is null or b.expires_at > ${now}))`);
-  }
+  // The bonus module's own definition: a balance above 0 right now.
+  if (s.hasBonuses === true) where.push(hasBonusBalanceSql(sql`c.id`, now));
   if (s.createdWithinDays != null) where.push(sql`c.created_at >= ${now - s.createdWithinDays * DAY_MS}`);
   return where;
 }

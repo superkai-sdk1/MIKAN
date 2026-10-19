@@ -93,7 +93,7 @@ describe('bot: bonuses and gift certificates for clients', () => {
     await say('Сколько у меня бонусов?');
     const context = (ai.calls[0]!.system as Anthropic.TextBlockParam[])[1]!.text;
     expect(context).toContain(
-      'Бонусы клиента: 1 200 (1 бонус = 1 ₽, ими можно оплатить до 30% чека в студии); 200 сгорят 2 ноября.',
+      'Бонусы клиента: 1 200 (1 бонус = 1 ₽, ими можно оплатить до 30% чека в студии); 200 из них действуют до 2 ноября.',
     );
 
     await t.api('PUT', '/api/settings/retention', { loyalty: { enabled: false } });

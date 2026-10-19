@@ -30,10 +30,10 @@ describe('loyalty in reports and payroll', () => {
   const service = (price = 3000) => ({ type: 'service', serviceId: lobe.id, quantity: 1, price });
   const certificate = (price: number) => ({ type: 'certificate', price, recipientName: 'Маше' });
 
-  /** 14 Oct: 1 000 bonuses by hand and a 200 gift burning a day later. 15 Oct: four receipts, one refunded. */
+  /** 13 Oct: a 200 gift valid through 14 Oct; 14 Oct: 1 000 bonuses by hand. 15 Oct: four receipts, one refunded. */
   async function day() {
+    creditGiftBonuses(t.ctx.db, client.id, 200, 1, 'Подарок', Date.parse('2026-10-13T09:00:00.000Z'));
     await ok(t.api, 'POST', `/api/clients/${client.id}/bonuses`, { amount: 1000, note: 'Перенос' });
-    creditGiftBonuses(t.ctx.db, client.id, 200, 1, 'Подарок');
     at('2026-10-15T09:30:00.000Z');
     await ok(t.api, 'POST', '/api/cash/shift/open', { openingCash: 0 });
     at('2026-10-15T10:00:00.000Z');
@@ -85,7 +85,7 @@ describe('loyalty in reports and payroll', () => {
       certificatesOutstanding: 6000,
     });
     const previous = (await t.api('GET', `/api/reports/analytics?from=2026-10-13T21:00:00.000Z&to=${FROM}`)).json();
-    expect(previous.loyalty).toMatchObject({ bonusEarned: 1200, bonusSpent: 0, bonusOutstanding: 1200, certificatesOutstanding: 0 });
+    expect(previous.loyalty).toMatchObject({ bonusEarned: 1000, bonusSpent: 0, bonusOutstanding: 1200, certificatesOutstanding: 0 });
   });
 
   it('the summary, the dashboard and the cash shift count revenue and money the same way', async () => {

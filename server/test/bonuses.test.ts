@@ -1,6 +1,7 @@
 import type { InjectOptions } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bonusBalance, creditGiftBonuses, expireBonusLots } from '../src/domain/bonuses.js';
+import { sql } from 'drizzle-orm';
+import { bonusBalance, creditGiftBonuses, expireBonusLots, hasBonusBalanceSql } from '../src/domain/bonuses.js';
 import { linkTelegram } from '../src/domain/clients.js';
 import { birthdayDiscount } from '../src/domain/loyalty.js';
 import { DEFAULT_RETENTION } from '../src/domain/retention-settings.js';
@@ -161,7 +162,7 @@ describe('loyalty bonuses', () => {
   it('lets earned bonuses burn after expiryDays', async () => {
     await setLoyalty({ expiryDays: 30 });
     const sale = await sold({ cash: 3000 });
-    const at = new Date(NOW + 30 * DAY_MS).toISOString();
+    const at = '2026-11-14T21:00:00.000Z'; // the end of 14 November, studio time
     expect((await ledger()).items[0]).toMatchObject({ type: 'earn', amount: 150, expiresAt: at, saleId: sale.id });
     expect(await loyalty()).toMatchObject({ bonusBalance: 150, expiring: { amount: 150, at } });
   });
@@ -265,9 +266,22 @@ describe('loyalty bonuses', () => {
 
   it('credits gift bonuses that burn after the given days (birthday and win-back)', async () => {
     const gift = creditGiftBonuses(t.ctx.db, client.id, 500, 14, 'С днём рождения!');
-    expect(gift).toMatchObject({ type: 'gift', amount: 500, remaining: 500, expiresAt: NOW + 14 * DAY_MS, note: 'С днём рождения!' });
-    expect(await loyalty()).toMatchObject({ bonusBalance: 500, expiring: { amount: 500, at: new Date(NOW + 14 * DAY_MS).toISOString() } });
+    // The end of the studio day 14 days ahead: valid all of 29 October.
+    const at = Date.parse('2026-10-29T21:00:00.000Z');
+    expect(gift).toMatchObject({ type: 'gift', amount: 500, remaining: 500, expiresAt: at, note: 'С днём рождения!' });
+    expect(await loyalty()).toMatchObject({ bonusBalance: 500, expiring: { amount: 500, at: new Date(at).toISOString() } });
     expect(() => creditGiftBonuses(t.ctx.db, client.id, 0, 14, 'x')).toThrow();
+  });
+
+  it('the campaign segment «has bonuses» means a balance above 0 right now', async () => {
+    const holders = () =>
+      t.ctx.db.all<{ id: number }>(sql`select c.id from clients c where ${hasBonusBalanceSql(sql`c.id`, Date.now())}`).map((r) => r.id);
+    expect(holders()).toEqual([]);
+    creditGiftBonuses(t.ctx.db, client.id, 100, 1, 'Подарок');
+    expect(holders()).toEqual([client.id]);
+    vi.setSystemTime(NOW + 2 * DAY_MS); // burnt, the hourly job not run yet
+    expect(bonusBalance(t.ctx.db, client.id)).toBe(0);
+    expect(holders()).toEqual([]);
   });
 
   it('offers the birthday discount inside the window around the birthday', async () => {
@@ -388,6 +402,6 @@ describe('loyalty bonuses', () => {
     await t.api('PATCH', `/api/clients/${client.id}`, { botEnabled: true });
     await sold({ cash: 1000 }, { items: [{ type: 'service', name: 'Уход', price: 1000, quantity: 1 }] });
     await vi.waitFor(() => expect(t.gateway.textsTo(CHAT)).toHaveLength(2));
-    expect(t.gateway.textsTo(CHAT)[1]).toBe('Спасибо за покупку! 🎁 +50 бонусов, на счёте 1 625 — начисленные сгорят 14 ноября');
+    expect(t.gateway.textsTo(CHAT)[1]).toBe('Спасибо за покупку! 🎁 +50 бонусов, на счёте 1 625 — начисленные действуют до 14 ноября');
   });
 });
