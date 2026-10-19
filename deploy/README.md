@@ -114,6 +114,39 @@ curl https://95-170-124-192.sslip.io/api/health
 BACKUP_ENCRYPTION_KEY=... node dist/scripts/offsite-backup.js decrypt mikan-2026-10-19.db.enc mikan.db
 ```
 
+## Push-уведомления
+
+Сотрудники получают push на iPhone: новая онлайн-запись, оплаченная предоплата, клиент ждёт ответа в чате, новая
+заявка, клиент отменил запись (кому что — `docs/API.md` «Push notifications»). Приложение само просит разрешение
+после входа и регистрирует телефон; серверу нужен один ключ APNs на всю команду Apple.
+
+1. [Apple Developer](https://developer.apple.com/account/resources/authkeys/list) → **Certificates, Identifiers & Profiles →
+   Keys → «+»**. Имя любое (например, `MIKAN Push`), отметьте **Apple Push Notifications service (APNs)**,
+   окружение — **Sandbox & Production**, затем **Continue → Register**.
+2. Скачайте файл `AuthKey_XXXXXXXXXX.p8` — **скачать его можно только один раз**, сохраните копию в менеджере
+   паролей. `XXXXXXXXXX` в имени файла — это Key ID (он же виден в списке ключей).
+3. Убедитесь, что у приложения `com.mikanstudio.crm` (Identifiers) включена возможность **Push Notifications**.
+4. Переведите ключ в base64 одной строкой (на Mac):
+   ```bash
+   base64 -i AuthKey_XXXXXXXXXX.p8 | tr -d '\n' | pbcopy
+   ```
+5. Пропишите в `/opt/mikan/deploy/.env` (`ssh mikan 'nano /opt/mikan/deploy/.env'`) четыре строки:
+   ```
+   APNS_KEY_ID=XXXXXXXXXX
+   APNS_TEAM_ID=G99YH9UK8C
+   APNS_BUNDLE_ID=com.mikanstudio.crm
+   APNS_PRIVATE_KEY=<строка из шага 4>
+   ```
+   и перезапустите: `docker compose up -d`. В логе запуска должно быть `"push":"apns"`; если настройка неполная
+   или ключ не читается, там же будет предупреждение `APNs is not fully configured` с причиной.
+
+Важно:
+- Один ключ работает и для TestFlight/App Store (`production`), и для сборок из Xcode (`sandbox`) — окружение
+  присылает само приложение.
+- Телефоны отключённых сотрудников ничего не получают. Телефон, который Apple больше не знает (приложение удалено
+  или токен от другого окружения), сервер удаляет сам.
+- Сбой push никогда не мешает самому действию: запись, оплата и сообщение в рабочий чат проходят как обычно.
+
 ## Оповещения
 
 Сервер сам пишет в группу сотрудников (или каждому сотруднику, если группа не привязана), когда закончился
