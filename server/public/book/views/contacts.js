@@ -1,8 +1,9 @@
 // @ts-check
-/** Step 4: name, phone (+7 mask) and an optional comment. Skipped for a linked Telegram chat. */
+/** Step 4: name, phone (+7 mask), the optional birthday and comment. Skipped for a linked Telegram chat. */
 import { h } from '../lib/dom.js';
 import { COMMENT_MAX, NAME_MAX, contactErrors } from '../lib/flow.js';
 import { applyPhoneInput } from '../lib/phone.js';
+import { birthdayField } from './birthday-field.js';
 import { stepHeading } from './common.js';
 
 /** @param {{ id: string, label: string, optional?: boolean, input: HTMLElement, hint?: string }} options */
@@ -19,7 +20,8 @@ function field({ id, label, optional = false, input, hint }) {
 }
 
 /**
- * @param {{ state: any, dispatch: (action: any) => void, onSubmit: () => void }} ctx
+ * @param {{ state: any, dispatch: (action: any) => void, onSubmit: () => void, today: string }} ctx
+ *   `today` — the studio's date, so a birthday in the future is caught here.
  */
 export function renderContacts(ctx) {
   const name = field({
@@ -51,6 +53,10 @@ export function renderContacts(ctx) {
     input: phoneInput,
     hint: 'Позвоним или напишем, только если что-то изменится',
   });
+  const birthday = birthdayField({
+    value: ctx.state.birthday ?? '',
+    onValue: (value) => ctx.dispatch({ type: 'setField', field: 'birthday', value }),
+  });
   const comment = field({
     id: 'comment',
     label: 'Комментарий',
@@ -74,7 +80,7 @@ export function renderContacts(ctx) {
       event.preventDefault();
       ctx.onSubmit();
     },
-  }, name.node, phone.node, comment.node, website,
+  }, name.node, phone.node, birthday.node, comment.node, website,
   // Lets «Enter» / «Go» on the keyboard submit the form.
   h('button', { type: 'submit', class: 'sr-only', tabindex: '-1', 'aria-hidden': 'true' }, 'Дальше'));
 
@@ -86,12 +92,13 @@ export function renderContacts(ctx) {
   previousPhone = ctx.state.phone;
   /** @type {HTMLTextAreaElement} */ (comment.input).value = ctx.state.comment;
 
+  const fields = /** @type {const} */ ([['name', name], ['phone', phone], ['birthday', birthday]]);
+
   /** Shows what is wrong and focuses the first wrong field; returns whether everything is fine. */
   function validate(state) {
-    const errors = contactErrors(state);
-    const pairs = /** @type {const} */ ([['name', name], ['phone', phone]]);
+    const errors = contactErrors(state, ctx.today);
     let first = null;
-    for (const [key, f] of pairs) {
+    for (const [key, f] of fields) {
       const message = errors[key];
       f.error.textContent = message ?? '';
       f.error.hidden = !message;
@@ -105,8 +112,8 @@ export function renderContacts(ctx) {
 
   function update(state) {
     // Clear an error as soon as the field becomes valid.
-    const errors = contactErrors(state);
-    for (const [key, f] of /** @type {const} */ ([['name', name], ['phone', phone]])) {
+    const errors = contactErrors(state, ctx.today);
+    for (const [key, f] of fields) {
       if (!errors[key] && !f.error.hidden) {
         f.error.hidden = true;
         f.input.removeAttribute('aria-invalid');

@@ -1,5 +1,6 @@
 // @ts-check
 /** Pure URL helpers: the public API query strings, the booking body, preselection and the page routes. */
+import { birthdayFromInput } from './birthday.js';
 
 export const API_BASE = '/api/public/booking';
 export const PAGE_BASE = '/book';
@@ -48,9 +49,11 @@ export function bookingPagePath(token) {
 }
 
 /**
- * The `POST /public/booking` body. A linked Telegram chat books for its client, so name and phone are left out.
+ * The `POST /public/booking` body. A linked Telegram chat books for its client, so name and phone are left out. The
+ * birthday goes as `YYYY-MM-DD` (1900 without the year) when the field was shown and filled in correctly.
  * @param {{ items: Array<{ serviceId: number, variant: string | null }>, master: number | 'any' | null,
- *   startsAt: string, name: string, phone: string | null, comment: string, website: string, linked: boolean }} input
+ *   startsAt: string, name: string, phone: string | null, comment: string, website: string, linked: boolean,
+ *   birthday?: string, askBirthday?: boolean }} input
  */
 export function bookingBody(input) {
   /** @type {Record<string, unknown>} */
@@ -66,6 +69,8 @@ export function bookingBody(input) {
   }
   const comment = input.comment.trim();
   if (comment) body.comment = comment;
+  const birthday = input.askBirthday ? birthdayFromInput(input.birthday ?? '').value : null;
+  if (birthday) body.birthday = birthday;
   if (input.website) body.website = input.website;
   return body;
 }

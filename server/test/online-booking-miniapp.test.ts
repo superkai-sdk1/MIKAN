@@ -71,10 +71,10 @@ describe('online booking in the Mini App', () => {
     expect((await pub(t, 'GET', '/me')).statusCode).toBe(401);
     expect((await pub(t, 'GET', '/me', undefined, { initData: 'user=1&hash=00' })).statusCode).toBe(401);
     const me = initData({ id: USER });
-    expect((await pub(t, 'GET', '/me', undefined, { initData: me })).json()).toEqual({ linked: false, name: null, phone: null });
+    expect((await pub(t, 'GET', '/me', undefined, { initData: me })).json()).toEqual({ linked: false, name: null, phone: null, hasBirthday: false });
     const anna = await make(t, '/api/clients', { name: 'Анна', phone: '+79991234567' });
     await linkChat(t, anna.id, USER);
-    expect((await pub(t, 'GET', '/me', undefined, { initData: me })).json()).toEqual({ linked: true, name: 'Анна', phone: '+7 *** ***-**-67' });
+    expect((await pub(t, 'GET', '/me', undefined, { initData: me })).json()).toEqual({ linked: true, name: 'Анна', phone: '+7 *** ***-**-67', hasBirthday: false });
   });
 
   it('books a new client by name and phone, confirms in the chat and asks for the own contact to link it', async () => {
@@ -94,7 +94,7 @@ describe('online booking in the Mini App', () => {
     expect((await pub(t, 'GET', '/me', undefined, { initData: initData({ id: USER }) })).json().linked).toBe(false);
     // The shared contact links the chat to the card with that phone.
     await handleContact(t.ctx, { chatId: USER, telegramName: 'Анна', username: 'anna', userId: USER }, { userId: USER, phone: '+79991234567', firstName: 'Анна', lastName: undefined });
-    expect((await pub(t, 'GET', '/me', undefined, { initData: initData({ id: USER }) })).json()).toEqual({ linked: true, name: 'Анна', phone: '+7 *** ***-**-67' });
+    expect((await pub(t, 'GET', '/me', undefined, { initData: initData({ id: USER }) })).json()).toEqual({ linked: true, name: 'Анна', phone: '+7 *** ***-**-67', hasBirthday: false });
   });
 
   it('a linked chat books without name and phone', async () => {

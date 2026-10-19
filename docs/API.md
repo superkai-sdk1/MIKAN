@@ -743,7 +743,8 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 - Logged: every successful write request from the app (`POST`/`PUT`/`PATCH`/`DELETE`) except `POST /auth/login`,
   `POST /uploads`, `POST /bot/chats/:chatId/read`, `POST /bot/staff-code`, `POST /devices`, `DELETE /devices/:token`,
   `POST /campaigns/preview` and idempotent replays; online bookings from the booking page and the Mini App and client
-  cancellations on the booking page and moves / cancellations in the client cabinet as `online`; client actions in the bot (online booking, booking request,
+  cancellations on the booking page and moves / cancellations in the client cabinet as `online` (a birthday given on
+  the booking page or in the cabinet — `client.birthday`); client actions in the bot (online booking, booking request,
   reschedule, confirm «Приду», «🔕 Не присылать новости» / «Снова получать новости» — `client.marketing_opt_out` /
   `client.marketing_opt_in`, the birthday — `client.birthday`) as `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed
   QR payments, an online hold confirmed by its prepayment and an unpaid hold released as `system`. Staff confirming / rejecting an online booking
@@ -1478,7 +1479,8 @@ most 2 unsettled online bookings per client: a third → `409` «У вас уж�
 **Booking page and Mini App** (`PUBLIC_URL/book`, static files in `server/public/book` served by the server; `/book/*`
 paths that are not files return the page, a missing `.js` / `.css` / `.png`… → `404`).
 One mobile-first page in Russian: service (categories → groups → services with photo, price text, duration, variants)
-→ master or «Любой мастер» → a day strip and free starts → name, phone, comment → confirm. With a prepayment it shows
+→ master or «Любой мастер» → a day strip and free starts → name, phone, the optional «Дата рождения» («ДД.ММ.ГГГГ» or
+just «ДД.ММ»), comment → confirm. With a prepayment it shows
 the QR / bank link, a countdown to `holdUntil` and waits for the payment; otherwise «Ждёт подтверждения». Then the
 booking page `/book/b/<token>`: status, details, «Добавить в календарь» (`.ics`), «Получать уведомления в Telegram»
 (`https://t.me/<bot>?start=b_<token>`), «Отменить запись». `?service=<id>&master=<id>` preselects (`?wait=…&start=…` — the waitlist's
@@ -1490,7 +1492,8 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
   year (`immutable`); plain `/book/<file>` (icons, `og.png`) for an hour. Link previews use `PUBLIC_URL` (else the
   request's origin) for `og:url` / `og:image`.
 - A linked Mini App chat posts the booking without `name` and `phone` (the chat's client is used). When `/me` answers
-  `401` the page stops sending the init data and books like the website (name and phone).
+  `401` the page stops sending the init data and books like the website (name and phone). A linked chat whose card has
+  no birthday (`hasBirthday: false`) gets the optional «Дата рождения» on the confirmation (it skips the contacts).
 - `items` in `/days` and `/slots` is built as `serviceId[:encodeURIComponent(variant)]` and then encoded once more as a
   query value: the server splits the decoded value on `,` / `:` and decodes each variant.
 
@@ -1501,8 +1504,8 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
 | GET | `/public/booking/masters` | — | `{ items: [ { id, name, color, photos, cover } ] }` active masters (`photos` — portfolio photos, `cover` — the first one's URL or `null`, see «Portfolio») |
 | GET | `/public/booking/days?from=&to=&items=&masterId=` | — | `{ items: [ { date, available } ] }` ≤ 31 dates (default: 14 from today); `items` = `serviceId[:variant]` comma-separated (variant URL-encoded) |
 | GET | `/public/booking/slots?date=&items=&masterId=` | — | `{ date, durationMin, items: [ { startsAt, masterIds: [3, 5] } ] }` |
-| GET | `/public/booking/me` | header `X-Telegram-Init-Data` | `{ linked: true, name: "Анна", phone: "+7 *** ***-**-01" }` (`{ linked: false, name: null, phone: null }` for an unknown chat) · `401` for missing or invalid init data |
-| POST | `/public/booking` | `{ items: [ { serviceId, variant? } ], masterId?, startsAt, name, phone, comment?, website? }` (+ `X-Telegram-Init-Data` in the Mini App; `items` may also be the query-string form) | `PublicBooking` · `409 schedule_conflict` «Это время только что заняли — выберите другое» · `400` · `401` for invalid init data · `429` (5 per hour per IP) · accepts `Idempotency-Key` |
+| GET | `/public/booking/me` | header `X-Telegram-Init-Data` | `{ linked: true, name: "Анна", phone: "+7 *** ***-**-01", hasBirthday: false }` (`{ linked: false, name: null, phone: null, hasBirthday: false }` for an unknown chat) · `401` for missing or invalid init data |
+| POST | `/public/booking` | `{ items: [ { serviceId, variant? } ], masterId?, startsAt, name, phone, comment?, birthday?, website? }` (+ `X-Telegram-Init-Data` in the Mini App; `items` may also be the query-string form) | `PublicBooking` · `409 schedule_conflict` «Это время только что заняли — выберите другое» · `400` · `401` for invalid init data · `429` (5 per hour per IP) · accepts `Idempotency-Key` |
 | GET | `/public/booking/b/:token` | — | `PublicBooking` (a pending payment is checked with the bank, at most every 2 s) |
 | POST | `/public/booking/b/:token/cancel` | — | `PublicBooking` · until the start; staff are told («❌ Клиент отменил онлайн-запись №…»), a held prepayment stays for staff to refund or keep by the rules |
 | GET | `/public/booking/b/:token/calendar.ics` | — | `text/calendar` event |
@@ -1519,7 +1522,10 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
   `number` — the appointment id; `status` `cancelled` covers a no-show too; `telegramLink` — `null` while the bot's
   username is unknown; `calendarUrl` — `PUBLIC_URL/api/public/booking/b/<token>/calendar.ics`.
 - `website` is a honeypot: when filled the server answers as if booked and stores nothing. Phone validation as for
-  clients; `name` 1…100 (both skipped for a linked Mini App chat). Unknown or inactive services, a master who is not an
+  clients; `name` 1…100 (both skipped for a linked Mini App chat). `birthday` (optional, `YYYY-MM-DD`, 1900 = year
+  unknown) must be a real date not after today and not 120+ years ago (else `400` «Дата рождения»: …); it goes on a new
+  card and fills an existing one (by phone, or the linked chat's) only when that card has none (`client.birthday` in
+  the audit, as `online`). `/me` `hasBirthday` tells the Mini App whether the linked card has one. Unknown or inactive services, a master who is not an
   active master, a start before `leadMinutes` or past `horizonDays` → `400`; a start that is not free (taken, off the
   grid, outside working time) → `409 schedule_conflict` — never naming another client. `enabled: false` → `403`
   «Онлайн-запись временно недоступна» (`days`, `slots`, booking; `config`, `services`, `masters` still answer).
@@ -1561,9 +1567,10 @@ answers `401` «Войдите через Telegram-бота студии» witho
 | POST | `/public/cabinet/appointments/:id/cancel` | — | `CabinetAppointment` · own future appointments; cancellation rules apply as for staff (late → the rule's retain when `autoRetain`), staff are told (`client_cancelled`) |
 | GET | `/public/cabinet/bonuses` | — | `{ balance, items: [ { type, amount, expiresAt, createdAt, note } ] }` (last 50) |
 | DELETE | `/public/cabinet/waitlist/:id` | — | `204` · own entry |
+| POST | `/public/cabinet/birthday` | `{ birthday }` | `{ birthday }` · only while the card has none: `409` «Дата рождения уже указана — изменить её можно через студию»; `YYYY-MM-DD` (1900 = year unknown), a real date not after today and not 120+ years ago, else `400` «Дата рождения»: … |
 | POST | `/public/cabinet/logout` | — | `204` · ends the website token |
 
-`Cabinet`: `{ client: { name, phone: "+7 *** ***-**-01" }, loyalty: { bonusBalance, expiring } | null,
+`Cabinet`: `{ client: { name, phone: "+7 *** ***-**-01", birthday: "1995-04-12" | null }, loyalty: { bonusBalance, expiring } | null,
 upcoming: [CabinetAppointment], past: [CabinetAppointment] (last 20), waitlist: [WaitlistEntryPublic],
 certificates: [ { code, balance, expiresAt } ] (bought by the client, active), aftercare: [ { appointmentId, date,
 title, steps: [ { day, text } ] } ] (memos of the last 60 days) }`.
@@ -1984,9 +1991,12 @@ Most cards have no birthday, so greetings rarely go out. The birthday is collect
   meanwhile is never overwritten. Saved birthdays are logged as `client.birthday` («Клиент «Анна» указал(а) дату
   рождения в боте: 12 апреля»).
 - **Booking page / Mini App:** an optional «Дата рождения» on the contacts step for a new client (`birthday` in
-  `POST /public/booking`); the engine fills it in when the card has none.
-- **Cabinet:** «Добавьте дату рождения — пришлём подарок» while it is empty, `POST /public/cabinet/birthday
-  { birthday }` (only when empty; `409` otherwise).
+  `POST /public/booking`; typed as «12.04.1995» or «12.04», the dots put in by the mask); a linked Mini App chat whose
+  card has none (`/me` → `hasBirthday: false`) sees it on the confirmation; the engine fills it in when the card has
+  none.
+- **Cabinet:** «Добавьте дату рождения — пришлём подарок» while it is empty (`Cabinet.client.birthday` is `null`),
+  `POST /public/cabinet/birthday { birthday }` (only when empty; `409` otherwise); then «Записали! В день рождения
+  пришлём подарок 🎁».
 - **App:** the client card shows a hint while the birthday is empty.
 - The year 1900 is «year unknown» everywhere: birthday greetings, the birthday discount window, the morning digest's
   birthdays, the campaign `birthdayMonth`, the staff bot («День рождения: 12 апреля») and the app use only the day and
