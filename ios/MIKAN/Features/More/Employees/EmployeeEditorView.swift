@@ -94,6 +94,7 @@ struct EmployeeEditorView: View {
                 }
                 EmployeeRoleSection(role: $role, isEditable: access.role)
                 if let employee { WorkScheduleLinkSection(employee: employee) }
+                if let employee { PayRulesSection(employee: employee) }
                 if !isCreating, permissions.managesEmployees {
                     Section {
                         Toggle("Доступ к приложению", isOn: $active)

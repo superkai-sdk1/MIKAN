@@ -26,6 +26,7 @@ import { dashboardRoutes } from './routes/dashboard.js';
 import { depositRoutes } from './routes/deposits.js';
 import { employeeRoutes } from './routes/employees.js';
 import { historyRoutes } from './routes/history.js';
+import { payrollRoutes } from './routes/payroll.js';
 import { productRoutes } from './routes/products.js';
 import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { receiptRoutes } from './routes/receipts.js';
@@ -179,6 +180,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         botRoutes(secured, ctx);
         settingsRoutes(secured, ctx);
         auditRoutes(secured, ctx);
+        payrollRoutes(secured, ctx);
       });
     },
     { prefix: '/api' },

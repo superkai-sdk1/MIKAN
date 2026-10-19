@@ -150,7 +150,14 @@ All optional numbers default to 0 / `null`; percents 0…100, money ≥ 0 (integ
 `paid` = advance + payout; `due` = earned − paid. Rounded to whole rubles per line.
 The detailed statement adds `"lines"`: `[ { "date", "kind": "service"|"product", "appointmentId", "saleId",
 "name", "category", "revenue", "materials", "percent", "amount" } ]` (date ascending) and `"adjustmentItems"`:
-`[PayrollAdjustment]`.
+`[PayrollAdjustment]` (date ascending).
+- A visit counts on its own date (studio date of `startsAt`) with its non-refunded sales, whenever they were paid; a
+  product line counts on the day of its sale. `services.visits` — completed visits as master (a refunded one still
+  counts, earning nothing); `days` — days worked: a completed visit, or a sale made (refunded later or not).
+- Line `materials` — the visit's materials split across its service lines by revenue; `category` — the service
+  category (`tattoo` | `piercing` | `other` for custom lines), `null` for products; `percent` — `0` on days before the
+  first rules version (the line is shown, earning nothing). Service lines of sales without an appointment earn no
+  service percent (no master).
 
 ### PayrollAdjustment
 ```json
@@ -646,6 +653,11 @@ outside the hours, overlapping breaks, `end` ≤ `start` → `400` with the Russ
 | PUT | `/employees/:id/pay-rules` | `{ effectiveFrom? (default today), ...PayRules }` | same as GET · owner · the same `effectiveFrom` replaces that version |
 | POST | `/payroll/adjustments` | `{ employeeId, date?, kind, amount, note?, fromCash? }` | `PayrollAdjustment` · owner · `fromCash: true` (advance / payout only) also records a cash withdrawal «Аванс: Фатима» in the open shift (`409` without one) · accepts `Idempotency-Key` |
 | DELETE | `/payroll/adjustments/:id` | — | `204` · owner · its cash withdrawal, if any, stays (correct it in the till) |
+
+`from` and `to` are required (`400` «Конец периода должен быть не раньше начала», «Период — не больше 400 дней»).
+The owner's list has every employee (inactive ones included) with a rules version in force by `to` or with visits,
+sales, attributed products or adjustments in the period, by name. `current` of the pay rules — the version in force
+today (`null` before the first one). Anyone else asking for another employee → `403` «Это доступно владельцу студии».
 
 ### Audit log
 | Method | Path | Response |
