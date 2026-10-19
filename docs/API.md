@@ -1608,6 +1608,17 @@ note, createdAt }`; `WaitlistEntryPublic` — the same without `client`.
 The app keeps the last loaded schedule (today ± 7 days, with appointment details), clients, the catalog and settings
 on the phone. Without a network it shows them read-only under «Нет сети — данные на 14:32»; writes are disabled with
 «Нужен интернет». It refreshes as soon as the network is back. No server changes.
+- Kept (JSON in Application Support, a format version + `savedAt`, excluded from backups): every master's appointments
+  from 7 days before today to 7 days after, the active clients the list loaded, services, products of each kind (with
+  sizes), warehouse categories, employees, studio and bot settings. Saved after every successful load; the schedule
+  shows from the phone at once and is then refreshed.
+- Offline = no network path (`NWPathMonitor`) or the server not answering (no connection, timeout, a proxy's
+  502/503/504); any answer brings the app back online. Every request but a GET is refused before it is sent (sign-in
+  excepted); a calendar page only partly inside the kept days says which days it shows; clients are searched on the
+  phone.
+- The till keeps its cart and open receipts; only paying waits for the network, and unsaved receipt edits are sent on
+  reconnecting.
+- Nothing saved is read before the Face ID lock is passed; signing out deletes it (another employee may sign in).
 
 ### Push notifications
 Staff iPhones get push notifications through APNs (token auth). Configured by env `APNS_KEY_ID`, `APNS_TEAM_ID`,
