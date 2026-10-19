@@ -15,7 +15,7 @@ struct LoyaltyDecodingTests {
                    "certificateId": null },
                  { "id": 2, "type": "service", "productId": null, "variantId": null, "variantName": null,
                    "serviceId": null, "name": "Подарочный сертификат MIKAN-7K3Q-9F2D", "quantity": 1,
-                   "price": 5000, "total": 5000, "certificateId": 11 } ],
+                   "price": 5000, "total": 5000, "certificateId": 11, "certificateCode": "MIKAN-7K3Q-9F2D" } ],
       "subtotal": 8000, "discount": 0, "total": 8000,
       "payments": { "cash": 6000, "card": 0, "transfer": 0, "qr": 0, "deposit": 0, "bonus": 500, "certificate": 1500 },
       "bonusEarned": 75,
@@ -46,7 +46,7 @@ struct LoyaltyDecodingTests {
         #expect(sale.earnedBonuses == 75)
         #expect(sale.items.map(\.isCertificate) == [false, true])
         #expect(sale.certificateItems.map(\.certificateId) == [11])
-        #expect(sale.certificateItems.first?.certificateCode == "MIKAN-7K3Q-9F2D")
+        #expect(sale.certificateItems.first?.issuedCertificateCode == "MIKAN-7K3Q-9F2D")
         #expect(!sale.hasProducts)
         #expect(sale.payments.paymentLines.map(\.source) == [.method(.cash), .bonus, .certificate])
         #expect(PaymentText.methods(sale.payments) == "наличными, бонусами и сертификатом")
@@ -69,7 +69,45 @@ struct LoyaltyDecodingTests {
             price: 3_000, total: 3_000
         )
         #expect(item.isCertificate)
-        #expect(item.certificateCode == nil, "no code in the name")
+        #expect(item.issuedCertificateCode == nil, "no code anywhere")
+    }
+
+    @Test("certificateCode wins; an older server's line only names the code, which is read from the name")
+    func certificateCodeFallback() {
+        let newer = SaleItem(
+            id: 1, type: .service, productId: nil, serviceId: nil, name: "Подарочный сертификат", quantity: 1,
+            price: 3_000, total: 3_000, certificateId: 11, certificateCode: "MIKAN-H4WP-2XRT"
+        )
+        let older = SaleItem(
+            id: 2, type: .service, productId: nil, serviceId: nil, name: "Подарочный сертификат MIKAN-7K3Q-9F2D",
+            quantity: 1, price: 3_000, total: 3_000, certificateId: 12
+        )
+        let service = SaleItem(
+            id: 3, type: .service, productId: nil, serviceId: 3, name: "Прокол MIKAN-7K3Q-9F2D", quantity: 1,
+            price: 3_000, total: 3_000
+        )
+        #expect(newer.issuedCertificateCode == "MIKAN-H4WP-2XRT")
+        #expect(older.issuedCertificateCode == "MIKAN-7K3Q-9F2D")
+        #expect(service.issuedCertificateCode == nil, "only certificate lines have a code")
+    }
+
+    @Test("An open receipt's certificate to sell decodes as a service line with `certificate`; others have none")
+    func receiptCertificateLine() throws {
+        let json = #"""
+        { "id": 9, "appointment": null, "client": null, "note": null, "createdAt": "<T>",
+          "items": [ { "type": "service", "productId": null, "variantId": null, "variantName": null,
+                       "productKind": null, "serviceId": null, "name": "Подарочный сертификат", "quantity": 1,
+                       "price": 5000, "total": 5000, "stock": null,
+                       "certificate": { "recipientName": "Маше", "note": null } },
+                     { "type": "service", "serviceId": 3, "name": "Хеликс", "quantity": 1, "price": 3000,
+                       "certificate": null } ] }
+        """#
+        let receipt = try Fixtures.decode(OpenReceipt.self, json)
+
+        #expect(receipt.items.map(\.certificate) == [OpenReceiptCertificate(recipientName: "Маше", note: nil), nil])
+        let lines = receipt.items.compactMap(CartLine.init(item:))
+        #expect(lines.map(\.isCertificate) == [true, false])
+        #expect(lines.first?.recipientName == "Маше")
     }
 
     @Test("An open receipt line of an unknown type decodes and is left out of the cart")
@@ -129,7 +167,7 @@ struct LoyaltyDecodingTests {
         #expect(certificate.balance == 3_000)
         #expect(certificate.status == .active)
         #expect(certificate.buyer?.fullName == "Иван Петров")
-        #expect(certificate.operations.map(\.type) == ["issue", "redeem"])
+        #expect(certificate.operations.map(\.type) == [.issue, .redeem])
         #expect(certificate.isSpendable(at: Fixtures.referenceDate.addingTimeInterval(-60)))
         #expect(!certificate.isSpendable(at: Fixtures.referenceDate), "expired at expiresAt")
     }

@@ -80,13 +80,26 @@ struct CertificateCodeTests {
         #expect(CertificateText.validity(nil) == "бессрочно")
     }
 
-    @Test("Certificate operations: known debits show as negative whatever sign was sent")
+    @Test("Certificate operations: signed as sent; a debit sent unsigned still reads as a debit")
     func operationSigns() {
-        #expect(CertificateText.signedAmount(type: "issue", amount: 5_000) == 5_000)
-        #expect(CertificateText.signedAmount(type: "redeem", amount: 2_000) == -2_000)
-        #expect(CertificateText.signedAmount(type: "redeem", amount: -2_000) == -2_000)
-        #expect(CertificateText.signedAmount(type: "refund", amount: 2_000) == 2_000)
-        #expect(CertificateText.operationTitle("something_new") == "Операция")
+        #expect(CertificateText.signedAmount(type: .issue, amount: 5_000) == 5_000)
+        #expect(CertificateText.signedAmount(type: .redeem, amount: -2_000) == -2_000)
+        #expect(CertificateText.signedAmount(type: .redeem, amount: 2_000) == -2_000)
+        #expect(CertificateText.signedAmount(type: .refund, amount: 2_000) == 2_000)
+        #expect(CertificateText.signedAmount(type: .cancel, amount: -3_000) == -3_000)
+        #expect(CertificateText.signedAmount(type: .expire, amount: -1_000) == -1_000)
+    }
+
+    @Test("Every documented operation type has its title", arguments: [
+        (GiftCertificateOperationType.issue, "Продан"),
+        (.redeem, "Оплата покупки"),
+        (.refund, "Возврат покупки"),
+        (.cancel, "Аннулирован"),
+        (.expire, "Срок истёк"),
+        (.unknown, "Операция"),
+    ])
+    func operationTitles(type: GiftCertificateOperationType, title: String) {
+        #expect(CertificateText.operationTitle(type) == title)
     }
 
     @Test("Sold certificate nominal and validity texts")

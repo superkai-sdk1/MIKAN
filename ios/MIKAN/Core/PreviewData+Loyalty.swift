@@ -8,8 +8,8 @@ extension PreviewData {
         expiresAt: Calendar.app.date(byAdding: .year, value: 1, to: today), buyer: ivanRef, recipientName: "Маше",
         note: nil, saleId: 9, saleNumber: 17,
         operations: [
-            GiftCertificateOperation(type: "issue", amount: 5_000, saleId: 9, saleNumber: 17, createdAt: now),
-            GiftCertificateOperation(type: "redeem", amount: -2_000, saleId: 12, saleNumber: 21, createdAt: now),
+            GiftCertificateOperation(type: .issue, amount: 5_000, saleId: 9, saleNumber: 17, createdAt: now),
+            GiftCertificateOperation(type: .redeem, amount: -2_000, saleId: 12, saleNumber: 21, createdAt: now),
         ],
         createdAt: now
     )

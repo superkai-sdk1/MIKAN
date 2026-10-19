@@ -26,6 +26,11 @@ extension APIClient {
         ]))
     }
 
+    /// `404` «Сертификат не найден».
+    func certificate(id: Int) async throws -> GiftCertificate {
+        try await request(.get, "certificates/\(id)")
+    }
+
     /// Case- and dash-insensitive on the server; `404` «Сертификат не найден».
     func certificate(code: String) async throws -> GiftCertificate {
         try await request(.get, "certificates/code/\(code)")

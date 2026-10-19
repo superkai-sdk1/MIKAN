@@ -100,11 +100,16 @@ nonisolated struct SaleItem: Codable, Hashable, Identifiable, Sendable {
     let total: Int
     /// The gift certificate this line issued; `nil` for every other line.
     var certificateId: Int? = nil
+    /// Its code «MIKAN-7K3Q-9F2D»; `nil` for other lines and from servers that only name it in `name`.
+    var certificateCode: String? = nil
 
     /// A gift certificate sold in the sale (whatever `type` the server gave the line).
     var isCertificate: Bool { certificateId != nil || type == .certificate }
-    /// «MIKAN-7K3Q-9F2D» from the line's name; `nil` when it holds no code.
-    var certificateCode: String? { isCertificate ? CertificateCode.find(in: name) : nil }
+    /// The issued certificate's code: `certificateCode`, else (older servers) read from the line's name.
+    var issuedCertificateCode: String? {
+        guard isCertificate else { return nil }
+        return certificateCode.nonEmpty ?? CertificateCode.find(in: name)
+    }
 }
 
 nonisolated struct Sale: Codable, Hashable, Identifiable, Sendable {

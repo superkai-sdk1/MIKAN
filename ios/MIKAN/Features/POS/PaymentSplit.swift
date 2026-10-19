@@ -164,12 +164,13 @@ nonisolated enum CheckoutRules {
     }
 
     /// The payment methods must cover exactly the amount due (the prepayment, then `credits` — bonuses and gift
-    /// certificates, already capped to what is left — are applied on top of them).
+    /// certificates, already capped to what is left — are applied on top of them). `discountLimit` — what the
+    /// discount may reach (the subtotal without gift certificates sold); the whole subtotal when omitted.
     static func canSubmit(
-        lineCount: Int, linesValid: Bool, subtotal: Int, discount: Int, deposit: Int = 0, credits: Int = 0,
-        split: PaymentSplit
+        lineCount: Int, linesValid: Bool, subtotal: Int, discount: Int, discountLimit: Int? = nil, deposit: Int = 0,
+        credits: Int = 0, split: PaymentSplit
     ) -> Bool {
-        guard lineCount > 0, linesValid, isDiscountValid(discount, subtotal: subtotal) else { return false }
+        guard lineCount > 0, linesValid, isDiscountValid(discount, subtotal: discountLimit ?? subtotal) else { return false }
         let due = amountDue(total: total(subtotal: subtotal, discount: discount), deposit: deposit)
         return split.isBalanced(for: max(0, due - max(0, credits)))
     }

@@ -242,7 +242,7 @@ private struct IssuedCertificateSection: View {
                     Button("Повторить") { Task { await load() } }
                         .buttonStyle(.bordered)
                 }
-            } else if item.certificateCode == nil {
+            } else if item.certificateId == nil, item.issuedCertificateCode == nil {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.name)
                     Text("Карточка сертификата — в «Ещё» → «Сертификаты».")
@@ -260,10 +260,13 @@ private struct IssuedCertificateSection: View {
         }
     }
 
-    /// The contract has no `GET /certificates/:id`: the line's name carries the code, which is looked up.
+    /// By the line's `certificateId`; an older server's line only names the code, which is looked up then.
     private func load() async {
-        guard let code = item.certificateCode else { return }
-        await certificate.load { try await api.certificate(code: code) }
+        if let id = item.certificateId {
+            await certificate.load { try await api.certificate(id: id) }
+        } else if let code = item.issuedCertificateCode {
+            await certificate.load { try await api.certificate(code: code) }
+        }
     }
 }
 

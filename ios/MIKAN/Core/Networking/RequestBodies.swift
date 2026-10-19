@@ -288,8 +288,9 @@ nonisolated struct SaleItemBody: Encodable, Hashable, Sendable {
     let price: Int
     /// The size sold; required by the server for a product with several sizes.
     var variantId: Int? = nil
-    /// Who a gift certificate (`type: certificate`) is for; omitted for other lines.
+    /// Who a gift certificate (`type: certificate`) is for, and a note kept on it; omitted for other lines.
     var recipientName: String? = nil
+    var note: String? = nil
 }
 
 /// `POST /sales` and `POST /qr-payments`.

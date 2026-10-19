@@ -21,6 +21,8 @@ struct CartLine: Identifiable, Hashable {
     let productKind: ProductKind?
     /// Who a gift certificate is for («Маше»); certificate lines only.
     var recipientName = ""
+    /// A note kept on a gift certificate (set elsewhere; sent back unchanged); certificate lines only.
+    var certificateNote: String?
 
     init(
         kind: Kind,
@@ -29,7 +31,8 @@ struct CartLine: Identifiable, Hashable {
         quantity: Int = 1,
         unitPrice: Int,
         productKind: ProductKind? = nil,
-        recipientName: String = ""
+        recipientName: String = "",
+        certificateNote: String? = nil
     ) {
         self.id = UUID()
         self.kind = kind
@@ -39,19 +42,25 @@ struct CartLine: Identifiable, Hashable {
         self.unitPrice = unitPrice
         self.productKind = productKind
         self.recipientName = recipientName
+        self.certificateNote = certificateNote.nonEmpty
     }
 
     /// «Подарочный сертификат» for `amount` rubles; the sale issues it with a code.
-    static func certificate(amount: Int, recipientName: String) -> CartLine {
+    static func certificate(amount: Int, recipientName: String, note: String? = nil) -> CartLine {
         CartLine(
             kind: .certificate, name: CertificateRules.lineName, unitPrice: amount,
-            recipientName: recipientName.trimmed
+            recipientName: recipientName.trimmed, certificateNote: note
         )
     }
 
     /// A line of a saved open receipt. A product line without its product or size cannot be sold, so it is `nil`
-    /// (the server always saves both); a size that is gone has no stock left.
+    /// (the server always saves both); a size that is gone has no stock left. A certificate to sell comes as a
+    /// `service` line with `certificate` set.
     init?(item: OpenReceiptItem) {
+        if let certificate = item.certificate {
+            self = .certificate(amount: item.price, recipientName: certificate.recipientName ?? "", note: certificate.note)
+            return
+        }
         switch item.type {
         case .product:
             guard let productId = item.productId, let variantId = item.variantId else { return nil }
@@ -65,8 +74,10 @@ struct CartLine: Identifiable, Hashable {
             )
         case .service:
             self.init(kind: .service(id: item.serviceId), name: item.name, quantity: item.quantity, unitPrice: item.price)
-        case .certificate, .unknown:
-            // Certificate lines live only in the cart (see `CartStore.makeReceiptBody()`); nothing else is sellable.
+        case .certificate:
+            self = .certificate(amount: item.price, recipientName: "")
+        case .unknown:
+            // A line of a newer kind cannot be sold by this build.
             return nil
         }
     }
@@ -99,7 +110,10 @@ struct CartLine: Identifiable, Hashable {
     var isCertificate: Bool { kind == .certificate }
 
     var isValid: Bool {
-        if isCertificate { return quantity == 1 && CertificateRules.isValidAmount(unitPrice) }
+        if isCertificate {
+            return quantity == 1 && CertificateRules.isValidAmount(unitPrice)
+                && recipientName.trimmed.count <= CertificateRules.recipientNameLimit
+        }
         return quantity > 0 && unitPrice >= 0 && !name.trimmed.isEmpty
     }
 
@@ -121,7 +135,7 @@ struct CartLine: Identifiable, Hashable {
         case .certificate:
             SaleItemBody(
                 type: .certificate, productId: nil, serviceId: nil, name: nil, quantity: 1, price: unitPrice,
-                recipientName: recipientName.nonEmpty
+                recipientName: recipientName.nonEmpty, note: certificateNote.nonEmpty
             )
         }
     }

@@ -50,25 +50,23 @@ nonisolated enum CertificateText {
         return "Остаток \(Money.group(UInt(max(0, certificate.balance)))) из \(Money.format(certificate.amount))"
     }
 
-    /// The likely operation types; any other one reads as «Операция».
-    static func operationTitle(_ type: String) -> String {
+    static func operationTitle(_ type: GiftCertificateOperationType) -> String {
         switch type {
-        case "issue", "sell", "sale": "Продан"
-        case "redeem", "spend", "use": "Оплата покупки"
-        case "refund", "return", "reverse": "Возврат на сертификат"
-        case "expire": "Срок истёк"
-        case "cancel": "Отменён"
-        case "adjust": "Изменение"
-        default: "Операция"
+        case .issue: "Продан"
+        case .redeem: "Оплата покупки"
+        case .refund: "Возврат покупки"
+        case .cancel: "Аннулирован"
+        case .expire: "Срок истёк"
+        case .unknown: "Операция"
         }
     }
 
-    /// Credits positive, debits negative, whichever sign the server sent for a known debit.
-    static func signedAmount(type: String, amount: Int) -> Int {
+    /// Amounts come signed (credits > 0, debits < 0); a debit type sent unsigned still reads as a debit.
+    static func signedAmount(type: GiftCertificateOperationType, amount: Int) -> Int {
         guard amount > 0 else { return amount }
         switch type {
-        case "redeem", "spend", "use", "expire", "cancel": return -amount
-        default: return amount
+        case .redeem, .cancel, .expire: return -amount
+        case .issue, .refund, .unknown: return amount
         }
     }
 }

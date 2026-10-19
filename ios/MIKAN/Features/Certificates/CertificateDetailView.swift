@@ -88,7 +88,7 @@ struct CertificateDetailView: View {
 
     private func reload() async {
         do {
-            apply(try await api.certificate(code: certificate.code))
+            apply(try await api.certificate(id: certificate.id))
         } catch is CancellationError {
             return
         } catch {

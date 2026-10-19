@@ -59,7 +59,8 @@ final class CartStore {
     var itemCount: Int { lines.reduce(0) { $0 + $1.quantity } }
     var subtotal: Int { lines.reduce(0) { $0 + $1.total } }
     var total: Int { CheckoutRules.total(subtotal: subtotal, discount: discount) }
-    var isDiscountValid: Bool { CheckoutRules.isDiscountValid(discount, subtotal: subtotal) }
+    /// The discount never applies to a gift certificate sold: at most the subtotal of the other lines.
+    var isDiscountValid: Bool { CheckoutRules.isDiscountValid(discount, subtotal: discountableSubtotal) }
 
     /// Nothing worth keeping: no lines, no client, no appointment and no note.
     var isBlank: Bool { lines.isEmpty && client == nil && appointment == nil && note.nonEmpty == nil }
@@ -122,6 +123,7 @@ final class CartStore {
             linesValid: lines.allSatisfy(\.isValid),
             subtotal: subtotal,
             discount: discount,
+            discountLimit: discountableSubtotal,
             deposit: deposit,
             credits: creditsApplied,
             split: split
@@ -349,8 +351,7 @@ final class CartStore {
         let kept = (
             paymentMode: paymentMode, manualSplit: manualSplit, cashReceived: cashReceived,
             completesAppointment: completesAppointment, sendsAftercare: sendsAftercare,
-            certificateLines: lines.filter(\.isCertificate), discount: discount, bonusRequested: bonusRequested,
-            certificateCharges: certificateCharges, clientLoyalty: clientLoyalty
+            bonusRequested: bonusRequested, certificateCharges: certificateCharges, clientLoyalty: clientLoyalty
         )
         clear()
         receiptId = receipt.id
@@ -367,27 +368,21 @@ final class CartStore {
         cashReceived = kept.cashReceived
         completesAppointment = kept.completesAppointment
         sendsAftercare = kept.sendsAftercare
-        // Certificates to sell live only here (the open receipt does not hold them); spent ones stay chosen.
-        lines += kept.certificateLines
-        // The receipt was saved with the discount capped to its own lines: the one typed here still holds.
-        if !kept.certificateLines.isEmpty, receipt.discount == min(kept.discount, receipt.subtotal) {
-            discount = kept.discount
-        }
+        // Bonuses and certificates chosen to pay stay chosen (they are not part of the open receipt).
         bonusRequested = kept.bonusRequested
         certificateCharges = kept.certificateCharges
         clientLoyalty = kept.clientLoyalty
     }
 
-    /// The whole receipt for `PUT /receipts/:id`. A discount above the lines (being typed, or lines removed) is
-    /// saved capped, so the save still goes through; checkout keeps flagging it. A gift certificate to sell is not
-    /// part of it: the contract has no certificate lines in open receipts, so it stays in this cart until paid.
+    /// The whole receipt for `PUT /receipts/:id`, a gift certificate to sell included. A discount above the lines
+    /// it may cover (being typed, or lines removed; never a certificate) is saved capped, so the save still goes
+    /// through; checkout keeps flagging it.
     func makeReceiptBody() -> ReceiptBody {
-        let saved = lines.filter { !$0.isCertificate }
-        return ReceiptBody(
+        ReceiptBody(
             appointmentId: appointmentId,
             clientId: client?.id,
-            items: saved.map(\.body),
-            discount: min(max(0, discount), saved.reduce(0) { $0 + $1.total }),
+            items: lines.map(\.body),
+            discount: min(max(0, discount), discountableSubtotal),
             note: note.nonEmpty
         )
     }
