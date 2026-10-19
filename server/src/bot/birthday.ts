@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { botMessages } from '../db/schema.js';
@@ -17,8 +17,8 @@ import type { IncomingFrom } from './pipeline.js';
 
 /**
  * The bot asks a client for the birthday once, right after the chat shares its phone or links a card (docs/API.md
- * «Collecting birthdays»). The question is open while it is the newest thing in the chat — nothing from the client or
- * staff since — for at most a few days; then the client's next message is read as the answer. A date is saved, a
+ * «Collecting birthdays»). The question is open while it is the newest thing in the chat — nothing from the client,
+ * staff or the AI since — for at most a few days; then the client's next message is read as the answer. A date is saved, a
  * garbled one gets one gentle retry, a refusal or the second miss closes it; anything that is clearly not a date goes to
  * the usual pipeline (and closes the question, as every client message does).
  */
@@ -36,7 +36,7 @@ export const BIRTHDAY_TEXTS = {
 /** After this long without an answer the question is over: a later message is an ordinary one. */
 export const BIRTHDAY_ANSWER_WINDOW_MS = 3 * DAY_MS;
 
-const QUESTIONS = [BIRTHDAY_TEXTS.ask, BIRTHDAY_TEXTS.retry];
+const QUESTIONS: readonly string[] = [BIRTHDAY_TEXTS.ask, BIRTHDAY_TEXTS.retry];
 
 const skipKeyboard = (): InlineKeyboard => [[{ text: BIRTHDAY_SKIP_BUTTON, data: encodeCallback({ kind: 'birthdaySkip' }) }]];
 
@@ -54,32 +54,36 @@ async function sendQuestion(ctx: AppContext, chatId: number, text: string): Prom
 
 /**
  * Asks the client of this chat for the birthday — once ever: only a client chat (not a staff one) whose card has no
- * birthday and was never asked. `birthdayAskedAt` is set before sending, so it is never asked twice.
+ * birthday and was never asked, and that the bot may send greetings to (bot messages on, news not refused — else the
+ * promised gift never comes). `birthdayAskedAt` is set before sending, so it is never asked twice; a question Telegram
+ * refused does not count.
  */
 export async function askBirthday(ctx: AppContext, chatId: number, now = Date.now()): Promise<boolean> {
   const { db } = ctx;
   if (chatEmployee(db, findChat(db, chatId))) return false;
   const client = findClientByChat(db, chatId);
   if (!client || client.birthday || client.birthdayAskedAt != null || client.archived) return false;
+  if (!client.botEnabled || client.marketingOptOut) return false;
   markBirthdayAsked(db, client.id, now);
-  return sendQuestion(ctx, chatId, BIRTHDAY_TEXTS.ask);
+  const sent = await sendQuestion(ctx, chatId, BIRTHDAY_TEXTS.ask);
+  if (!sent) markBirthdayAsked(db, client.id, null);
+  return sent;
 }
 
-/** The open question of this chat (`retried` — the retry was sent), or null. */
+/**
+ * The open question of this chat (`retried` — the retry was sent), or null: the newest message from the client, staff
+ * or the bot's replies (not `system` notices) must be the question, at most BIRTHDAY_ANSWER_WINDOW_MS old.
+ */
 function openQuestion(db: DbOrTx, chatId: number, now: number): { retried: boolean } | null {
   const last = db
     .select({ role: botMessages.role, text: botMessages.text, createdAt: botMessages.createdAt })
     .from(botMessages)
-    .where(
-      and(
-        eq(botMessages.chatId, chatId),
-        or(inArray(botMessages.role, ['user', 'staff']), and(eq(botMessages.role, 'assistant'), inArray(botMessages.text, QUESTIONS))),
-      ),
-    )
+    .where(and(eq(botMessages.chatId, chatId), inArray(botMessages.role, ['user', 'staff', 'assistant'])))
     .orderBy(desc(botMessages.id))
     .limit(1)
     .get();
-  if (!last || last.role !== 'assistant' || now - last.createdAt > BIRTHDAY_ANSWER_WINDOW_MS) return null;
+  const asked = last?.role === 'assistant' && QUESTIONS.includes(last.text);
+  if (!last || !asked || now - last.createdAt > BIRTHDAY_ANSWER_WINDOW_MS) return null;
   return { retried: last.text === BIRTHDAY_TEXTS.retry };
 }
 

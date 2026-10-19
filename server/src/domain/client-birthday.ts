@@ -29,9 +29,9 @@ export function fillBirthday(db: DbOrTx, clientId: number, birthday: string, now
   );
 }
 
-/** The bot asked this client for the birthday: it never asks again. */
-export function markBirthdayAsked(db: DbOrTx, clientId: number, now = Date.now()): void {
-  db.update(clients).set({ birthdayAskedAt: now }).where(eq(clients.id, clientId)).run();
+/** The bot asked this client for the birthday (it never asks again); null — the question did not go out after all. */
+export function markBirthdayAsked(db: DbOrTx, clientId: number, at: number | null): void {
+  db.update(clients).set({ birthdayAskedAt: at }).where(eq(clients.id, clientId)).run();
 }
 
 /** «Клиент «Анна Иванова» указал(а) дату рождения в боте: 12 апреля» — `client.birthday`, as the client's own action. */

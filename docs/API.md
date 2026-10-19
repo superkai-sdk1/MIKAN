@@ -1977,15 +1977,18 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
 Most cards have no birthday, so greetings rarely go out. The birthday is collected gently, never required:
 - **Bot:** right after a chat shares its phone (or links a card) and the card has no birthday and was never asked
   (`birthdayAskedAt` is null), the bot asks once: «Подскажите дату рождения — в этот день пришлём подарок 🎁» with
-  «Пропустить» (never in a staff chat). A reply like «12.04.1995», «12 апреля», «12/04/95», «12 апреля 1995»,
+  «Пропустить» (never in a staff chat, nor to a card with `botEnabled: false` or `marketingOptOut` — the gift would
+  never come; when the chat asked something before sharing the phone, the question follows the AI's answer to it). A reply like «12.04.1995», «12 апреля», «12/04/95», «12 апреля 1995»,
   «1995-04-12» — also inside «мой день рождения 12 апреля» — is saved (`YYYY-MM-DD`; a year-less date is stored with
   year 1900 and shown without the year; two-digit years: this century up to the current year, else the last one) and
   answered «Записал! В этот день будет подарок 🎁». A date-like reply that is not a real past date (31.02, a future
   date, «1204») gets one gentle retry («Не получилось разобрать дату 🙈 …», with «Пропустить»), a second miss ends it
   («Ничего страшного 🙂 Дату рождения можно добавить позже в «👤 Мои записи и бонусы».»); «Пропустить» or «не хочу» —
-  «Хорошо! …». `birthdayAskedAt` is set when it asks, so it never asks again.
+  «Хорошо! …». `birthdayAskedAt` is set when it asks, so it never asks again (a question Telegram refused does not
+  count).
   The client's next text message is read as the answer only while the question is open: it (or the retry) is the newest
-  message in the chat — nothing from the client or staff since — and at most 3 days old. A message that is clearly not
+  message in the chat — nothing from the client, staff or the bot's replies since (`system` notices aside) — and at most
+  3 days old. A message that is clearly not
   a date (other words around a date, a question mark: «На 12.04 есть время?», «Сколько стоит прокол?») goes to the AI
   as usual and closes the question, as any other client message, button or photo does. A card that got a birthday
   meanwhile is never overwritten. Saved birthdays are logged as `client.birthday` («Клиент «Анна» указал(а) дату

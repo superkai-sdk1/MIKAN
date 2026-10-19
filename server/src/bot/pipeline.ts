@@ -163,10 +163,15 @@ export class BotPipeline {
     }
   }
 
-  /** After a chat shared its phone: answers what it asked before that, if anything. */
-  answerPending(chatId: number): void {
+  /**
+   * After a chat shared its phone: answers what it asked before that, if anything. Returns the run that answers it
+   * (it never rejects), or null when there was nothing to answer.
+   */
+  answerPending(chatId: number): Promise<void> | null {
     this.pinBaseline(chatId);
-    if (this.unhandledUserMessages(chatId).some((m) => !m.text.startsWith(CONTACT_NOTE))) this.schedule(chatId);
+    if (!this.unhandledUserMessages(chatId).some((m) => !m.text.startsWith(CONTACT_NOTE))) return null;
+    this.schedule(chatId);
+    return this.runs.get(chatId) ?? null;
   }
 
   /** Resolves when all queued work has finished (tests, graceful shutdown). */

@@ -97,9 +97,17 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
       { userId: contact.user_id, phone: contact.phone_number, firstName: contact.first_name, lastName: contact.last_name },
     );
     await c.reply(reply.text, { reply_markup: keyboardFor(reply) });
-    if (reply.cardLinked) await askBirthday(ctx, c.chat.id);
     // What the person asked before sharing the phone gets its answer now.
-    if (reply.linked || reply.staff) pipeline.answerPending(c.chat.id);
+    const pending = reply.linked || reply.staff ? pipeline.answerPending(c.chat.id) : null;
+    if (!reply.cardLinked) return;
+    // The birthday question comes last (after that answer, not awaited — updates are handled one by one), so a reply to
+    // the AI is never read as the birthday.
+    if (!pending) await askBirthday(ctx, c.chat.id);
+    else {
+      void pending
+        .then(() => askBirthday(ctx, c.chat.id))
+        .catch((err: unknown) => ctx.log.warn({ chatId: c.chat.id, err: errorMessage(err) }, 'birthday question failed'));
+    }
   });
 
   // Until a new chat shares its phone nothing else works: every message is answered with the request for the phone

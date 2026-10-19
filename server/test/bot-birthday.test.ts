@@ -1,11 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { Bot } from 'grammy';
 import type { Update, UserFromGetMe } from 'grammy/types';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BIRTHDAY_ANSWER_WINDOW_MS, BIRTHDAY_TEXTS } from '../src/bot/birthday.js';
 import { registerHandlers } from '../src/bot/handlers.js';
 import { BotPipeline } from '../src/bot/pipeline.js';
 import { botMessages, clients } from '../src/db/schema.js';
+import { storeMessage } from '../src/domain/bot-chats.js';
 import { createTestApp, make, message, ScriptedAi, text, type TestApp } from './helpers.js';
 
 const USER = 9_101;
@@ -188,13 +189,43 @@ describe('the bot asks for the birthday once', () => {
     expect(ai.calls).toHaveLength(1);
   });
 
-  it('the answer still counts after the AI answered what was asked before the phone', async () => {
+  it('asks after the AI answered what was asked before the phone, so a reply to the AI is never taken for it', async () => {
     ai.push(message([text('Мочка — 1 600 ₽ 🙂')]));
     await say('Сколько стоит прокол мочки?');
     await shareContact();
-    expect(texts().slice(-2)).toEqual([BIRTHDAY_TEXTS.ask, 'Мочка — 1 600 ₽ 🙂']);
+    // The question goes out once that answer is delivered (not awaited by the update handler).
+    await vi.waitFor(() => expect(texts().at(-1)).toBe(BIRTHDAY_TEXTS.ask));
+    expect(texts().slice(-2)).toEqual(['Мочка — 1 600 ₽ 🙂', BIRTHDAY_TEXTS.ask]);
     await say('12.04.1995');
     expect(card().birthday).toBe('1995-04-12');
+  });
+
+  it('any reply of the bot after the question closes it', async () => {
+    await shareContact();
+    storeMessage(t.ctx.db, USER, 'assistant', 'На какую дату вас записать?');
+    ai.push(message([text('Записал вас на 12 апреля')]));
+    await say('12 апреля');
+    expect(card().birthday).toBeNull();
+    expect(ai.calls).toHaveLength(1);
+  });
+
+  it('does not ask a client who refused news or whose bot messages are off', async () => {
+    await make(t, '/api/clients', { name: 'Ира', phone: '+79990007711', marketingOptOut: true });
+    await shareContact('+79990007711');
+    await make(t, '/api/clients', { name: 'Ада', phone: '+79990007712', botEnabled: false });
+    await shareContact('+79990007712');
+    expect(questionsSent()).toBe(0);
+    // Still never asked: the question may come once that changes and the chat links again.
+    expect(t.ctx.db.select().from(clients).all().every((c) => c.birthdayAskedAt === null)).toBe(true);
+  });
+
+  it('a question Telegram refused does not count as asked', async () => {
+    const client = await make(t, '/api/clients', { name: 'Ира', phone: '+79990007721' });
+    t.gateway.failures.push(new Error('Telegram is down'));
+    await shareContact('+79990007721');
+    expect(t.ctx.db.select().from(clients).where(eq(clients.id, client.id)).get()!.birthdayAskedAt).toBeNull();
+    await shareContact('+79990007721');
+    expect(questionsSent()).toBe(1);
   });
 
   it('«Пропустить» removes the button and closes the question', async () => {
