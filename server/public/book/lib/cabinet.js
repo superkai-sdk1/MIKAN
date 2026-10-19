@@ -8,7 +8,7 @@ import { addDays, dateIn, formatDateTime, formatDayLong, formatRub, plural } fro
 
 export const CABINET_PATH = '/book/me';
 export const CABINET_API = '/api/public/cabinet';
-/** The query parameter of the bot's website link `PUBLIC_URL/book/me?t=<token>`. */
+/** The parameter of the bot's website link `PUBLIC_URL/book/me#t=<token>` (also read from the query). */
 export const TOKEN_PARAM = 't';
 export const TOKEN_STORAGE_KEY = 'mikan.cabinet.token';
 
@@ -27,15 +27,19 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
 
 /**
  * The sign-in token of the link (if any) and the same URL without it, so it leaves the address bar and the history.
+ * The bot puts it in the fragment (never sent to the server); a `?t=` in the query is taken too.
  * @param {string} href
  * @returns {{ token: string | null, cleanUrl: string | null }} `cleanUrl` — null when there was no `t` to remove.
  */
 export function takeToken(href) {
   const url = new URL(href);
-  if (!url.searchParams.has(TOKEN_PARAM)) return { token: null, cleanUrl: null };
-  const raw = url.searchParams.get(TOKEN_PARAM) ?? '';
+  const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+  if (!fragment.has(TOKEN_PARAM) && !url.searchParams.has(TOKEN_PARAM)) return { token: null, cleanUrl: null };
+  const raw = fragment.get(TOKEN_PARAM) ?? url.searchParams.get(TOKEN_PARAM) ?? '';
+  fragment.delete(TOKEN_PARAM);
   url.searchParams.delete(TOKEN_PARAM);
-  return { token: TOKEN_RE.test(raw) ? raw : null, cleanUrl: `${url.pathname}${url.search}${url.hash}` };
+  const hash = fragment.toString();
+  return { token: TOKEN_RE.test(raw) ? raw : null, cleanUrl: `${url.pathname}${url.search}${hash ? `#${hash}` : ''}` };
 }
 
 /** `localStorage` may be off (private mode, Telegram on old phones): the token then lives only in memory. */
@@ -67,11 +71,14 @@ export function rescheduleSlotsUrl(id, { date }) {
 }
 
 /**
- * What the sign-in screen says. `reason`: `none` — no link yet, `expired` — the server refused the stored link,
- * `loggedOut` — the client signed out here.
+ * What the sign-in screen says. `reason`: `none` — no link yet, `expired` — the server refused the stored link (in
+ * Telegram: the Mini App was open so long that its launch data went stale), `loggedOut` — the client signed out here.
  * @param {{ inTelegram: boolean, reason?: 'none' | 'expired' | 'loggedOut' }} options
  */
 export function signInCopy({ inTelegram, reason = 'none' }) {
+  if (inTelegram && reason === 'expired') {
+    return { title: 'Откройте кабинет заново', message: 'Окно было открыто слишком долго. Закройте его и снова нажмите «👤 Мои записи и бонусы» в чате со студией.' };
+  }
   if (inTelegram) {
     return {
       title: 'Нужен ваш номер',
@@ -100,9 +107,13 @@ const STATUS = {
   no_show: { label: 'Неявка', tone: 'muted' },
 };
 
-/** { label, tone } of a `CabinetAppointment`: an unsettled online state wins over the status. */
-export function appointmentStatus(appointment) {
+/**
+ * { label, tone } of a `CabinetAppointment`: an unsettled online state wins over the status; an open one that has
+ * ended (staff have not closed it yet) is «Визит прошёл».
+ */
+export function appointmentStatus(appointment, nowMs = Date.now()) {
   const open = appointment.status === 'scheduled' || appointment.status === 'confirmed';
+  if (open && Date.parse(appointment.endsAt ?? '') <= nowMs) return { label: 'Визит прошёл', tone: 'muted' };
   const key = open && appointment.onlineState ? appointment.onlineState : appointment.status;
   return STATUS[key] ?? { label: 'Запись', tone: 'muted' };
 }

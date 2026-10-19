@@ -36,6 +36,8 @@ export function createCabinet(shell) {
   /** @type {{ title: string, message: string } | null} */ let error = null;
   /** @type {string | null} */ let busyId = null;
   /** @type {{ status: 'idle' | 'loading' | 'ready' | 'failed', value: any }} */ let bonuses = { status: 'idle', value: null };
+  /** The cabinet was shown: a later 401 means stale Telegram data or a revoked link, not a stranger. */
+  let signedIn = false;
 
   const timeZone = () => config?.studio?.timezone || deviceTimeZone();
 
@@ -55,17 +57,18 @@ export function createCabinet(shell) {
   function fail(err, retry) {
     const description = describeCabinetError(err);
     if (description.action === 'signIn') {
-      const hadToken = cabinetApi.hasToken();
+      const stale = cabinetApi.hasToken() || (tg.inTelegram && signedIn);
       cabinetApi.forgetToken();
       saveToken(storage(), null);
-      showSignIn(hadToken ? 'expired' : 'none');
+      showSignIn(stale ? 'expired' : 'none');
       return;
     }
     shell.setView(renderLoadFailure({ title: description.title, message: description.message, onRetry: retry }));
     chrome({ back: false });
   }
 
-  async function load() {
+  /** Loads the cabinet and shows the current screen; `quiet` leaves a move screen as it is (only the data changes). */
+  async function load({ quiet = false } = {}) {
     if (!data) shell.setView({ node: loadingBlock('Загружаем кабинет…') });
     const [cabinet, studioConfig] = await Promise.allSettled([cabinetApi.cabinet(), config ?? api.config()]);
     if (studioConfig.status === 'fulfilled') config = studioConfig.value;
@@ -74,10 +77,11 @@ export function createCabinet(shell) {
       return;
     }
     data = cabinet.value;
+    signedIn = true;
     // The history is asked again when the bonuses tab shows next (a cancellation may have returned bonuses).
     if (bonuses.status !== 'loading') bonuses = { status: 'idle', value: null };
-    if (history.state?.cabinet === 'reschedule') showReschedule(history.state.id);
-    else showMain();
+    if (history.state?.cabinet !== 'reschedule') showMain();
+    else if (!quiet) showReschedule(history.state.id);
   }
 
   function loadBonuses() {
@@ -144,25 +148,33 @@ export function createCabinet(shell) {
     }
     shell.setView(renderReschedule({
       appointment, cabinetApi, tg, timeZone: timeZone(), horizonDays: config?.horizonDays ?? 60, error: rescheduleError,
+      // The answer may come after the client has already gone back: then only the data is refreshed.
       onDone: (updated) => {
         replaceAppointment(updated);
         notice = `Запись перенесена: ${formatDateTime(updated.startsAt, timeZone())}`;
         shell.announce(notice);
-        history.back();
-        load();
+        leaveReschedule(id);
       },
       onFailed: (err) => {
         const description = describeCabinetError(err);
-        if (description.action === 'pickTime') showReschedule(id, description);
-        else if (description.action === 'signIn') fail(err, load);
+        if (description.action === 'signIn') fail(err, load);
+        else if (description.action === 'pickTime' && onRescheduleOf(id)) showReschedule(id, description);
         else {
           error = description;
-          history.back();
-          load();
+          leaveReschedule(id);
         }
       },
     }));
     chrome({ back: true });
+  }
+
+  const onRescheduleOf = (id) => history.state?.cabinet === 'reschedule' && history.state.id === id;
+
+  /** Back to the cabinet (when still on the move screen) with fresh data. */
+  function leaveReschedule(id) {
+    if (onRescheduleOf(id)) history.back();
+    else if (history.state?.cabinet !== 'reschedule') showMain();
+    load({ quiet: true });
   }
 
   function replaceAppointment(updated) {

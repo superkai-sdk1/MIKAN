@@ -14,7 +14,7 @@ import { bookingPagePath } from '../lib/query.js';
  * @param {{ timeZone: string, now: number, busy: boolean, onReschedule: (a: any) => void, onCancel: (a: any) => void }} ctx
  */
 export function upcomingCard(a, ctx) {
-  const status = appointmentStatus(a);
+  const status = appointmentStatus(a, ctx.now);
   const facts = [a.master?.name ? `Мастер ${a.master.name}` : null, a.price > 0 ? formatRub(a.price) : null].filter(Boolean).join(' · ');
   const deposit = a.deposit > 0
     ? `Предоплата ${formatRub(a.deposit)} внесена`
@@ -44,8 +44,8 @@ export function upcomingCard(a, ctx) {
 }
 
 /** A row of the history. */
-export function pastRow(a, timeZone) {
-  const status = appointmentStatus(a);
+export function pastRow(a, timeZone, now) {
+  const status = appointmentStatus(a, now);
   return h('li', { class: 'cab-row' },
     h('div', { class: 'cab-row-main' },
       h('p', { class: 'cab-row-title' }, appointmentTitle(a)),

@@ -43,7 +43,7 @@ function visitsTab(ctx) {
     waitlist.length
       ? section('Лист ожидания', waitlist.map((entry) => waitlistCard(entry, { busy: ctx.busyId === `w${entry.id}`, onLeave: ctx.onLeaveWaitlist })))
       : null,
-    past.length ? section('История', h('ul', { class: 'card cab-list' }, past.map((a) => pastRow(a, ctx.timeZone)))) : null,
+    past.length ? section('История', h('ul', { class: 'card cab-list' }, past.map((a) => pastRow(a, ctx.timeZone, ctx.now)))) : null,
   ];
 }
 

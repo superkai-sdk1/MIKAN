@@ -31,6 +31,8 @@ import {
 import { createTestApp, type TestApp } from './helpers.js';
 
 const TZ = 'Europe/Moscow';
+/** Thursday 15 October, before the sample appointment. */
+const BEFORE = Date.parse('2026-10-15T09:00:00.000Z');
 const NBSP = '\u00a0';
 const TOKEN = 'A'.repeat(20) + '_-' + 'b9'.repeat(10) + 'x'; // 43 chars of base64url
 
@@ -73,6 +75,8 @@ describe('cabinet page: the sign-in link', () => {
   });
 
   it('takes the token out of the URL, keeping the rest', () => {
+    expect(takeToken(`https://mikan.example/book/me#t=${TOKEN}`)).toEqual({ token: TOKEN, cleanUrl: '/book/me' });
+    expect(takeToken(`https://mikan.example/book/me?x=1#a=2&t=${TOKEN}`)).toEqual({ token: TOKEN, cleanUrl: '/book/me?x=1#a=2' });
     expect(takeToken(`https://mikan.example/book/me?t=${TOKEN}`)).toEqual({ token: TOKEN, cleanUrl: '/book/me' });
     expect(takeToken(`https://mikan.example/book/me?x=1&t=${TOKEN}#tgWebAppData=1`)).toEqual({ token: TOKEN, cleanUrl: '/book/me?x=1#tgWebAppData=1' });
     expect(takeToken('https://mikan.example/book/me?t=<script>')).toEqual({ token: null, cleanUrl: '/book/me' });
@@ -96,6 +100,7 @@ describe('cabinet page: the sign-in link', () => {
 
   it('says how to sign in: in Telegram share the phone, on the website get a link from the bot', () => {
     expect(signInCopy({ inTelegram: true }).title).toBe('Нужен ваш номер');
+    expect(signInCopy({ inTelegram: true, reason: 'expired' }).title).toBe('Откройте кабинет заново');
     expect(signInCopy({ inTelegram: true }).message).toContain('«📱 Поделиться номером»');
     expect(signInCopy({ inTelegram: false })).toEqual({
       title: 'Личный кабинет',
@@ -112,13 +117,15 @@ describe('cabinet page: the sign-in link', () => {
 
 describe('cabinet page: appointments', () => {
   it('names the status, an unsettled online state first', () => {
-    expect(appointmentStatus(appointment())).toEqual({ label: 'Вы записаны', tone: 'success' });
-    expect(appointmentStatus(appointment({ status: 'confirmed' }))).toEqual({ label: 'Подтверждена', tone: 'success' });
-    expect(appointmentStatus(appointment({ onlineState: 'awaiting_payment' }))).toEqual({ label: 'Ждёт предоплату', tone: 'warning' });
-    expect(appointmentStatus(appointment({ onlineState: 'awaiting_confirmation' }))).toEqual({ label: 'Ждёт подтверждения', tone: 'warning' });
-    expect(appointmentStatus(appointment({ status: 'cancelled', onlineState: 'awaiting_payment' })).label).toBe('Отменена');
-    expect(appointmentStatus(appointment({ status: 'completed' })).label).toBe('Визит состоялся');
-    expect(appointmentStatus(appointment({ status: 'no_show' })).label).toBe('Неявка');
+    expect(appointmentStatus(appointment(), BEFORE)).toEqual({ label: 'Вы записаны', tone: 'success' });
+    // Ended but not closed by staff yet.
+    expect(appointmentStatus(appointment(), Date.parse('2026-10-17T10:00:00.000Z'))).toEqual({ label: 'Визит прошёл', tone: 'muted' });
+    expect(appointmentStatus(appointment({ status: 'confirmed' }), BEFORE)).toEqual({ label: 'Подтверждена', tone: 'success' });
+    expect(appointmentStatus(appointment({ onlineState: 'awaiting_payment' }), BEFORE)).toEqual({ label: 'Ждёт предоплату', tone: 'warning' });
+    expect(appointmentStatus(appointment({ onlineState: 'awaiting_confirmation' }), BEFORE)).toEqual({ label: 'Ждёт подтверждения', tone: 'warning' });
+    expect(appointmentStatus(appointment({ status: 'cancelled', onlineState: 'awaiting_payment' }), BEFORE).label).toBe('Отменена');
+    expect(appointmentStatus(appointment({ status: 'completed' }), BEFORE).label).toBe('Визит состоялся');
+    expect(appointmentStatus(appointment({ status: 'no_show' }), BEFORE).label).toBe('Неявка');
     expect(appointmentTitle(appointment())).toBe('Мочка, Хеликс');
     expect(appointmentTitle(appointment({ items: [] }))).toBe('Процедура');
   });
