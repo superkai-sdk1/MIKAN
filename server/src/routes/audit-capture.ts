@@ -12,6 +12,7 @@ import {
 import { setAuditLogger, writeAudit } from '../domain/audit.js';
 import { buildDraft, type SummaryContext } from '../domain/audit-summaries.js';
 import { getChat, serializeChat } from '../domain/bot-chats.js';
+import { getCampaignRow, serializeCampaign } from '../domain/campaigns.js';
 import { getCategoryRow, listCategories, type CatalogSection } from '../domain/categories.js';
 import { serializeProduct } from '../domain/products.js';
 import { getReceiptRow, serializeReceipt } from '../domain/receipts.js';
@@ -53,6 +54,8 @@ export const AUDIT_EXCLUDED = new Set([
   'POST /bot/staff-code',
   'POST /devices',
   'DELETE /devices/:token',
+  // Counts the recipients of a segment, changes nothing.
+  'POST /campaigns/preview',
 ]);
 
 type Params = Record<string, string | undefined>;
@@ -67,6 +70,7 @@ const client: SnapshotLoader = (ctx, p) => clientOut(getClientRow(ctx.db, idOf(p
 const product: SnapshotLoader = (ctx, p) => serializeProduct(ctx.db, getProductRow(ctx.db, idOf(p)));
 const receipt: SnapshotLoader = (ctx, p) => serializeReceipt(ctx.db, getReceiptRow(ctx.db, idOf(p)));
 const chat: SnapshotLoader = (ctx, p) => serializeChat(ctx.db, getChat(ctx.db, chatIdOf(p)));
+const campaign: SnapshotLoader = (ctx, p) => serializeCampaign(ctx.db, getCampaignRow(ctx.db, idOf(p)));
 
 const service: SnapshotLoader = (ctx, p) => {
   const row = ctx.db.select().from(services).where(eq(services.id, idOf(p))).get();
@@ -162,6 +166,10 @@ const SNAPSHOTS: Record<string, SnapshotLoader> = {
   'DELETE /bot/chats/:chatId/employee': chat,
   'PATCH /knowledge/:id': knowledge,
   'DELETE /knowledge/:id': knowledge,
+  'PATCH /campaigns/:id': campaign,
+  'POST /campaigns/:id/test': campaign,
+  'POST /campaigns/:id/cancel': campaign,
+  'DELETE /campaigns/:id': campaign,
 };
 
 /** `/api/appointments/:id` → `/appointments/:id` */

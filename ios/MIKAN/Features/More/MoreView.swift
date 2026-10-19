@@ -45,13 +45,13 @@ struct MoreView: View {
                         Label("Настройки бота", systemImage: "gearshape.2")
                     }
                 }
+                RetentionMoreSection()
                 Section("Студия") {
                     if permissions.seesReports {
                         NavigationLink { ReportsView() } label: {
                             Label("Отчёты", systemImage: "chart.bar.xaxis")
                         }
                     }
-                    CertificatesMoreLink()
                     NavigationLink { EmployeesListView() } label: {
                         Label("Сотрудники", systemImage: "person.3")
                     }

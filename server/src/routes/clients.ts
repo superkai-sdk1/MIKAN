@@ -60,6 +60,7 @@ const patchBody = z.object({
   name: nonNull(requiredText(200)),
   ...fields,
   botEnabled: nonNull(z.boolean()),
+  marketingOptOut: nonNull(z.boolean()),
   archived: nonNull(z.boolean()),
 });
 const listQuery = pagination.extend({

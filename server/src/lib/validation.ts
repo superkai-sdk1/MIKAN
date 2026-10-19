@@ -138,6 +138,20 @@ const FIELD_LABELS: Record<string, string> = {
   stepMinutes: 'Шаг времени записи, мин',
   variant: 'Вариант',
   comment: 'Комментарий',
+  marketingOptOut: 'Не присылать новости',
+  segment: 'Получатели',
+  button: 'Кнопка',
+  url: 'Ссылка',
+  at: 'Время отправки',
+  lastVisitMonthsAgoMin: 'Последний визит — от, месяцев назад',
+  lastVisitMonthsAgoMax: 'Последний визит — до, месяцев назад',
+  neverVisited: 'Ещё не были в студии',
+  categories: 'Разделы услуг',
+  masterIds: 'Мастера',
+  minVisits: 'Визитов не меньше',
+  birthdayMonth: 'Месяц рождения',
+  hasBonuses: 'Есть бонусы',
+  createdWithinDays: 'Новые клиенты, дней',
 };
 
 function fieldLabel(path: PropertyKey[]): string | null {

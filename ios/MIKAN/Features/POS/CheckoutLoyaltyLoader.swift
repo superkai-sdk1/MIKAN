@@ -34,7 +34,7 @@ enum CheckoutLoyaltyLoading {
     /// `GET /settings/retention` into the cart (every checkout, so a change in settings applies at once).
     static func loadRules(api: APIClient, cart: CartStore) async {
         do {
-            cart.setLoyaltyRules(try await api.checkoutLoyaltyRules())
+            cart.setLoyaltyRules(CheckoutLoyaltyRules(try await api.retentionSettings()))
         } catch is CancellationError {
             return
         } catch {

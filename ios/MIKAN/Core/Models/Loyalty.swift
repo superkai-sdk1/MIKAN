@@ -79,8 +79,8 @@ nonisolated struct BonusHistoryPage: Decodable, Sendable {
     let total: Int?
 }
 
-/// What checkout needs from `GET /settings/retention`: whether bonuses work and how much of a receipt they may pay,
-/// and how long a sold certificate is valid. Everything else there belongs to the retention settings screen.
+/// What checkout needs of the retention settings (`RetentionSettings`, `APIClient.retentionSettings()`): whether
+/// bonuses work and how much of a receipt they may pay, and how long a sold certificate is valid.
 nonisolated struct CheckoutLoyaltyRules: Hashable, Sendable {
     var loyaltyEnabled = false
     var cashbackPercent = 0
@@ -92,22 +92,14 @@ nonisolated struct CheckoutLoyaltyRules: Hashable, Sendable {
     static let off = CheckoutLoyaltyRules()
 }
 
-nonisolated extension CheckoutLoyaltyRules: Decodable {
-    private enum CodingKeys: String, CodingKey { case loyalty, certificates }
-    private enum LoyaltyKeys: String, CodingKey { case enabled, cashbackPercent, maxPaymentPercent }
-    private enum CertificateKeys: String, CodingKey { case validityMonths }
-
-    init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        if c.contains(.loyalty), let loyalty = try? c.nestedContainer(keyedBy: LoyaltyKeys.self, forKey: .loyalty) {
-            loyaltyEnabled = try loyalty.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
-            cashbackPercent = try loyalty.decodeIfPresent(Int.self, forKey: .cashbackPercent) ?? 0
-            maxPaymentPercent = try loyalty.decodeIfPresent(Int.self, forKey: .maxPaymentPercent) ?? 0
-        }
-        if c.contains(.certificates),
-           let certificates = try? c.nestedContainer(keyedBy: CertificateKeys.self, forKey: .certificates) {
-            certificateValidityMonths = try certificates.decodeIfPresent(Int.self, forKey: .validityMonths)
-        }
+nonisolated extension CheckoutLoyaltyRules {
+    init(_ settings: RetentionSettings) {
+        self.init(
+            loyaltyEnabled: settings.loyalty.enabled,
+            cashbackPercent: settings.loyalty.cashbackPercent,
+            maxPaymentPercent: settings.loyalty.maxPaymentPercent,
+            certificateValidityMonths: settings.certificates.validityMonths
+        )
     }
 }
 

@@ -48,7 +48,13 @@ export type CallbackAction =
   /** «📅 Записаться» under a jewelry change reminder. */
   | { kind: 'jewelryChangeBook'; appointmentId: number }
   /** «Позже» under a jewelry change reminder. */
-  | { kind: 'jewelryChangeLater'; appointmentId: number };
+  | { kind: 'jewelryChangeLater'; appointmentId: number }
+  /** «🔕 Не присылать новости» under a campaign, birthday or win-back message (bot/marketing.ts). */
+  | { kind: 'marketingOptOut' }
+  /** «🔔 Снова получать новости» under the opt-out confirmation. */
+  | { kind: 'marketingOptIn' }
+  /** «📅 Записаться» under a news message while the Mini App is not available: hands the chat to the AI. */
+  | { kind: 'marketingBook' };
 
 const CATEGORY_LETTERS: Record<ServiceCategoryKey, string> = { tattoo: 't', piercing: 'p', other: 'o' };
 const LETTER_CATEGORIES: Record<string, ServiceCategoryKey> = { t: 'tattoo', p: 'piercing', o: 'other' };
@@ -93,6 +99,12 @@ export function encodeCallback(action: CallbackAction): string {
         return `cb:${action.appointmentId}`;
       case 'jewelryChangeLater':
         return `cl:${action.appointmentId}`;
+      case 'marketingOptOut':
+        return 'mo';
+      case 'marketingOptIn':
+        return 'mi';
+      case 'marketingBook':
+        return 'mb';
     }
   })();
   if (Buffer.byteLength(data) > TELEGRAM_MAX_CALLBACK_DATA) throw new Error(`callback data too long: ${data}`);
@@ -135,6 +147,12 @@ export function decodeCallback(data: string): CallbackAction | null {
       return a === undefined ? { kind: 'jewelryCategories' } : null;
     case 'sc':
       return a === undefined ? { kind: 'serviceCategories' } : null;
+    case 'mo':
+      return a === undefined ? { kind: 'marketingOptOut' } : null;
+    case 'mi':
+      return a === undefined ? { kind: 'marketingOptIn' } : null;
+    case 'mb':
+      return a === undefined ? { kind: 'marketingBook' } : null;
     case 'jo': {
       const list = parseJewelryKey(a);
       return list && b === undefined ? { kind: 'jewelryOpen', list } : null;

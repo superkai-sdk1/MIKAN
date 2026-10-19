@@ -32,6 +32,7 @@ struct ClientDetailView: View {
                 ClientStatsSection(stats: current.stats)
                 ClientLoyaltySection(client: current) { await load() }
                 infoSection(current)
+                ClientMarketingSection(client: current, errorMessage: $errorMessage) { apply($0) }
                 ClientHistorySection(history: history) { await loadHistory() }
                 AuditHistorySection(scope: .client(id: current.id))
             }

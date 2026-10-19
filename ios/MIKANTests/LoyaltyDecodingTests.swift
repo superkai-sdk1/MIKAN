@@ -163,22 +163,23 @@ struct LoyaltyDecodingTests {
         #expect(page.items.map(BonusLedger.signedAmount) == [-300, 100])
     }
 
-    @Test("Retention settings: checkout reads the loyalty rules and certificate validity")
+    @Test("Checkout takes the loyalty rules and certificate validity from the retention settings")
     func loyaltyRules() throws {
         let json = #"""
         { "loyalty": { "enabled": true, "cashbackPercent": 5, "maxPaymentPercent": 30, "expiryDays": null,
                        "notifyClient": true },
           "birthday": { "enabled": true, "sendAt": "10:00", "text": "…", "bonusAmount": 500, "bonusDays": 14,
                         "discountPercent": 10, "discountDaysBefore": 7, "discountDaysAfter": 7 },
+          "winback": { "enabled": true, "afterMonths": 6, "sendAt": "12:00", "text": "…", "bonusAmount": 0,
+                       "bonusDays": 30, "dailyLimit": 50 },
           "certificates": { "validityMonths": null } }
         """#
-        let rules = try JSONCoding.makeDecoder().decode(CheckoutLoyaltyRules.self, from: Data(json.utf8))
+        let settings = try JSONCoding.makeDecoder().decode(RetentionSettings.self, from: Data(json.utf8))
 
-        #expect(rules == CheckoutLoyaltyRules(
+        #expect(CheckoutLoyaltyRules(settings) == CheckoutLoyaltyRules(
             loyaltyEnabled: true, cashbackPercent: 5, maxPaymentPercent: 30, certificateValidityMonths: nil
         ))
-        let empty = try JSONCoding.makeDecoder().decode(CheckoutLoyaltyRules.self, from: Data("{}".utf8))
-        #expect(empty == .off)
+        #expect(CheckoutLoyaltyRules.off.loyaltyEnabled == false)
     }
 
     // MARK: Encoding

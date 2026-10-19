@@ -100,6 +100,7 @@ export const clientOut = (c: ClientRow, stats: ClientStats | null = null) => ({
   archived: c.archived,
   createdAt: toIso(c.createdAt),
   updatedAt: toIso(c.updatedAt),
+  marketingOptOut: c.marketingOptOut,
   stats,
 });
 

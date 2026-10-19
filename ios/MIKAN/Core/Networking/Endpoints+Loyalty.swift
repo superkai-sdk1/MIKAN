@@ -3,11 +3,6 @@ import Foundation
 // MARK: - Loyalty bonuses and gift certificates (docs/API.md «Loyalty bonuses», «Gift certificates»)
 
 extension APIClient {
-    /// The loyalty part of `GET /settings/retention` that checkout needs.
-    func checkoutLoyaltyRules() async throws -> CheckoutLoyaltyRules {
-        try await request(.get, "settings/retention")
-    }
-
     func clientBonuses(clientId: Int, limit: Int = 50, offset: Int = 0) async throws -> BonusHistoryPage {
         try await request(.get, "clients/\(clientId)/bonuses", query: queryItems([
             "limit": String(limit),
