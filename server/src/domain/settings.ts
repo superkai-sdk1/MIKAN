@@ -16,7 +16,32 @@ export interface StudioSettings {
   workdayStart: string;
   /** Closing time "HH:MM" ("24:00" = midnight), later than `workdayStart`: the calendar ends here. */
   workdayEnd: string;
+  /** Prepayment rules on a cancellation / no-show (see domain/cancellation.ts). */
+  cancellation: CancellationRules;
+  /** Where clients leave a review: `https://…` or "" (none). */
+  reviewLinks: ReviewLinks;
 }
+
+export interface CancellationRules {
+  /** A cancellation at least this many hours before the start is free; 0 = never free. */
+  freeHours: number;
+  /** Share (0…100) of the held prepayment kept after a later cancellation. */
+  lateRetainPercent: number;
+  /** Share (0…100) of the held prepayment kept after a no-show. */
+  noShowRetainPercent: number;
+  /** The server records that retain itself when the appointment is cancelled late or missed. */
+  autoRetain: boolean;
+}
+
+export interface ReviewLinks {
+  yandex: string;
+  twogis: string;
+  google: string;
+}
+
+/** `freeHours` limit: two weeks. */
+export const FREE_CANCELLATION_HOURS_MAX = 14 * 24;
+export const REVIEW_LINK_MAX = 500;
 
 export interface BotSettingsStored {
   enabled: boolean;
@@ -71,6 +96,8 @@ export const DEFAULT_STUDIO: StudioSettings = {
   timezone: 'Europe/Moscow',
   workdayStart: '11:00',
   workdayEnd: '21:00',
+  cancellation: { freeHours: 24, lateRetainPercent: 100, noShowRetainPercent: 100, autoRetain: false },
+  reviewLinks: { yandex: '', twogis: '', google: '' },
 };
 
 export const DEFAULT_BOT: BotSettingsStored = {
@@ -134,9 +161,20 @@ export function workdayFromText(text: string): Pick<StudioSettings, 'workdayStar
   return { workdayStart: formatTimeOfDay(start), workdayEnd: formatTimeOfDay(end) };
 }
 
+type StoredStudioValue = Partial<Omit<StudioSettings, 'cancellation' | 'reviewLinks'>> & {
+  cancellation?: Partial<CancellationRules>;
+  reviewLinks?: Partial<ReviewLinks>;
+};
+
 export function getStudioSettings(db: DbOrTx): StudioSettings {
-  const stored = readKey<Partial<StudioSettings>>(db, KEY_STUDIO) ?? {};
-  const merged = { ...DEFAULT_STUDIO, ...stored };
+  const stored = readKey<StoredStudioValue>(db, KEY_STUDIO) ?? {};
+  // Settings saved before the cancellation rules / review links existed take the defaults.
+  const merged = {
+    ...DEFAULT_STUDIO,
+    ...stored,
+    cancellation: { ...DEFAULT_STUDIO.cancellation, ...stored.cancellation },
+    reviewLinks: { ...DEFAULT_STUDIO.reviewLinks, ...stored.reviewLinks },
+  };
   if (stored.workdayStart !== undefined && stored.workdayEnd !== undefined) return merged;
   return { ...merged, ...workdayFromText(merged.workingHours) };
 }

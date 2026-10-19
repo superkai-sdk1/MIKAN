@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { resyncUpcomingReminders } from '../domain/scheduling.js';
 import {
+  FREE_CANCELLATION_HOURS_MAX,
   getBotSettings,
   getStaffChatId,
   getStudioSettings,
@@ -12,9 +13,11 @@ import {
   normalizeReminderOffsets,
   REMINDER_OFFSET_MAX,
   REMINDER_OFFSET_MIN,
+  REVIEW_LINK_MAX,
   saveBotSettings,
   saveStudioSettings,
   type BotSettingsStored,
+  type StudioSettings,
 } from '../domain/settings.js';
 import { badRequest } from '../lib/errors.js';
 import { formatTimeOfDay, isValidTimezone, parseTimeOfDay } from '../lib/time.js';
@@ -37,6 +40,35 @@ const timeOfDay = z.string().transform((value, ctx) => {
   return formatTimeOfDay(minutes);
 });
 
+const percent = nonNull(z.number().int().min(0).max(100));
+
+/** Each rule omitted = unchanged. */
+const cancellationRules = z.object({
+  freeHours: nonNull(z.number().int().min(0).max(FREE_CANCELLATION_HOURS_MAX)),
+  lateRetainPercent: percent,
+  noShowRetainPercent: percent,
+  autoRetain: nonNull(z.boolean()),
+});
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** `https://…` or "" (none); `null` clears it, omitted = unchanged. */
+const reviewLink = z
+  .string()
+  .trim()
+  .max(REVIEW_LINK_MAX)
+  .refine((v) => v === '' || isHttpsUrl(v), { message: 'нужна ссылка, начинающаяся с https://' })
+  .nullish();
+
+const reviewLinks = z.object({ yandex: reviewLink, twogis: reviewLink, google: reviewLink });
+
 const studioBody = z.object({
   name: nonNull(z.string().trim().min(1).max(200)),
   address: text(500),
@@ -48,6 +80,9 @@ const studioBody = z.object({
   timezone: nonNull(z.string().trim().refine(isValidTimezone, { message: 'неизвестный часовой пояс (пример: Europe/Moscow)' })),
   workdayStart: nonNull(timeOfDay),
   workdayEnd: nonNull(timeOfDay),
+  /** Omitted = unchanged (older builds never send them). */
+  cancellation: nonNull(cancellationRules),
+  reviewLinks: nonNull(reviewLinks),
 });
 
 const botBody = z.object({
@@ -107,8 +142,14 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/settings/studio', async () => getStudioSettings(db));
 
   app.put('/settings/studio', async (request) => {
-    const input = parse(studioBody, request.body);
-    const next = merge(getStudioSettings(db), input);
+    const { cancellation, reviewLinks: links, ...input } = parse(studioBody, request.body);
+    const current = getStudioSettings(db);
+    const next: StudioSettings = {
+      ...merge(current, input),
+      // Nested: each rule / link omitted = unchanged.
+      cancellation: merge(current.cancellation, cancellation ?? {}),
+      reviewLinks: merge(current.reviewLinks, links ?? {}),
+    };
     // Only the calendar's default range: appointments outside it are still allowed.
     if (parseTimeOfDay(next.workdayEnd)! <= parseTimeOfDay(next.workdayStart)!) {
       throw badRequest(`Конец рабочего дня (${next.workdayEnd}) должен быть позже начала (${next.workdayStart})`);

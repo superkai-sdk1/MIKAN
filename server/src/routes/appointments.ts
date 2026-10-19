@@ -96,7 +96,7 @@ export function appointmentRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.patch('/appointments/:id', async (request) => {
     const params = parse(idParams, request.params);
     const input = parse(body, request.body);
-    return serializeAppointment(db, updateAppointment(db, params.id, input));
+    return serializeAppointment(db, updateAppointment(db, params.id, input, request.employee.id));
   });
 
   app.post('/appointments/:id/complete', async (request) => {
