@@ -1,15 +1,17 @@
 import { and, asc, eq, gt, lt, ne, notInArray } from 'drizzle-orm';
-import { DateTime } from 'luxon';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, employees } from '../db/schema.js';
 import type { EmployeeRow } from '../lib/serialize.js';
-import { MINUTE_MS, parseTimeOfDay } from '../lib/time.js';
-import { getStudioSettings } from './settings.js';
+import { isValidCalendarDate, MINUTE_MS } from '../lib/time.js';
+import { studioTimezone } from './settings.js';
+import { instantOf, scheduleDaysFor, workingIntervals } from './work-schedule.js';
+import { fitsWorkingTime } from './working-time.js';
 
 /**
- * Free appointment starts for the bot: inside the studio working hours (`workdayStart`–`workdayEnd`, studio
- * timezone), every SLOT_STEP_MIN minutes, not overlapping the master's non-cancelled, non-no-show appointments.
- * Staff may still book any time from the app; this only limits what the bot offers and accepts.
+ * Free appointment starts for the bot: inside the master's working time (their own schedule, else the studio hours
+ * `workdayStart`–`workdayEnd`; breaks excluded, studio timezone), every SLOT_STEP_MIN minutes from the start of the
+ * working day, not overlapping the master's non-cancelled, non-no-show appointments. A master off that day is not
+ * offered. Staff may still book any time from the app; this only limits what the bot offers and accepts.
  */
 
 export const SLOT_STEP_MIN = 30;
@@ -22,6 +24,8 @@ const INACTIVE = ['cancelled', 'no_show'];
 
 export interface MasterSlots {
   master: EmployeeRow;
+  /** The master does not work that date (listed only when asked for by `masterId`). */
+  off: boolean;
   /** Free starts (ms), ascending. */
   starts: number[];
 }
@@ -37,25 +41,10 @@ export interface FreeSlotsQuery {
   now?: number;
 }
 
-/** Working hours of a studio-local date as instants; null for an invalid date. */
-export function workingWindow(db: DbOrTx, date: string): { open: number; close: number; tz: string } | null {
-  const studio = getStudioSettings(db);
-  const day = DateTime.fromISO(date, { zone: studio.timezone });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !day.isValid) return null;
-  const at = (minutes: number) =>
-    minutes >= 24 * 60
-      ? day.startOf('day').plus({ days: 1 }).toMillis()
-      : day.startOf('day').set({ hour: Math.floor(minutes / 60), minute: minutes % 60 }).toMillis();
-  const open = parseTimeOfDay(studio.workdayStart) ?? 11 * 60;
-  const close = parseTimeOfDay(studio.workdayEnd) ?? 21 * 60;
-  return { open: at(open), close: at(close), tz: studio.timezone };
-}
-
-/** Whether [startsAt, endsAt) lies inside the working hours of its studio-local day. */
-export function withinWorkingHours(db: DbOrTx, startsAt: number, endsAt: number): boolean {
-  const tz = getStudioSettings(db).timezone;
-  const window = workingWindow(db, DateTime.fromMillis(startsAt, { zone: tz }).toISODate() ?? '');
-  return window !== null && startsAt >= window.open && endsAt <= window.close;
+/** Whether [startsAt, endsAt) lies inside the master's working time on its studio-local day. */
+export function withinWorkingHours(db: DbOrTx, startsAt: number, endsAt: number, masterId: number): boolean {
+  const master = db.select().from(employees).where(eq(employees.id, masterId)).get();
+  return master !== undefined && fitsWorkingTime(db, master, startsAt, endsAt);
 }
 
 /** Masters the bot books with: active employees marked as masters (every active employee when none is). */
@@ -67,27 +56,34 @@ export function bookableMasters(db: DbOrTx, masterId?: number): EmployeeRow[] {
 }
 
 export function freeSlots(db: DbOrTx, q: FreeSlotsQuery): MasterSlots[] {
-  const window = workingWindow(db, q.date);
-  if (!window || q.durationMin <= 0) return [];
+  if (!isValidCalendarDate(q.date) || q.durationMin <= 0) return [];
+  const tz = studioTimezone(db);
   const now = q.now ?? Date.now();
   const earliest = now + SLOT_LEAD_MIN * MINUTE_MS;
   const duration = q.durationMin * MINUTE_MS;
-  return bookableMasters(db, q.masterId).map((master) => {
+  const masters = bookableMasters(db, q.masterId);
+  const days = scheduleDaysFor(db, masters, [q.date]);
+  return masters.flatMap((master, index): MasterSlots[] => {
+    const day = days[index]!;
+    const intervals = workingIntervals(day, tz);
+    if (!day.working || !day.start || intervals.length === 0) return q.masterId === undefined ? [] : [{ master, off: true, starts: [] }];
+    const open = instantOf(day.date, day.start, tz);
+    const close = intervals.at(-1)!.end;
     const conditions = [
       eq(appointments.masterId, master.id),
-      lt(appointments.startsAt, window.close),
-      gt(appointments.endsAt, window.open),
+      lt(appointments.startsAt, close),
+      gt(appointments.endsAt, open),
       notInArray(appointments.status, INACTIVE),
     ];
     if (q.excludeAppointmentId !== undefined) conditions.push(ne(appointments.id, q.excludeAppointmentId));
     const busy = db.select({ startsAt: appointments.startsAt, endsAt: appointments.endsAt }).from(appointments).where(and(...conditions)).all();
     const starts: number[] = [];
-    for (let start = window.open; start + duration <= window.close; start += SLOT_STEP_MIN * MINUTE_MS) {
-      if (start < earliest) continue;
+    for (let start = open; start + duration <= close; start += SLOT_STEP_MIN * MINUTE_MS) {
       const end = start + duration;
+      if (start < earliest || !intervals.some((i) => start >= i.start && end <= i.end)) continue;
       if (busy.some((b) => b.startsAt < end && b.endsAt > start)) continue;
       starts.push(start);
     }
-    return { master, starts };
+    return [{ master, off: false, starts }];
   });
 }

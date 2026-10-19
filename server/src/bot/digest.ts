@@ -4,12 +4,14 @@ import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, botChats } from '../db/schema.js';
 import { listAppointments } from '../domain/appointments.js';
+import { bookableMasters } from '../domain/free-slots.js';
 import { chatEmployee, storeMessage } from '../domain/bot-chats.js';
 import { getOpenShift, serializeShift } from '../domain/cash.js';
 import { listReceipts } from '../domain/receipts.js';
 import { clientsByIds, serializeAppointments } from '../domain/refs.js';
 import { badges, reportSummary } from '../domain/reports.js';
 import { getBotSettings, getDigestsSent, setDigestsSent, studioTimezone, type DigestsSent } from '../domain/settings.js';
+import { whoWorksText } from '../domain/working-time.js';
 import { errorMessage } from '../lib/errors.js';
 import type { AppointmentOut, EmployeeRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
@@ -118,6 +120,7 @@ export function morningDigest(db: DbOrTx, now: number, employee: EmployeeRow): s
   const counts = badges(db);
   const shift = getOpenShift(db);
   const staleReceipts = listReceipts(db).filter((r) => r.createdAt < today.start).length;
+  const working = whoWorksText(db, bookableMasters(db), today.date);
 
   const attention = [
     depositsLine(todayRows, tomorrowRows, tz),
@@ -137,6 +140,7 @@ export function morningDigest(db: DbOrTx, now: number, employee: EmployeeRow): s
   return [
     `☀️ **Доброе утро, ${employee.name}!**`,
     dayTitle(now, tz),
+    ...(working ? ['', `👥 ${working}`] : []),
     '',
     todayRows.length
       ? [
