@@ -244,7 +244,8 @@ or `null` for a mixed count.
 `cancellation` — what the studio's rules (`StudioSettings.cancellation`) mean for this appointment while it has a
 prepayment (held, else required); `null` when neither. `freeUntil` — the last moment a free cancellation is possible
 (`null` when `freeHours` is 0); `lateRetain` / `noShowRetain` — rubles kept after a later cancellation / a no-show,
-from the held prepayment (or the required one while nothing is held yet).
+from the held prepayment (or the required one while nothing is held yet). They are counted from what is held now, so
+after a partial retain they describe the remainder.
 `status`: `scheduled` | `confirmed` | `completed` | `cancelled` | `no_show`. `saleId` — the sale that paid for it.
 `receiptId` — its open receipt in the POS (`OpenReceipt`, the visit has started), `null` when none.
 Visits carried over from YCLIENTS were paid in cash at the studio: the server maintenance script
@@ -1088,8 +1089,10 @@ prepayment while a free cancellation is still possible adds «Бесплатно
 through the bot is not limited by these rules.
 
 #### Follow-ups
-When a visit is completed (`complete`, or a sale that completes it) and its client has Telegram linked and the bot
-allowed, the server schedules one of each, at `BotSettings.aftercareHour` studio time on that day:
+When a visit is completed (`complete`, or a sale that completes it), its client has Telegram linked and the bot
+allowed, and the bot is on (`BotSettings.enabled`), the server schedules one of each, at `BotSettings.aftercareHour`
+studio time on that day. They do not depend on `sendAftercare` and are not counted in `scheduledMessages`; a moment
+already past is skipped:
 - `healing_check` — after the largest `healingCheckDays` among the visit's catalog services (none set → none):
   «Здравствуйте, Анна! Прошла неделя после процедуры «Хеликс». Как заживает? 🙂» with the buttons «👍 Всё хорошо» and
   «🤔 Есть вопрос».
@@ -1101,8 +1104,10 @@ allowed, the server schedules one of each, at `BotSettings.aftercareHour` studio
   «Анна, прошло 6 недель после прокола «Хеликс» — самое время заменить украшение на подходящее по размеру. Записаться?»
   with «📅 Записаться» (stored «[Кнопка] 📅 Хочу записаться на замену украшения после «Хеликс»», the AI continues the
   booking) and «Позже» (a short reply, no AI).
-Only the appointment's client, in the chat linked to their card, can use these buttons. Completing a visit again
-schedules nothing new; a follow-up is cancelled if the client unlinks Telegram or turns the bot off for themselves.
+Only the appointment's client, in the chat linked to their card, can use these buttons; the buttons are removed once
+one is pressed («Позже» leaves «📅 Записаться»). After «🤔 Есть вопрос» the AI keeps answering the client as usual.
+Completing a visit again schedules nothing new; a follow-up is cancelled if the client unlinks Telegram or turns the
+bot off for themselves, and skipped if the visit is no longer `completed` when it is due.
 
 #### Alerts
 The staff chat (bound with `/staff`; else every staff chat) is told when something needs a person: the AI provider
