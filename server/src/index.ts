@@ -3,7 +3,9 @@ import path from 'node:path';
 import { pino } from 'pino';
 import { APP_VERSION, buildApp } from './app.js';
 import { createAiClient } from './bot/ai.js';
+import { CAMPAIGN_TICK_MS, runCampaigns } from './bot/campaign-sender.js';
 import { BotController } from './bot/index.js';
+import { RETENTION_CHECK_INTERVAL_MS, sendDueRetention } from './bot/retention.js';
 import { processDueMessages, SENDER_INTERVAL_MS } from './bot/sender.js';
 import { loadConfig } from './config.js';
 import type { AppContext } from './context.js';
@@ -116,6 +118,32 @@ async function main(): Promise<void> {
       });
   }, DIGEST_CHECK_INTERVAL_MS);
 
+  // Telegram campaigns: scheduled starts and delivery at a safe rate (docs/API.md «Campaigns»).
+  let campaigning = false;
+  const campaignTimer = setInterval(() => {
+    if (campaigning) return;
+    campaigning = true;
+    runCampaigns(ctx)
+      .then((run) => (run.sent || run.failed || run.blocked || run.started) && log.info(run, 'campaign messages sent'))
+      .catch((err) => log.error({ err: errorMessage(err) }, 'campaign sender failed'))
+      .finally(() => {
+        campaigning = false;
+      });
+  }, CAMPAIGN_TICK_MS);
+
+  // Birthday greetings and win-back messages, each once (docs/API.md «Birthday and win-back»).
+  let retaining = false;
+  const retentionTimer = setInterval(() => {
+    if (retaining) return;
+    retaining = true;
+    sendDueRetention(ctx)
+      .then((run) => (run.birthday || run.winback) && log.info(run, 'retention messages sent'))
+      .catch((err) => log.error({ err: errorMessage(err) }, 'retention messages failed'))
+      .finally(() => {
+        retaining = false;
+      });
+  }, RETENTION_CHECK_INTERVAL_MS);
+
   const backupDir = path.join(config.dataDir, 'backups');
   // The daily copy, then its encrypted off-site copy; staff hear about failures (domain/alerts.ts).
   const copyOffsite = async (file: string) => {
@@ -190,6 +218,8 @@ async function main(): Promise<void> {
     clearInterval(qrTimer);
     clearInterval(holdTimer);
     clearInterval(digestTimer);
+    clearInterval(campaignTimer);
+    clearInterval(retentionTimer);
     clearInterval(backupTimer);
     clearInterval(diskTimer);
     clearInterval(auditPruneTimer);

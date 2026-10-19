@@ -12,6 +12,7 @@ import {
   personName,
   quote,
   rubChange,
+  type ChangeDetail,
 } from './audit-text.js';
 import type { CategoryOut } from './categories.js';
 import type { serializeService } from './services.js';
@@ -51,6 +52,10 @@ const CLIENT_LABELS: Record<string, string> = {
   botEnabled: 'сообщения бота',
   marketingOptOut: 'новости и предложения',
 };
+/** «новости и предложения отключены» rather than just the label. */
+const CLIENT_DETAILS: Record<string, ChangeDetail> = {
+  marketingOptOut: (_from, to) => (to === true ? 'новости и предложения отключены' : 'новости и предложения снова включены'),
+};
 const CLIENT_IGNORE = ['stats', 'loyalty', 'telegramLinked', 'telegramUsername'];
 const clientCard = (client: unknown) => `Карточка клиента ${quote(personName(client as { name?: unknown } | null))}`;
 
@@ -67,7 +72,7 @@ function clientUpdate(c: SummaryContext): AuditDraft {
     const summary = `${clientCard(after)} ${after.archived ? 'перенесена в архив' : 'возвращена из архива'}`;
     return draft('client', after.archived ? 'archive' : 'restore', after.id, summary, changes);
   }
-  const words = describeChanges(changes, CLIENT_LABELS);
+  const words = describeChanges(changes, CLIENT_LABELS, CLIENT_DETAILS);
   const summary = words.length ? `${clientCard(after)} изменена${labelsSuffix(words)}` : `${clientCard(after)} сохранена без изменений`;
   return draft('client', 'update', after.id, summary, changes);
 }

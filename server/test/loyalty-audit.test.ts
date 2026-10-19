@@ -38,7 +38,7 @@ describe('audit log of loyalty writes', () => {
     const [entry] = await entries(`entity=client&entityId=${client.id}`);
     expect(entry).toMatchObject({
       action: 'client.update',
-      summary: 'Карточка клиента «Анна Иванова» изменена: новости и предложения',
+      summary: 'Карточка клиента «Анна Иванова» изменена: новости и предложения отключены',
       changes: { marketingOptOut: { from: false, to: true } },
     });
     const created = await make(t, '/api/clients', { name: 'Олег', phone: '+79990003344', marketingOptOut: true });

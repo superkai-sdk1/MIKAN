@@ -23,7 +23,7 @@ export interface ClientInput {
   notes?: string | null;
   source?: string | null;
   botEnabled?: boolean;
-  /** The client asked for no news and offers (campaigns, birthday, win-back). */
+  /** No news and offers (campaigns, birthday, win-back); service messages still go. */
   marketingOptOut?: boolean;
   archived?: boolean;
 }

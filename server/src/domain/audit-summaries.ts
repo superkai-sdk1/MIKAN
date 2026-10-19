@@ -1,6 +1,7 @@
 import { silentLogger, type Logger } from '../context.js';
 import { errorMessage } from '../lib/errors.js';
 import { diffChanges, type AuditDraft } from './audit.js';
+import { campaignSummaries } from './audit-summaries-campaigns.js';
 import { catalogSummaries } from './audit-summaries-catalog.js';
 import { loyaltySummaries } from './audit-summaries-loyalty.js';
 import { teamSummaries } from './audit-summaries-team.js';
@@ -35,6 +36,7 @@ export const SUMMARY_BUILDERS: Record<string, SummaryBuilder> = {
   ...catalogSummaries,
   ...teamSummaries,
   ...loyaltySummaries,
+  ...campaignSummaries,
 };
 
 /** First path segment → entity, for routes without a specific summary. */
@@ -58,6 +60,7 @@ const PATH_ENTITIES: Record<string, string> = {
   knowledge: 'knowledge',
   bot: 'bot',
   'booking-requests': 'bot',
+  campaigns: 'campaign',
 };
 
 const VERBS: Record<string, string> = { POST: 'create', PUT: 'update', PATCH: 'update', DELETE: 'delete' };
