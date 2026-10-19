@@ -27,6 +27,8 @@ final class AppState {
     let receipts: OpenReceiptsStore
     let schedule: ScheduleStore
     let reference: ReferenceStore
+    /// Masters' working time for the calendar.
+    let workSchedules: WorkScheduleStore
 
     private(set) var phase: Phase
     private(set) var employee: Employee?
@@ -47,6 +49,7 @@ final class AppState {
         self.receipts = OpenReceiptsStore(api: api, cart: cart)
         self.schedule = ScheduleStore(api: api)
         self.reference = ReferenceStore(api: api)
+        self.workSchedules = WorkScheduleStore(api: api)
         self.employee = employee
         self.phase = phase
         api.onUnauthorized = { [weak self] in
@@ -91,6 +94,7 @@ final class AppState {
         shift.reset()
         schedule.reset()
         reference.reset()
+        workSchedules.reset()
         signOutNotice = notice
         phase = .signedOut
     }

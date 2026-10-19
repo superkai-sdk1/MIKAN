@@ -28,6 +28,7 @@ extension View {
             .environment(state.receipts)
             .environment(state.schedule)
             .environment(state.reference)
+            .environment(state.workSchedules)
             .environment(\.locale, .app)
             .environment(\.calendar, .app)
     }

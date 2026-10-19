@@ -86,6 +86,7 @@ struct EmployeeEditorView: View {
                 } footer: {
                     Text("Мастера выбираются при записи. Цвет отмечает их записи в календаре.")
                 }
+                if let employee { WorkScheduleLinkSection(employee: employee) }
                 if !isCreating {
                     Section {
                         Toggle("Доступ к приложению", isOn: $active)

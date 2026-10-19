@@ -53,6 +53,7 @@ struct MoreView: View {
                             }
                         }
                         .accessibilityElement(children: .combine)
+                        MyScheduleLink(employee: employee)
                     }
                     Button("Выйти", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                         confirmsSignOut = true

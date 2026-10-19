@@ -66,6 +66,7 @@ struct TimeGridPage: View {
         let range = range
         VStack(spacing: 0) {
             DayHeaderRow(days: days, scale: period.scale, isLoading: store.isLoading(query), onOpenDay: onOpenDay)
+            MastersOffRow(days: days, masterId: query.masterId, scale: period.scale)
             if let error = store.error(for: query) {
                 LoadErrorBanner(message: error) { await store.reload(query) }
             }
@@ -79,6 +80,7 @@ struct TimeGridPage: View {
                     compact: compact,
                     onCreate: onCreate
                 )
+                .workTimeShading(days: days, range: range, hourHeight: hourHeight, masterId: query.masterId)
                 .padding(.trailing, 4)
             }
             .scrollPosition($position)
