@@ -1,13 +1,15 @@
 import SwiftUI
 
 /// A gift certificate: its card to share, print or send, balance and validity, who bought it, the sale and every
-/// operation. The owner can cancel an active one (its balance burns).
+/// operation. Staff fix the recipient and the note; the owner also changes the expiry and can cancel an active one
+/// (its balance burns).
 struct CertificateDetailView: View {
     @Environment(APIClient.self) private var api
     @Environment(\.permissions) private var permissions
 
     @State private var certificate: GiftCertificate
     @State private var showsCancel = false
+    @State private var showsEdit = false
     @State private var errorMessage: String?
     var onChange: ((GiftCertificate) -> Void)?
 
@@ -23,6 +25,7 @@ struct CertificateDetailView: View {
             }
             infoSection
             operationsSection
+            AuditHistorySection(scope: .certificate(id: certificate.id))
         }
         .auraBackground()
         .navigationTitle(certificate.code)
@@ -30,6 +33,11 @@ struct CertificateDetailView: View {
         .refreshable { await reload() }
         .errorAlert($errorMessage)
         .toolbar {
+            if permissions.editsCertificateDetails {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Изменить") { showsEdit = true }
+                }
+            }
             if permissions.cancelsCertificates, certificate.status == .active {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -42,6 +50,9 @@ struct CertificateDetailView: View {
         }
         .sheet(isPresented: $showsCancel) {
             CertificateCancelSheet(certificate: certificate) { cancelled in apply(cancelled) }
+        }
+        .sheet(isPresented: $showsEdit) {
+            CertificateEditSheet(certificate: certificate) { edited in apply(edited) }
         }
     }
 

@@ -36,6 +36,11 @@ extension APIClient {
         try await request(.get, "certificates/code/\(code)")
     }
 
+    /// Recipient and note (every role), expiry (owner only; `409` for an expired or cancelled certificate).
+    func updateCertificate(id: Int, _ body: CertificatePatchBody) async throws -> GiftCertificate {
+        try await request(.patch, "certificates/\(id)", body: body)
+    }
+
     /// Owner only: the balance burns.
     func cancelCertificate(id: Int, reason: String) async throws -> GiftCertificate {
         try await request(.post, "certificates/\(id)/cancel", body: CertificateCancelBody(reason: reason))
