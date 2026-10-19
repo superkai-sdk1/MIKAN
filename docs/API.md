@@ -1537,8 +1537,9 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
 The client's own page: `PUBLIC_URL/book/me` (the same static app as the booking page). In the Mini App the client is
 known by the Telegram init data (the chat's linked card). On the website the client signs in with a link from the
 bot: «👤 Мои записи и бонусы» in the bot (the button of the client keyboard, the `/me` command, `/start me`, a phrase
-the AI recognises — tool `cabinet_link`) sends `PUBLIC_URL/book/me?t=<token>` (valid 30 days; the page stores the
-token and sends `X-Client-Token`). Without a linked card the bot first asks to share the phone. Every cabinet endpoint
+the AI recognises — tool `cabinet_link`) sends `PUBLIC_URL/book/me#t=<token>` (valid 30 days; the page stores the
+token and sends `X-Client-Token`). The token rides in the URL fragment so it never reaches request logs; `?t=` is
+read as well. Without a linked card the bot first asks to share the phone. Every cabinet endpoint
 answers `401` «Войдите через Telegram-бота студии» without a valid identity.
 
 | Method | Path (no staff auth) | Body | Response |
@@ -1546,7 +1547,7 @@ answers `401` «Войдите через Telegram-бота студии» witho
 | GET | `/public/cabinet` | — | `Cabinet` |
 | GET | `/public/cabinet/appointments/:id/days?from=&to=` | — | `{ items: [ { date, available } ] }` ≤ 31 dates (default: 14 from today) — free days to move that appointment to |
 | GET | `/public/cabinet/appointments/:id/slots?date=` | — | `{ date, durationMin, items: [ { startsAt, masterIds: [<its master>] } ] }` — free starts for it that day |
-| POST | `/public/cabinet/appointments/:id/reschedule` | `{ startsAt }` | `CabinetAppointment` · the online booking free-time rules, own future scheduled/confirmed appointments only; `409 schedule_conflict` «Это время уже занято» |
+| POST | `/public/cabinet/appointments/:id/reschedule` | `{ startsAt }` | `CabinetAppointment` · the online booking free-time rules, own future scheduled/confirmed appointments only; `409 schedule_conflict` «Это время уже занято»; a prepaid one only until its free changes end (`409`) |
 | POST | `/public/cabinet/appointments/:id/cancel` | — | `CabinetAppointment` · own future appointments; cancellation rules apply as for staff (late → the rule's retain when `autoRetain`), staff are told (`client_cancelled`) |
 | GET | `/public/cabinet/bonuses` | — | `{ balance, items: [ { type, amount, expiresAt, createdAt, note } ] }` (last 50) |
 | DELETE | `/public/cabinet/waitlist/:id` | — | `204` · own entry |
@@ -1565,17 +1566,20 @@ reminders like the bot does.
 - **Identity.** `X-Telegram-Init-Data` (checked as for the booking page) → the client card linked to that Telegram
   chat; an unlinked chat, forged or stale data → `401` (never a fallback to a token). Else `X-Client-Token` → the card
   of a live sign-in link: only its SHA-256 is stored (`client_access_tokens`), each use records `lastUsedAt`, it works
-  30 days from issue or until `logout`; expired links are deleted when a new one is issued. Merging client cards moves
-  the links to the remaining card.
+  30 days from issue or until `logout`, and only while the card still has a linked Telegram chat (a chat re-linked to
+  another card ends the old card's links). A client keeps at most 5 live links — issuing another deletes the oldest;
+  expired links are deleted when a new one is issued. Merging client cards moves the links to the remaining card.
 - **Lists.** `upcoming` — `scheduled` / `confirmed` appointments that have not ended, soonest first (one under way is
   listed with `canReschedule` / `canCancel` false); `past` — the rest (completed, cancelled, no-show, ended), newest
   first. `items` — the service lines (else one line with the legacy service or title and the appointment price);
   `deposit` — the prepayment held now; `freeCancellationUntil` — start − `cancellation.freeHours` while the
   appointment is changeable and has a prepayment (held or required), else `null` (also when `freeHours` is 0);
   `bookingToken` — the `/book/b/<token>` page of an online booking, else `null`. `canReschedule` also needs the
-  appointment's master to be an active master (online booking only books those). `loyalty` is `null` while the loyalty
+  appointment's master to be an active master (online booking only books those) and is false for a prepaid
+  appointment past `freeCancellationUntil` (see «Moving»). `loyalty` is `null` while the loyalty
   program is off; `expiring` — `{ amount, at }` of the nearest burning lot (as on the client card). `waitlist` — the
-  client's `waiting` and `notified` entries, oldest first. `certificates` — bought by the client (`buyer`), `active`,
+  client's `waiting` and `notified` entries, oldest first (`note` is `null` on entries staff added in the app —
+  `channel: app` — as it is theirs). `certificates` — bought by the client (`buyer`), `active`,
   balance > 0, not past `expiresAt`, newest first. `aftercare` — per completed visit of the last 60 days (newest
   first) the template of its first catalog service with `freshProcedure` and a template: `title` = the template name,
   `date` = the studio-local visit date, `steps` by `dayOffset` (`day`).
@@ -1586,8 +1590,11 @@ reminders like the bot does.
   start must be a free start of `slots` (the `stepMinutes` grid of the master's working time, its own time not busy,
   nothing overlapping — else `409 schedule_conflict` «Это время уже занято», never naming another client), at least
   `leadMinutes` from now (`400` «Это время уже недоступно — выберите время попозже») and within `horizonDays` (`400`
-  «Перенести можно не дальше чем на 60 дней вперёд»). The same start again returns it unchanged. Like the bot, a move
-  is not limited by the cancellation rules. The staff chat gets «🔁 Клиент Анна Иванова перенёс запись №12 в личном
+  «Перенести можно не дальше чем на 60 дней вперёд»). The same start again returns it unchanged. Unlike the bot, a
+  prepaid appointment (held or required) cannot be moved here once its free changes are over — the rule reads
+  «Бесплатно отменить или перенести запись можно не позднее чем за N часов», and a move to a later day followed by a
+  cancellation would make a late cancellation free: `409` «Перенести запись с предоплатой меньше чем за 24 ч до начала
+  можно только через студию» (nothing is locked without a prepayment or with `freeHours` 0). The staff chat gets «🔁 Клиент Анна Иванова перенёс запись №12 в личном
   кабинете\nБыло: …\nСтало: …–…\nМочка · мастер Фатима»; audit `appointment.move` («… перенесена клиентом в личном
   кабинете с … на …»).
 - **Cancelling.** The same checks (`… отменить её можно только через студию` once started). The appointment is
@@ -1606,17 +1613,19 @@ reminders like the bot does.
   или отменить), бонусы, памятки по уходу и сертификаты.\n\n«🌐 Открыть в браузере» — вход на сайте без Telegram:
   ссылка действует 30 дней, не пересылайте её никому.» with the inline buttons «👤 Открыть кабинет» (`web_app` →
   `PUBLIC_URL/book/me`; only for an `https://` `PUBLIC_URL`; the Mini App needs no token) and «🌐 Открыть в браузере»
-  (URL `PUBLIC_URL/book/me?t=<token>`, a new token per message). The chat history keeps the text, never the link.
+  (URL `PUBLIC_URL/book/me#t=<token>`, a new token per message). The chat history keeps the text, never the link.
   Without `PUBLIC_URL`: «Личный кабинет пока недоступен — спросите здесь, я подскажу по записям и бонусам 🙂». A chat
   that has not shared its phone gets the usual phone request (no token); a staff chat — «Личный кабинет — для клиентов
   студии. Все записи и клиенты есть в приложении MIKAN.». `/start me` (the page's «Получить ссылку в Telegram» for a
   website visitor without a link) greets and sends the sign-in message instead of the booking offer.
 - Limited per IP like the public booking routes: 120 reads / 20 writes a minute.
-- **The page `/book/me`** (`X-Robots-Tag: noindex`, styles in `cabinet.css`). Website: `?t=` is taken out of the
-  address bar and kept in `localStorage` (only in memory when storage is off) and sent as `X-Client-Token`; without a
+- **The page `/book/me`** (`X-Robots-Tag: noindex`, styles in `cabinet.css`). Website: `#t=` (or `?t=`) is taken out of
+  the address bar and kept in `localStorage` (only in memory when storage is off) and sent as `X-Client-Token`; without a
   link, or when the server refuses it, the sign-in screen: «Личный кабинет» / «Ссылка для входа устарела» / «Вы вышли из
   кабинета» with how to get a link, «Получить ссылку в Telegram» (`https://t.me/<bot>?start=me`) and «Записаться
-  онлайн». Mini App: the init data only; an unlinked chat sees «Нужен ваш номер» (share the phone in the chat).
+  онлайн». Mini App: the init data only; an unlinked chat sees «Нужен ваш номер» (share the phone in the chat), a
+  `401` after the cabinet was shown (init data older than 24 h) «Откройте кабинет заново». An open appointment whose
+  time has passed (not closed by staff yet) reads «Визит прошёл».
   Tabs: «Записи» — upcoming appointments (time, status, services, master, price, prepayment, «Бесплатная отмена — до
   …») with «Перенести», «Отменить» and «Оплатить предоплату» / «Страница записи» (`/book/b/<token>`), the waitlist
   with «Не ждать», the history; «Бонусы» — balance, «500 бонусов действуют до 2 ноября», certificates, the history

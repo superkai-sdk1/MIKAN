@@ -14,7 +14,7 @@ import { auditSafely, writeAudit } from './audit.js';
 import { appointmentRef } from './audit-summaries-visits.js';
 import { formatWhen } from './audit-text.js';
 import { rescheduleStarts } from './cabinet-slots.js';
-import { isChangeable } from './cabinet.js';
+import { freeChangesOver, isChangeable } from './cabinet.js';
 import { heldDeposit } from './deposits.js';
 import { assertOnlineEnabled } from './online-booking.js';
 import { CLIENT_CANCELLED_NOTE } from './online-booking-lifecycle.js';
@@ -75,6 +75,10 @@ export async function rescheduleFromCabinet(
   assertOnlineEnabled(db);
   const current = ownAppointment(db, clientId, appointmentId);
   assertChangeable(current, now, 'перенести');
+  const { cancellation } = getStudioSettings(db);
+  if (freeChangesOver(current, heldDeposit(db, current.id), cancellation, now)) {
+    throw conflict(`Перенести запись с предоплатой меньше чем за ${cancellation.freeHours} ч до начала можно только через студию`);
+  }
   if (startsAt === current.startsAt) return current;
   assertBookableStart(db, startsAt, now);
   const tz = getStudioSettings(db).timezone;

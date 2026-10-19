@@ -78,10 +78,11 @@ describe('bot: «👤 Мои записи и бонусы»', () => {
     expect(first!.text).toBe(CABINET_TEXT);
     expect(first!.keyboard).toEqual([
       [{ text: '👤 Открыть кабинет', webApp: 'https://mikan.example/book/me' }],
-      [{ text: '🌐 Открыть в браузере', url: expect.stringMatching(/^https:\/\/mikan\.example\/book\/me\?t=[A-Za-z0-9_-]{43}$/) }],
+      [{ text: '🌐 Открыть в браузере', url: expect.stringMatching(/^https:\/\/mikan\.example\/book\/me#t=[A-Za-z0-9_-]{43}$/) }],
     ]);
     // A new link each time; each signs in as Olga.
-    const links = [first, second].map((m) => new URL(m!.keyboard![1]![0]!.url!).searchParams.get('t')!);
+    // The token is in the fragment, so it never reaches request logs.
+    const links = [first, second].map((m) => new URLSearchParams(new URL(m!.keyboard![1]![0]!.url!).hash.slice(1)).get('t')!);
     expect(new Set(links).size).toBe(2);
     for (const token of links) expect((await cab(t, 'GET', '', undefined, { token })).json().client.name).toBe('Ольга');
     // The chat history keeps the request and the text, never the link.
@@ -116,7 +117,7 @@ describe('bot: «👤 Мои записи и бонусы»', () => {
   it('only the website button without an https PUBLIC_URL, and an apology without any', async () => {
     await setUp({ PUBLIC_URL: 'http://localhost:3000' });
     linkOlga();
-    expect(cabinetMessage(t.ctx, USER).keyboard).toEqual([[{ text: '🌐 Открыть в браузере', url: expect.stringMatching(/^http:\/\/localhost:3000\/book\/me\?t=/) }]]);
+    expect(cabinetMessage(t.ctx, USER).keyboard).toEqual([[{ text: '🌐 Открыть в браузере', url: expect.stringMatching(/^http:\/\/localhost:3000\/book\/me#t=/) }]]);
     await t.close();
     await setUp({});
     linkOlga();

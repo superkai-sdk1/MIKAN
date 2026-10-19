@@ -11,7 +11,7 @@ import { heldDeposit } from './deposits.js';
 import { onlineMasters } from './online-booking-slots.js';
 import { employeesByIds, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { getRetentionSettings } from './retention-settings.js';
-import { getStudioSettings } from './settings.js';
+import { getStudioSettings, type CancellationRules } from './settings.js';
 
 /**
  * What the client sees in their cabinet (docs/API.md «Client cabinet»): their appointments with what they may do with
@@ -47,6 +47,18 @@ export interface CabinetAppointment {
   bookingToken: string | null;
 }
 
+/**
+ * The rules' free-change time of a prepaid appointment is over: «Бесплатно отменить или перенести запись можно не
+ * позднее чем за N часов». The cabinet then offers no move — a move to a later day followed by a cancellation would
+ * otherwise turn a late cancellation into a free one. Without a prepayment, or with no free time at all
+ * (`freeHours` 0: every cancellation is late anyway), nothing is locked.
+ */
+export function freeChangesOver(a: Pick<AppointmentRow, 'startsAt' | 'depositRequired'>, held: number, rules: CancellationRules, now: number): boolean {
+  if (held <= 0 && a.depositRequired <= 0) return false;
+  const until = freeUntil(a.startsAt, rules);
+  return until !== null && now > until;
+}
+
 /** A future appointment the client may still change (until it starts). */
 export const isChangeable = (a: Pick<AppointmentRow, 'status' | 'startsAt'>, now: number): boolean =>
   ACTIVE.includes(a.status) && a.startsAt > now;
@@ -76,7 +88,7 @@ export function cabinetAppointments(db: DbOrTx, rows: AppointmentRow[], now = Da
       deposit: held,
       depositRequired: a.depositRequired,
       freeCancellationUntil: toIso(until),
-      canReschedule: online && open && onlineMasterIds.has(a.masterId),
+      canReschedule: online && open && onlineMasterIds.has(a.masterId) && !freeChangesOver(a, held, studio.cancellation, now),
       canCancel: online && open,
       bookingToken: a.publicToken,
     };

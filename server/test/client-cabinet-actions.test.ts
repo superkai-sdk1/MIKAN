@@ -196,6 +196,22 @@ describe('client cabinet: rescheduling and cancelling', () => {
     expect(again.json().error.message).toBe('Запись уже отменена');
   });
 
+  it('offers no move of a prepaid appointment once its free changes are over (a move then a cancel would dodge the rule)', async () => {
+    const nipple = await appointment(t, { clientId: w.anna.id, masterId: w.fatima.id, services: [{ serviceId: w.nipple.id }], startsAt: SATURDAY_NOON });
+    vi.setSystemTime(Date.parse(FRIDAY_NOON) + 60 * MIN); // 23 h before the visit, past the 24 h of free changes
+    const who = () => miniApp(undefined, Date.now());
+    const upcoming = (await cab(t, 'GET', '', undefined, who())).json().upcoming as Json[];
+    expect(upcoming).toEqual([expect.objectContaining({ id: nipple.id, canReschedule: false, canCancel: true })]);
+    const moved = await reschedule(nipple.id, new Date(Date.parse(SATURDAY_NOON) + 3 * DAY).toISOString(), who());
+    expect(moved.statusCode).toBe(409);
+    expect(moved.json().error.message).toBe('Перенести запись с предоплатой меньше чем за 24 ч до начала можно только через студию');
+    // Without a prepayment nothing is locked; with no free time at all (freeHours 0) neither.
+    const plain = await appointment(t, { clientId: w.anna.id, masterId: w.fatima.id, services: [{ serviceId: w.lobe.id }], startsAt: at(SATURDAY_NOON, 120) });
+    expect((await reschedule(plain.id, at(SATURDAY_NOON, 180), who())).statusCode).toBe(200);
+    await t.api('PUT', '/api/settings/studio', { cancellation: { freeHours: 0, lateRetainPercent: 100, noShowRetainPercent: 100, autoRetain: false } });
+    expect((await cab(t, 'GET', '', undefined, who())).json().upcoming.find((a: Json) => a.id === nipple.id).canReschedule).toBe(true);
+  });
+
   it('cancels late: the rules keep their share by themselves when autoRetain is on', async () => {
     await t.api('PUT', '/api/settings/studio', { cancellation: { freeHours: 24, lateRetainPercent: 50, noShowRetainPercent: 100, autoRetain: true } });
     const nipple = await appointment(t, { clientId: w.anna.id, masterId: w.fatima.id, services: [{ serviceId: w.nipple.id }], startsAt: SATURDAY_NOON });

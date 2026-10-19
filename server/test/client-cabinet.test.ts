@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bonusOperations, clientAccessTokens, giftCertificates, waitlistEntries } from '../src/db/schema.js';
-import { CABINET_TOKEN_DAYS, hashCabinetToken, issueCabinetToken } from '../src/domain/cabinet-access.js';
+import { CABINET_TOKEN_DAYS, hashCabinetToken, issueCabinetToken, MAX_LIVE_TOKENS } from '../src/domain/cabinet-access.js';
+import { linkTelegram } from '../src/domain/clients.js';
 import { createTestApp, make, type TestApp } from './helpers.js';
 import { appointment, cab, cabinetWorld, DAY, miniApp, SIGN_IN, type CabinetWorld } from './cabinet-fixtures.js';
 import { BOT_TOKEN, FRIDAY_NOON, initData, NOW, pub, PUBLIC_URL, type Json } from './online-booking-fixtures.js';
@@ -85,6 +86,18 @@ describe('client cabinet: who is signed in', () => {
     // Expired links are cleared when a new one is issued.
     issueCabinetToken(t.ctx.db, w.boris.id);
     expect(t.ctx.db.select().from(clientAccessTokens).all().map((r) => r.clientId)).toEqual([w.boris.id]);
+  });
+
+  it('a link stops working once the card loses its Telegram chat; a client keeps at most 5 live links', async () => {
+    const { token } = issueCabinetToken(t.ctx.db, w.anna.id);
+    expect((await cab(t, 'GET', '', undefined, { token })).statusCode).toBe(200);
+    linkTelegram(t.ctx.db, w.boris.id, 770_001, null); // Anna's chat now belongs to Boris's card
+    expect((await cab(t, 'GET', '', undefined, { token })).json()).toEqual(SIGN_IN);
+
+    const tokens = Array.from({ length: 7 }, () => issueCabinetToken(t.ctx.db, w.boris.id).token);
+    expect(t.ctx.db.select().from(clientAccessTokens).where(eq(clientAccessTokens.clientId, w.boris.id)).all()).toHaveLength(MAX_LIVE_TOKENS);
+    expect((await cab(t, 'GET', '', undefined, { token: tokens[0] })).statusCode).toBe(401); // the oldest went first
+    expect((await cab(t, 'GET', '', undefined, { token: tokens[6] })).json().client.name).toBe('Борис');
   });
 
   it('never falls back from invalid init data to a token', async () => {
@@ -255,9 +268,11 @@ describe('client cabinet: what the client sees', () => {
     const notified = add(w.anna.id, 'notified', { masterId: null, notifiedAt: NOW - 1000, createdAt: NOW + 1 });
     const booked = add(w.anna.id, 'booked');
     const other = add(w.boris.id, 'waiting');
+    const byStaff = add(w.anna.id, 'waiting', { channel: 'app', note: 'Капризная, звонить после 18', createdAt: NOW + 2 });
 
     const list = (await get()).waitlist;
-    expect(list.map((e: Json) => e.id)).toEqual([waiting.id, notified.id]);
+    expect(list.map((e: Json) => e.id)).toEqual([waiting.id, notified.id, byStaff.id]);
+    expect(list[2]).toMatchObject({ channel: 'app', note: null }); // staff notes stay internal
     expect(list[0]).toEqual({
       id: waiting.id,
       items: [
@@ -285,6 +300,6 @@ describe('client cabinet: what the client sees', () => {
     expect((await cab(t, 'DELETE', `/waitlist/${other.id}`, undefined, miniApp())).statusCode).toBe(404);
     expect((await cab(t, 'DELETE', '/waitlist/99999', undefined, miniApp())).statusCode).toBe(404);
     expect(t.ctx.db.select().from(waitlistEntries).where(eq(waitlistEntries.id, other.id)).get()!.status).toBe('waiting');
-    expect((await get()).waitlist.map((e: Json) => e.id)).toEqual([notified.id]);
+    expect((await get()).waitlist.map((e: Json) => e.id)).toEqual([notified.id, byStaff.id]);
   });
 });

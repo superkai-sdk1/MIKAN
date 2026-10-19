@@ -64,7 +64,8 @@ export function waitlistEntriesPublic(db: DbOrTx, rows: WaitlistRow[]): Waitlist
       channel: r.channel,
       notifiedAt: toIso(r.notifiedAt),
       appointmentId: r.appointmentId,
-      note: r.note,
+      // Staff notes on entries they added in the app stay internal; the client's own words are shown.
+      note: r.channel === 'app' ? null : r.note,
       createdAt: toIso(r.createdAt),
     };
   });
