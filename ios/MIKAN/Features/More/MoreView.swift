@@ -59,6 +59,7 @@ struct MoreView: View {
                     NavigationLink { EmployeesListView() } label: {
                         Label("Сотрудники", systemImage: "person.3")
                     }
+                    MastersPortfolioLink()
                     NavigationLink { PayrollView() } label: {
                         Label("Зарплата", systemImage: "banknote")
                     }
@@ -78,6 +79,7 @@ struct MoreView: View {
                         }
                         .accessibilityElement(children: .combine)
                         MyScheduleLink(employee: employee)
+                        MyPortfolioLink(employee: employee)
                     }
                     NavigationLink { SecurityView() } label: {
                         Label("Безопасность", systemImage: "lock.shield")

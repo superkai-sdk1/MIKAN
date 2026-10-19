@@ -20,6 +20,7 @@ import { getBotSettings, getStudioSettings, type StudioSettings } from '../domai
 import { clientFullName, parsePhotos, parseSteps, parseVariants, type AppointmentRow, type ClientRow, type ServiceRow } from '../lib/serialize.js';
 import { formatRub, formatServicePrice } from '../lib/text.js';
 import { jewelryLines } from './jewelry.js';
+import { mastersSection } from './portfolio.js';
 import { DAY_MS, formatHumanDateTime, formatShortDate, localDate, localDaysBetween } from '../lib/time.js';
 
 export const HISTORY_LIMIT = 20;
@@ -181,6 +182,8 @@ export function buildStablePrompt(db: DbOrTx): string {
   sections.push(`# Данные студии\n\n${studioAboutSection(db)}`);
   const serviceRows = activeServices(db);
   sections.push(servicesSection(serviceRows));
+  const masters = mastersSection(db);
+  if (masters) sections.push(masters);
   sections.push(cancellationSection(studio));
 
   const jewelry = db

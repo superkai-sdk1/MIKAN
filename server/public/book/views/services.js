@@ -5,6 +5,7 @@ import { MAX_ITEMS } from '../lib/flow.js';
 import { formatDuration, formatRub, plural } from '../lib/format.js';
 import { safeHref } from '../lib/query.js';
 import { stepHeading } from './common.js';
+import { serviceWorksButton } from './works.js';
 
 const CATEGORY_TITLES = { piercing: 'Пирсинг', tattoo: 'Тату', other: 'Другое' };
 
@@ -47,7 +48,8 @@ function variantLabel(variant, service) {
 }
 
 /**
- * @param {{ state: any, services: any[], dispatch: (action: any) => void, haptic: () => void }} ctx
+ * @param {{ state: any, services: any[], dispatch: (action: any) => void, haptic: () => void,
+ *   onWorks?: (service: any) => void }} ctx
  */
 export function renderServices(ctx) {
   const categories = groupServices(ctx.services);
@@ -97,7 +99,8 @@ export function renderServices(ctx) {
           h('span', { class: 'svc-meta', id: `${id}-meta` }, serviceMeta(service)),
           service.description ? h('span', { class: 'svc-desc' }, service.description) : null),
         h('span', { class: 'tick', 'aria-hidden': 'true' })),
-      variantsBox);
+      variantsBox,
+      serviceWorksButton(service, ctx.onWorks));
     controls.set(service.id, { card, checkbox, variants: variantsBox, radios });
     return card;
   }

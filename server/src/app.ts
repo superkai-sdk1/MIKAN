@@ -33,10 +33,12 @@ import { deviceRoutes } from './routes/devices.js';
 import { employeeRoutes } from './routes/employees.js';
 import { historyRoutes } from './routes/history.js';
 import { payrollRoutes } from './routes/payroll.js';
+import { portfolioRoutes } from './routes/portfolio.js';
 import { productRoutes } from './routes/products.js';
 import { onlineBookingRoutes } from './routes/online-bookings.js';
 import { publicBookingRoutes } from './routes/public-booking.js';
 import { publicWaitlistRoutes } from './routes/public-waitlist.js';
+import { publicPortfolioRoutes } from './routes/public-portfolio.js';
 import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { receiptRoutes } from './routes/receipts.js';
 import { salesRoutes } from './routes/sales.js';
@@ -179,6 +181,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         async (open) => {
           publicBookingRoutes(open, ctx);
           publicWaitlistRoutes(open, ctx);
+          publicPortfolioRoutes(open, ctx);
         },
         { prefix: '/public/booking' },
       );
@@ -213,6 +216,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         payrollRoutes(secured, ctx);
         deviceRoutes(secured, ctx);
         waitlistRoutes(secured, ctx);
+        portfolioRoutes(secured, ctx);
       });
     },
     { prefix: '/api' },

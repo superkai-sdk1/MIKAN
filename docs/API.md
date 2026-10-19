@@ -85,6 +85,8 @@ Three roles; the server checks every request (the app only hides what a role can
 | Payroll: own statement and own pay rules (read) | ✓ | ✓ | ✓ |
 | Payroll: others, pay rules (write), adjustments | ✓ | — | — |
 | Telegram campaigns (`/campaigns…`, read and write) | ✓ | ✓ | — |
+| Portfolio (`/portfolio…`): read | ✓ | ✓ | ✓ |
+| Portfolio: add, edit, reorder, delete photos | ✓ | ✓ | own only |
 | Audit log | ✓ | — | — |
 
 Everything not listed (reads of catalog, settings, uploads, QR config, …) is open to every role. Rules:
@@ -746,7 +748,7 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   next to it): «Запись №1846 (Анна Иванова) перенесена с … на …», «Продажа №1580 возвращена: 3 500 ₽»,
   «Цена «Мочка»: 1 600 → 1 800 ₽», «Фатиме назначена роль «Мастер»». Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
   `service`, `product`, `stock`, `category`, `aftercare`, `knowledge`, `employee`, `schedule`, `payroll`,
-  `settings`, `bot`, `campaign`, `certificate`, `waitlist`. A manual bonus adjustment is `client.bonus_adjust` on the client
+  `settings`, `bot`, `campaign`, `certificate`, `waitlist`, `portfolio`. A manual bonus adjustment is `client.bonus_adjust` on the client
   («Начислено 500 бонусов клиенту «Анна Иванова»: Компенсация»); certificates log `certificate.update` /
   `certificate.cancel` / `certificate.send`; a sale paid with bonuses or certificates says so («… Оплачено бонусами
   300 ₽, сертификатом 1 000 ₽»). `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
@@ -1490,7 +1492,7 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
 |---|---|---|---|
 | GET | `/public/booking/config` | — | `{ enabled, studio: { name, address, phone, workingHours, timezone }, note, leadMinutes, horizonDays, holdMinutes, stepMinutes, cancellationText, botUsername }` |
 | GET | `/public/booking/services` | — | `{ items: [PublicService] }` active services in catalog order |
-| GET | `/public/booking/masters` | — | `{ items: [ { id, name, color } ] }` active masters |
+| GET | `/public/booking/masters` | — | `{ items: [ { id, name, color, photos, cover } ] }` active masters (`photos` — portfolio photos, `cover` — the first one's URL or `null`, see «Portfolio») |
 | GET | `/public/booking/days?from=&to=&items=&masterId=` | — | `{ items: [ { date, available } ] }` ≤ 31 dates (default: 14 from today); `items` = `serviceId[:variant]` comma-separated (variant URL-encoded) |
 | GET | `/public/booking/slots?date=&items=&masterId=` | — | `{ date, durationMin, items: [ { startsAt, masterIds: [3, 5] } ] }` |
 | GET | `/public/booking/me` | header `X-Telegram-Init-Data` | `{ linked: true, name: "Анна", phone: "+7 *** ***-**-01" }` (`{ linked: false, name: null, phone: null }` for an unknown chat) · `401` for missing or invalid init data |
@@ -1500,7 +1502,8 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
 | GET | `/public/booking/b/:token/calendar.ics` | — | `text/calendar` event |
 
 - `PublicService`: `{ id, name, category, group, description, priceText: "от 3 000 ₽", price, durationMin,
-  depositAmount, imageUrl, variants: [ { name, priceText, price, durationMin } ] }` — no internal fields. `imageUrl` —
+  depositAmount, imageUrl, variants: [ { name, priceText, price, durationMin } ], portfolio }` — no internal fields;
+  `portfolio` — the number of working masters' portfolio photos of the service. `imageUrl` —
   the cover (`imageUrl` ?? `photos[0]`, `null` when none); `durationMin` — the effective duration (a variant's falls
   back to the service's, 60 when none). Order: per service category (tattoo, piercing, other) its groups in staff
   order, then the ungrouped services.
@@ -1566,18 +1569,46 @@ Photos of each master's work, optionally tied to a service. Masters manage their
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/portfolio?employeeId=&serviceId=` | — | `{ items: [PortfolioPhoto] }` in `sort` order |
+| GET | `/portfolio?employeeId=&serviceId=` | — | `{ items: [PortfolioPhoto] }` in `sort` order (by master, then `sort`) · every role |
 | POST | `/portfolio` | `{ employeeId, imageUrl, serviceId?, caption? }` | `PortfolioPhoto` (added last) · `imageUrl` from `POST /uploads` |
-| PATCH | `/portfolio/:id` | `{ caption?, serviceId? }` | `PortfolioPhoto` |
-| PUT | `/portfolio/order` | `{ employeeId, ids: [...] }` | `{ items }` |
+| PATCH | `/portfolio/:id` | `{ caption?, serviceId? }` | `PortfolioPhoto` · absent = unchanged, `null` / blank = cleared |
+| PUT | `/portfolio/order` | `{ employeeId, ids: [...] }` | `{ items }` · `ids` = every photo of that master, in the new order |
 | DELETE | `/portfolio/:id` | — | `204` |
-| GET | `/public/booking/masters/:id/portfolio` | — | `{ items: [ { imageUrl, caption, service: { id, name } \| null } ] }` (no auth) |
-| GET | `/public/booking/portfolio?serviceId=` | — | the same, every active master's photos of that service, newest first, ≤ 30 |
+| GET | `/public/booking/masters/:id/portfolio` | — | `{ items: [PublicPortfolioPhoto] }` in the master's order (no auth) |
+| GET | `/public/booking/portfolio?serviceId=` | — | `{ items: [PublicPortfolioPhoto] }` every working master's photos of that service, newest first, ≤ 30 |
 
 `PortfolioPhoto`: `{ id, employee: EmployeeRef, imageUrl, caption, service: ServiceRef | null, sort, createdAt }`.
-`GET /public/booking/masters` items gain `photos` (count) and `cover` (the first photo's URL or `null`). The booking
-page shows a master's works on the master step and «Работы мастеров» on a service; the bot's tool
-`show_portfolio { masterId?, serviceId? }` sends up to 5 photos.
+`PublicPortfolioPhoto`: `{ imageUrl, caption, service: { id, name } | null, master: { id, name } }`.
+- Rules: `imageUrl` is a `/uploads/<name>` path (anything else → `400`); `caption` ≤ 300 characters; `serviceId` an
+  existing service (`400` «Услуга не найдена»); the master an active employee with `isMaster` (`404` «Сотрудник не
+  найден», `400` «Портфолио ведётся только у работающих мастеров»); at most 100 photos per master (`400` «В портфолио
+  мастера не больше 100 фото»). A master changing another master's photos → `403` «Можно менять только своё
+  портфолио». `PUT /portfolio/order` without every photo of the master (or with another master's) → `400` «Перечислите
+  все фото мастера», a repeated id → `400` «Фото указано дважды». Unknown photo → `404` «Фото не найдено». Deleting a
+  photo leaves the uploaded file in place.
+- Public: only working masters (active, `isMaster`) — another id → `404` «Мастер не найден»; a hidden service is not
+  named (`service: null`) and `?serviceId=` of one answers no photos; both routes answer while
+  online booking is off and are rate-limited like the other public reads. `GET /public/booking/masters` items gain
+  `photos` (count) and `cover` (the first photo's URL or `null`); `PublicService` gains `portfolio` — how many photos of
+  that service working masters have (the page shows «Работы мастеров» when > 0).
+- Booking page: on the master step each master with works shows the cover instead of the initials and «Работы (12)»;
+  on the service step a service with works shows «Работы мастеров». Both open a full-screen swipeable gallery (lazy
+  images, the caption as `alt`, «3 из 12», arrows and the keyboard; the phone's «Назад» and the Mini App's BackButton
+  close it).
+- Audit: `portfolio.create` («Фото №12 добавлено в портфолио «Фатима» (услуга «Хеликс»)»), `portfolio.update`
+  («Фото №12 в портфолио «Фатима» изменено: подпись, услуга»), `portfolio.order` («Порядок фото в портфолио «Фатима»
+  изменён», `entityId` `null`), `portfolio.delete` («Фото №12 удалено из портфолио «Фатима»»); entity `portfolio`, the
+  photo's id.
+- Bot: the client prompt lists the working masters with ids and how many works each has («## Мастера»). The tool
+  `show_portfolio { masterId?, serviceId? }` sends up to 5 photos after the reply, each with a short caption
+  «Мастер: **Фатима** · Хеликс» and the photo's own caption: a master's in their order (of that service when given;
+  none of it → the master's other works, and the model says so), else every working master's of the service, else the
+  studio's newest; at most 5 photos follow one answer however many calls ask, and a hidden service is not named. HEIC
+  pictures and missing files are skipped. Nothing to show → the model says so in words.
+- App: «Портфолио» on a master's employee card, «Моё портфолио» in More for a master, «Портфолио мастеров» in More for
+  owner and admin: a grid; several photos added at once (compressed to ≤ 2048 px JPEG, uploaded, then
+  `POST /portfolio`), caption and service per photo, drag to reorder (`PUT /portfolio/order`), delete with
+  confirmation.
 
 ### Waitlist (лист ожидания)
 When the wanted time is taken, a client (or staff for a client) puts a wish on the waitlist: items, a master or any,
@@ -1942,6 +1973,8 @@ answer from the app (`POST /bot/chats/:chatId/messages`). Client tools:
   overlap check applies (`schedule_conflict` → the model offers another time), pending reminders are rebuilt and the
   staff chat gets «🔁 Клиент … перенёс запись №…» (before → after). The model calls it only after the client chose a
   time. Cancellations are handed to staff.
+- `show_portfolio { masterId?, serviceId? }` — up to 5 photos of masters' work with «Мастер: **Фатима** · Хеликс»
+  captions, after the reply (see «Portfolio»); the prompt's «## Мастера» lists the masters' ids and works.
 - `certificate_balance { code }` — a gift certificate by its code (case, dashes and spaces ignored): what is left of it
   and until when it is valid, or that it is used / expired / cancelled / unknown — never the buyer. Read-only.
 - The client context names the linked client's bonuses while loyalty is on: «Бонусы клиента: 1 200 (1 бонус = 1 ₽,

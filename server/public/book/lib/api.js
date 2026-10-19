@@ -4,6 +4,7 @@
  * Errors come out as `ApiError`; `describeError` turns them into plain Russian for the page.
  */
 import { API_BASE, bookingUrl, daysUrl, slotsUrl } from './query.js';
+import { masterPortfolioUrl, servicePortfolioUrl } from './portfolio.js';
 
 const TIMEOUT_MS = 15_000;
 /** Booking waits longer: giving up early on a slow answer invites a retry of a booking that was made. */
@@ -92,6 +93,10 @@ export function createApi(options = {}) {
     config: () => request(`${API_BASE}/config`),
     services: () => request(`${API_BASE}/services`),
     masters: () => request(`${API_BASE}/masters`),
+    /** A master's works (docs/API.md «Portfolio»). */
+    masterPortfolio: (masterId) => request(masterPortfolioUrl(masterId)),
+    /** Works of a service by every working master, newest first. */
+    servicePortfolio: (serviceId) => request(servicePortfolioUrl(serviceId)),
     /** @param {{ from: string, to: string, items: Array<{ serviceId: number, variant: string | null }>, master: number | 'any' | null }} q */
     days: (q) => request(daysUrl(q)),
     /** @param {{ date: string, items: Array<{ serviceId: number, variant: string | null }>, master: number | 'any' | null }} q */

@@ -94,6 +94,7 @@ struct EmployeeEditorView: View {
                 }
                 EmployeeRoleSection(role: $role, isEditable: access.role)
                 if let employee { WorkScheduleLinkSection(employee: employee) }
+                if let employee, employee.isMaster { PortfolioLinkSection(employee: employee) }
                 if let employee { PayRulesSection(employee: employee) }
                 if !isCreating, permissions.managesEmployees {
                     Section {

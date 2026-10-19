@@ -14,6 +14,7 @@ import { itemMinutes } from './online-booking-items.js';
 import { calendarUrl, telegramBookingLink } from './online-booking-links.js';
 import { bookingFacts } from './online-booking-messages.js';
 import { onlineMasters } from './online-booking-slots.js';
+import { portfolioCovers, servicePortfolioCounts } from './portfolio.js';
 import { employeesByIds, serviceLinesByAppointment } from './refs.js';
 import { getStudioSettings } from './settings.js';
 
@@ -47,13 +48,22 @@ export function publicService(s: ServiceRow) {
 }
 export type PublicService = ReturnType<typeof publicService>;
 
-/** Active services in catalog order: per service category, its groups in staff order, then the ungrouped ones. */
-export function publicServices(db: DbOrTx): PublicService[] {
-  return serviceSections(db).flatMap((section) => section.items.map(publicService));
+/**
+ * Active services in catalog order: per service category, its groups in staff order, then the ungrouped ones. Each
+ * carries `portfolio` — how many photos of it working masters have (docs/API.md «Portfolio»).
+ */
+export function publicServices(db: DbOrTx): Array<PublicService & { portfolio: number }> {
+  const works = servicePortfolioCounts(db);
+  return serviceSections(db).flatMap((section) =>
+    section.items.map((s) => ({ ...publicService(s), portfolio: works.get(s.id) ?? 0 })),
+  );
 }
 
+/** Masters clients can book, with the number of portfolio photos and the first one as the cover. */
 export function publicMasters(db: DbOrTx) {
-  return onlineMasters(db).map((m) => ({ id: m.id, name: m.name, color: m.color }));
+  const masters = onlineMasters(db);
+  const covers = portfolioCovers(db, masters.map((m) => m.id));
+  return masters.map((m) => ({ id: m.id, name: m.name, color: m.color, ...(covers.get(m.id) ?? { photos: 0, cover: null }) }));
 }
 
 export function publicConfig(ctx: AppContext) {

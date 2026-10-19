@@ -4,6 +4,7 @@ import { diffChanges, type AuditDraft } from './audit.js';
 import { campaignSummaries } from './audit-summaries-campaigns.js';
 import { catalogSummaries } from './audit-summaries-catalog.js';
 import { loyaltySummaries } from './audit-summaries-loyalty.js';
+import { portfolioSummaries } from './audit-summaries-portfolio.js';
 import { teamSummaries } from './audit-summaries-team.js';
 import { visitSummaries } from './audit-summaries-visits.js';
 import { waitlistSummaries } from './audit-summaries-waitlist.js';
@@ -39,6 +40,7 @@ export const SUMMARY_BUILDERS: Record<string, SummaryBuilder> = {
   ...loyaltySummaries,
   ...campaignSummaries,
   ...waitlistSummaries,
+  ...portfolioSummaries,
 };
 
 /** First path segment → entity, for routes without a specific summary. */
