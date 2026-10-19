@@ -62,7 +62,7 @@ Three roles; the server checks every request (the app only hides what a role can
   action, e.g. at checkout, so the aftercare memo goes out). Full POS and cash register (receipts, sales, refunds,
   shifts, cash operations, QR), the dashboard, clients (read, create, edit, Telegram link), bot chats (read, reply,
   mark read, `needsAttention`), scheduled messages and booking requests, their own staff code. Reads the catalog,
-  products, stock and settings but does not change them; no reports or analytics.
+  products, stock and settings but does not change them; no reports, analytics or campaigns.
 
 | Area | owner | admin | master |
 |---|---|---|---|
@@ -80,6 +80,7 @@ Three roles; the server checks every request (the app only hides what a role can
 | Work schedules: change | ✓ | ✓ | — |
 | Payroll: own statement and own pay rules (read) | ✓ | ✓ | ✓ |
 | Payroll: others, pay rules (write), adjustments | ✓ | — | — |
+| Telegram campaigns (`/campaigns…`, read and write) | ✓ | ✓ | — |
 | Audit log | ✓ | — | — |
 
 Everything not listed (reads of catalog, settings, uploads, QR config, …) is open to every role. Rules:
@@ -545,7 +546,7 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
 { "id": 1, "chatId": 123456789, "role": "user", "text": "Сколько стоит прокол хеликса?",
   "employee": { EmployeeRef } | null, "createdAt": "..." }
 ```
-`role`: `user` (client) | `assistant` (AI) | `staff` (sent from the app by an employee) | `system` (automatic: aftercare, reminders).
+`role`: `user` (client) | `assistant` (AI) | `staff` (sent from the app by an employee) | `system` (automatic: aftercare, reminders, campaigns).
 
 ### ScheduledMessage
 ```json
@@ -700,17 +701,18 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 студии».
 
 - Logged: every successful write request from the app (`POST`/`PUT`/`PATCH`/`DELETE`) except `POST /auth/login`,
-  `POST /uploads`, `POST /bot/chats/:chatId/read`, `POST /bot/staff-code`, `POST /devices`, `DELETE /devices/:token`
-  and idempotent replays; online bookings from the booking page and the Mini App and client cancellations on the
-  booking page as `online`; client actions in the bot (online booking, booking request, reschedule, confirm «Приду») as
-  `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed QR payments, an online hold
-  confirmed by its prepayment and an unpaid hold released as `system`. Staff confirming / rejecting an online booking
+  `POST /uploads`, `POST /bot/chats/:chatId/read`, `POST /bot/staff-code`, `POST /devices`, `DELETE /devices/:token`,
+  `POST /campaigns/preview` and idempotent replays; online bookings from the booking page and the Mini App and client
+  cancellations on the booking page as `online`; client actions in the bot (online booking, booking request,
+  reschedule, confirm «Приду», «🔕 Не присылать новости» / «Снова получать новости» — `client.marketing_opt_out` /
+  `client.marketing_opt_in`) as `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed
+  QR payments, an online hold confirmed by its prepayment and an unpaid hold released as `system`. Staff confirming / rejecting an online booking
   in the app is `appointment.online_confirm` / `appointment.online_reject`.
 - `summary` is written for people, in Russian, impersonal (the employee's gender is not stored; the app shows who
   next to it): «Запись №1846 (Анна Иванова) перенесена с … на …», «Продажа №1580 возвращена: 3 500 ₽»,
   «Цена «Мочка»: 1 600 → 1 800 ₽», «Фатиме назначена роль «Мастер»». Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
   `service`, `product`, `stock`, `category`, `aftercare`, `knowledge`, `employee`, `schedule`, `payroll`,
-  `settings`, `bot`. `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
+  `settings`, `bot`, `campaign`. `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
 - `entityId` is the id of what the entry is about: `deposit` — the appointment; `stock` — the product (`null` for a
   stock count); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
   the booking request or the scheduled message; `sale` — the sale (`null` for a QR code not yet paid); `settings` and
@@ -726,7 +728,7 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 | GET | `/clients?search=&archived=false&limit=&offset=` | — | `{ items: [Client], total }` — search matches the full name (first and last name), phone digits, instagram, Telegram nick and bot username; sorted by full name |
 | GET | `/clients/:id` | — | `Client` with `stats` |
 | POST | `/clients` | `{ name, phone, lastName?, birthday?, telegramNick?, instagram?, notes?, source?, botEnabled? }` | `Client` · `400` without `phone` («Телефон»: обязательное поле) · `409 conflict` if phone already belongs to another client (message names that client) |
-| PATCH | `/clients/:id` | any of the same fields + `archived` | `Client` · `400` when clearing a phone the client has |
+| PATCH | `/clients/:id` | any of the same fields + `archived`, `marketingOptOut` | `Client` · `400` when clearing a phone the client has |
 
 - PATCH: omitted fields are kept, `null` / `""` clears an optional field. A phone, once set, can be changed but not
   removed. For a card without a phone, `phone: null` changes nothing, so older builds (which send every field, the
@@ -1467,11 +1469,16 @@ Owner and admin send Telegram messages to a segment of clients. Recipients are c
 `CampaignSegment` (all optional, combined with AND): `{ "lastVisitMonthsAgoMin": 3, "lastVisitMonthsAgoMax": 12,
 "neverVisited": false, "categories": ["piercing"], "masterIds": [2], "minVisits": 2, "birthdayMonth": 11,
 "hasBonuses": true, "createdWithinDays": 30 }` — last visit = last completed appointment; `categories` / `masterIds`
-— had a completed visit with such a service / master.
+— had a completed visit with such a service / master. Months are calendar months in the studio timezone;
+`neverVisited` and `hasBonuses` filter only when `true` (`false` = no condition); `hasBonuses` — holds bonuses that
+have not burnt; `categories` ⊂ `tattoo` | `piercing` | `other`; `lastVisitMonthsAgoMin` 0…120 ≤ `lastVisitMonthsAgoMax`
+1…120, `minVisits` 1…1000, `birthdayMonth` 1…12, `createdWithinDays` 1…3650, ≤ 50 `masterIds` (out of range → `400`).
+The output lists every condition, `null` = not used (empty lists read as `null`).
 
 `Campaign`: `{ id, title, text, imageUrl, button: { text, kind: "book"|"url", url? } | null, segment, status:
 "draft"|"scheduled"|"sending"|"sent"|"cancelled", scheduledAt, startedAt, finishedAt, stats: { recipients, sent,
-failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`.
+failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `stats` are zeros until sending starts;
+`recipients` also counts the ones skipped (see below), so it can exceed `sent + failed + blocked + pending`.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
@@ -1484,14 +1491,37 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`.
 | POST | `/campaigns/:id/cancel` | — | `Campaign` — stops a scheduled or sending one (sent messages stay) |
 | DELETE | `/campaigns/:id` | — | `204` · drafts only |
 
-- `text` ≤ 3 500 characters, light Markdown like other bot messages; `{name}` = the client's first name. An image is
-  sent as a photo with the text as caption (≤ 1 024 characters then). `button.kind: "book"` — «📅 Записаться» (the
-  Mini App when online booking is on, else it asks the AI to book); `url` — any `https://` link.
-- Every campaign message carries «🔕 Не присылать новости» (sets `marketingOptOut`; the bot confirms and offers
-  «Снова получать новости»).
-- Recipients are fixed when sending starts; delivery runs in the background at ≤ 20 messages a second, retries
-  failures up to 3 times; a client who blocked the bot is `blocked`. Messages are stored in the chats as `system`.
-- Audit: `campaign.create` / `campaign.send` / …; staff get a summary in the staff chat when a campaign finishes.
+- `title` ≤ 200; `text` ≤ 3 500 characters, light Markdown like other bot messages; `{name}` = the client's first
+  name. `imageUrl` — an upload (`/uploads/…`) or an `https://` link; with it the message is a photo with the text as
+  caption, so `text` must then be ≤ 1 024 characters (`400` on POST / PATCH; a longer text after `{name}` is cut). A
+  picture Telegram can't take (a missing file, HEIC) is left out and the text goes alone.
+- `button` (`null` = none): `kind: "book"` — «📅 Записаться» (`text` optional, ≤ 64, default «📅 Записаться»): the
+  booking Mini App while `onlineBooking.enabled` and the booking page is `https://`, else a button that stores
+  «[Кнопка] 📅 Хочу записаться» as the client's message and the AI books as usual; `kind: "url"` — `text` (≤ 64) and an
+  `https://` `url` are required.
+- Every campaign message carries «🔕 Не присылать новости» under its own button: the client's `marketingOptOut` turns
+  on, the button press and the bot's confirmation («Хорошо, больше не будем присылать новости и предложения 🙌 …») are
+  stored in the chat, and the confirmation offers «🔔 Снова получать новости» (turns it off again and removes itself).
+  Only a chat linked to a client card can use them. Both are logged as `bot` (see «Audit log»).
+- `PATCH` / `DELETE` of a campaign that is not a draft (PATCH: or scheduled) → `409`.
+- `test` goes to the employee's own staff chat with the bot, else the staff group bound with `/staff` (where a Mini App
+  button becomes a link to the same page), with `{name}` = the employee's name; nothing is stored or changed. `409`
+  when there is no such chat or the bot is not running; `502 upstream_error` when Telegram refuses it.
+- `send` — a draft or a scheduled campaign (else `409`). `at` in the future (≤ 1 year) → `scheduled` (sending again
+  reschedules); no `at` or a past one → sending starts now: `409` when the bot is not running or nobody matches. A
+  scheduled campaign starts when its time comes, with the recipients of that moment (none → it ends `sent` at once and
+  the staff chat is told).
+- Recipients are fixed when sending starts; delivery runs in the background (checked every 5 s) at ≤ 20 messages a
+  second. A failure is retried in later rounds — the first try and up to 3 retries, then `failed`; a client who blocked
+  the bot is `blocked`. A recipient who meanwhile opted out, unlinked Telegram, turned the bot off or was archived is
+  skipped. Each outcome is stored before the next message, so a restart continues where it stopped. Messages are
+  stored in the chats as `system` (a photo as «[Фото] caption»).
+- `cancel` — a scheduled or sending campaign (else `409`): whoever was not reached yet is skipped; sent messages stay.
+- When a campaign finishes the staff chat gets «📣 Рассылка «Осень» завершена / ✅ Доставлено: 120 из 130 /
+  🚫 Заблокировали бота: 6 / ⚠️ Не доставлено: 4 / ➖ Пропущено (отписались или отвязали Telegram): 2» (one line each,
+  zero counts left out).
+- Audit (`campaign`): `campaign.create`, `.update`, `.schedule`, `.send`, `.test`, `.cancel`, `.delete` — «Рассылка
+  «Осень» запущена: 130 получателей», «Рассылка «Осень» запланирована на 20 октября, 10:00».
 
 ### Birthday and win-back
 - **Birthday** (`birthday.enabled`): at `sendAt` studio time on the client's birthday (by `birthday`), once a year,
