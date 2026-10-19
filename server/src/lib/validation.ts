@@ -47,6 +47,7 @@ const FIELD_LABELS: Record<string, string> = {
   reason: 'Причина',
   text: 'Текст',
   title: 'Заголовок',
+  caption: 'Подпись',
   content: 'Текст',
   steps: 'Шаги',
   dayOffset: 'День',

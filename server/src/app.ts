@@ -33,9 +33,11 @@ import { deviceRoutes } from './routes/devices.js';
 import { employeeRoutes } from './routes/employees.js';
 import { historyRoutes } from './routes/history.js';
 import { payrollRoutes } from './routes/payroll.js';
+import { portfolioRoutes } from './routes/portfolio.js';
 import { productRoutes } from './routes/products.js';
 import { onlineBookingRoutes } from './routes/online-bookings.js';
 import { publicBookingRoutes } from './routes/public-booking.js';
+import { publicPortfolioRoutes } from './routes/public-portfolio.js';
 import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { receiptRoutes } from './routes/receipts.js';
 import { salesRoutes } from './routes/sales.js';
@@ -174,6 +176,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
       publicAuthRoutes(api, ctx);
       // The booking page and the Mini App: no auth, rate-limited per IP.
       await api.register(async (open) => publicBookingRoutes(open, ctx), { prefix: '/public/booking' });
+      await api.register(async (open) => publicPortfolioRoutes(open, ctx), { prefix: '/public/booking' });
       await api.register(async (secured) => {
         secured.addHook('onRequest', authenticate(ctx));
         secured.addHook('preHandler', authorize(ctx.db));
@@ -204,6 +207,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         auditRoutes(secured, ctx);
         payrollRoutes(secured, ctx);
         deviceRoutes(secured, ctx);
+        portfolioRoutes(secured, ctx);
       });
     },
     { prefix: '/api' },

@@ -100,13 +100,14 @@ describe('online booking: settings, catalog and free time', () => {
         { name: 'Один', priceText: '2 500 ₽', price: 2500, durationMin: 45 },
         { name: 'Два', priceText: '4 000 ₽', price: 4000, durationMin: 60 },
       ],
+      portfolio: 0,
     });
     expect(services[0]!.priceText).toBe('от 15 000 ₽');
 
     const masters = (await pub(t, 'GET', '/masters')).json().items as Json[];
     expect(masters).toEqual([
-      { id: 1, name: 'Админ', color: expect.any(String) },
-      { id: fatima.id, name: 'Фатима', color: expect.any(String) },
+      { id: 1, name: 'Админ', color: expect.any(String), photos: 0, cover: null },
+      { id: fatima.id, name: 'Фатима', color: expect.any(String), photos: 0, cover: null },
     ]);
   });
 

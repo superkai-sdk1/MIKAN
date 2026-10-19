@@ -16,6 +16,7 @@ import { buildDraft, type SummaryContext } from '../domain/audit-summaries.js';
 import { getChat, serializeChat } from '../domain/bot-chats.js';
 import { getCampaignRow, serializeCampaign } from '../domain/campaigns.js';
 import { getCategoryRow, listCategories, type CatalogSection } from '../domain/categories.js';
+import { getPortfolioRow, serializePortfolioPhoto } from '../domain/portfolio.js';
 import { serializeProduct } from '../domain/products.js';
 import { getReceiptRow, serializeReceipt } from '../domain/receipts.js';
 import { getAppointmentRow, getClientRow, serializeAppointment } from '../domain/refs.js';
@@ -75,6 +76,7 @@ const receipt: SnapshotLoader = (ctx, p) => serializeReceipt(ctx.db, getReceiptR
 const chat: SnapshotLoader = (ctx, p) => serializeChat(ctx.db, getChat(ctx.db, chatIdOf(p)));
 const certificate: SnapshotLoader = (ctx, p) => serializeCertificate(ctx.db, getCertificateRow(ctx.db, idOf(p)));
 const campaign: SnapshotLoader = (ctx, p) => serializeCampaign(ctx.db, getCampaignRow(ctx.db, idOf(p)));
+const portfolioPhoto: SnapshotLoader = (ctx, p) => serializePortfolioPhoto(ctx.db, getPortfolioRow(ctx.db, idOf(p)));
 
 const service: SnapshotLoader = (ctx, p) => {
   const row = ctx.db.select().from(services).where(eq(services.id, idOf(p))).get();
@@ -179,6 +181,8 @@ const SNAPSHOTS: Record<string, SnapshotLoader> = {
   'POST /campaigns/:id/test': campaign,
   'POST /campaigns/:id/cancel': campaign,
   'DELETE /campaigns/:id': campaign,
+  'PATCH /portfolio/:id': portfolioPhoto,
+  'DELETE /portfolio/:id': portfolioPhoto,
   // Whose session ends and on which device.
   'POST /auth/logout': (ctx, _p, request) => sessionSnapshot(ctx.db, request.sessionId),
   'DELETE /auth/sessions/:id': (ctx, p) => sessionSnapshot(ctx.db, idOf(p)),
