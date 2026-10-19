@@ -9,6 +9,7 @@ import { hasSizeInStock } from '../domain/products.js';
 import { normalizePhone, isPlausiblePhone } from '../lib/phone.js';
 import type { ProductRow, ServiceRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
+import { bookingRequestPush, clientMessagePush } from '../push/staff-events.js';
 import type { JewelryList } from './callback-data.js';
 import { BOOK_APPOINTMENT_TOOL, buildBookingToolHandler } from './booking-tool.js';
 import { buildClientToolHandlers } from './client-tools.js';
@@ -268,6 +269,7 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
           ...(input.comment ? [`Комментарий: ${input.comment}`] : []),
           `Telegram: ${who}`,
         ].join('\n'),
+        () => bookingRequestPush(row),
       );
       sink.done.add('booking');
       return { content: `Заявка №${row.id} создана. Администратор свяжется с клиентом, чтобы подтвердить время.` };
@@ -280,13 +282,13 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
         sink.notes.push(`диалог передан бы администратору: ${parsed.data.reason}`);
         return { content: 'Тестовый режим: администратор не уведомлён, но для клиента всё выглядит как обычно.' };
       }
-      if (scope.chatId !== null && findChat(ctx.db, scope.chatId)) {
-        updateChatFlags(ctx.db, scope.chatId, { needsAttention: true });
-      }
+      const chat =
+        scope.chatId !== null && findChat(ctx.db, scope.chatId) ? updateChatFlags(ctx.db, scope.chatId, { needsAttention: true }) : null;
       await notifyStaff(
         ctx,
         `🙋 Бот передал диалог администратору\nКлиент: ${who}\nПричина: ${parsed.data.reason}\n` +
           `Последнее сообщение: «${truncate(scope.lastUserText, 500)}»\nОтветьте в приложении MIKAN.`,
+        chat ? () => clientMessagePush(ctx.db, chat, scope.lastUserText) : undefined,
       );
       sink.done.add('handoff');
       return { content: 'Администратор уведомлён и скоро ответит в этом чате.' };

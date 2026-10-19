@@ -1336,8 +1336,8 @@ logged once at start).
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| POST | `/devices` | `{ token, environment: "production"\|"sandbox" }` | `204` — registers the device for the current employee (a token registered by someone else moves to them) |
-| DELETE | `/devices/:token` | — | `204` — on sign-out |
+| POST | `/devices` | `{ token, environment: "production"\|"sandbox" }` | `204` — registers the device for the current employee (a token registered by someone else moves to them) · `400` «Некорректный токен устройства» unless `token` is hex (32–100 digits, any case); an employee keeps their 10 most recently registered devices |
+| DELETE | `/devices/:token` | — | `204` — on sign-out; removes only the current employee's own device (an unknown token is fine) |
 
 Events (sent next to the staff chat message about the same thing; a failed push never fails anything):
 | Event | Who | Title · body | `data` |
@@ -1347,6 +1347,8 @@ Events (sent next to the staff chat message about the same thing; a failed push 
 | `client_message` | everyone | «Клиент ждёт ответа» · «Анна: …» (a chat got `needsAttention`) | `{ type, chatId }` |
 | `booking_request` | owner, admin | «Новая заявка» · «Анна · Мочка · в субботу после 15:00» | `{ type, bookingRequestId }` |
 | `client_cancelled` | owner, admin, the master | «Клиент отменил запись» · «Анна · 21 окт, 15:00» | `{ type, appointmentId }` |
+Payload: `{ "aps": { "alert": { "title", "body" }, "sound": "default", "thread-id": "<event>" }, "type": "<event>",
+…data ids }` — the `data` fields sit at the top level, e.g. `{ "aps": {…}, "type": "deposit_paid", "appointmentId": 42 }`.
 Devices of inactive employees get nothing. A device answered `410` / `BadDeviceToken` / `Unregistered` is deleted.
 The app asks for permission after sign-in, registers the token (`POST /devices`), removes it on sign-out, and a tap
 opens the appointment, the chat or the list of online bookings.

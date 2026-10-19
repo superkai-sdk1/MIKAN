@@ -45,12 +45,14 @@ declare module 'fastify' {
 }
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-/** Not logged: sign-in, file uploads, marking a chat read and the one-time staff code. */
+/** Not logged: sign-in, file uploads, marking a chat read, the one-time staff code and push device registration. */
 export const AUDIT_EXCLUDED = new Set([
   'POST /auth/login',
   'POST /uploads',
   'POST /bot/chats/:chatId/read',
   'POST /bot/staff-code',
+  'POST /devices',
+  'DELETE /devices/:token',
 ]);
 
 type Params = Record<string, string | undefined>;

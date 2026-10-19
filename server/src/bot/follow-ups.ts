@@ -8,6 +8,7 @@ import { followUpSubject, quotedNames } from '../domain/follow-ups.js';
 import { getStudioSettings } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
 import { clientFullName } from '../lib/serialize.js';
+import { clientMessagePush } from '../push/staff-events.js';
 import { encodeCallback, type CallbackAction } from './callback-data.js';
 import type { CallbackAnswer, CallbackDeps, CallbackQueryInput } from './callbacks.js';
 import type { InlineKeyboard } from './gateway.js';
@@ -111,9 +112,13 @@ export async function followUpButton(deps: CallbackDeps, query: CallbackQueryInp
     case 'healingQuestion': {
       await setButtons(ctx, query, null);
       await pipeline.receiveHandled(query.from, '[Кнопка] 🤔 Есть вопрос по заживлению', FOLLOW_UP_REPLIES.healingQuestion);
-      updateChatFlags(ctx.db, chatId, { needsAttention: true });
+      const chat = updateChatFlags(ctx.db, chatId, { needsAttention: true });
       const what = quotedNames(followUpSubject(ctx.db, appointment, 'healing_check'));
-      await notifyStaff(ctx, `🩹 ${clientFullName(client)}: вопрос по заживлению после ${what}, запись №${appointment.id}`);
+      await notifyStaff(
+        ctx,
+        `🩹 ${clientFullName(client)}: вопрос по заживлению после ${what}, запись №${appointment.id}`,
+        () => clientMessagePush(ctx.db, chat, `вопрос по заживлению после ${what}`),
+      );
       return { text: 'Передали мастеру 🙏' };
     }
     case 'jewelryChangeBook': {
