@@ -39,6 +39,7 @@ const MANAGER_ROUTES: Array<[Method, string]> = [
   ['POST', '/api/stock/revisions'],
   ['GET', '/api/reports/summary?from=2026-10-01T00:00:00.000Z&to=2026-10-31T00:00:00.000Z'],
   ['GET', '/api/reports/analytics?from=2026-10-01&to=2026-10-31'],
+  ['GET', '/api/reports/growth?from=2026-10-01T00:00:00.000Z&to=2026-10-31T00:00:00.000Z'],
   ['PUT', '/api/settings/studio'],
   ['PUT', '/api/settings/bot'],
   ['POST', '/api/knowledge'],

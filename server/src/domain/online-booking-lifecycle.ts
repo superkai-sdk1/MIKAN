@@ -36,6 +36,9 @@ export const HOLD_CHECK_INTERVAL_MS = 60_000;
 /** While the bank cannot be asked, an unpaid hold is kept at most this long past `holdUntil`. */
 export const HOLD_BANK_WAIT_MS = 60 * MINUTE_MS;
 export const NOT_PAID_NOTE = 'Предоплата не внесена вовремя';
+/** Note lines of a booking staff rejected («…: <reason>») and of one the client cancelled (the growth report reads them). */
+export const REJECTED_NOTE = 'Онлайн-запись отклонена';
+export const CLIENT_CANCELLED_NOTE = 'Отменена клиентом онлайн';
 
 const OPEN_STATUSES = ['scheduled', 'confirmed'];
 const isOpen = (a: AppointmentRow): boolean => OPEN_STATUSES.includes(a.status);
@@ -68,7 +71,7 @@ export async function rejectOnlineBooking(ctx: AppContext, id: number, reason: s
   const row = ctx.db.transaction((tx) => {
     const a = getAppointmentRow(tx, id);
     if (!isOpen(a) || a.onlineState == null) throw conflict('Эта запись не ждёт подтверждения или оплаты');
-    return cancelled(tx, a, `Онлайн-запись отклонена${reason ? `: ${reason}` : ''}`, actorId);
+    return cancelled(tx, a, `${REJECTED_NOTE}${reason ? `: ${reason}` : ''}`, actorId);
   });
   await safely(ctx, 'rejection notice', () => tellClient(ctx, row, { text: clientRejectedText(ctx, bookingFacts(ctx.db, row), reason) }));
   return row;
@@ -83,7 +86,7 @@ export async function cancelOnlineBookingByClient(ctx: AppContext, token: string
     if (a.status === 'completed') throw conflict('Визит уже состоялся');
     if (!isOpen(a)) throw conflict('Запись уже отменена');
     if (a.startsAt <= now) throw conflict('Запись уже началась — отменить её можно только через студию');
-    return { before: a, after: cancelled(tx, a, 'Отменена клиентом онлайн', null) };
+    return { before: a, after: cancelled(tx, a, CLIENT_CANCELLED_NOTE, null) };
   });
   auditClientCancelled(ctx, before, after);
   await safely(ctx, 'cancellation notice', () =>
