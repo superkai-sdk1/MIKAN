@@ -28,6 +28,10 @@ struct MainTabView: View {
         .tabViewBottomAccessory {
             ShiftAccessoryView()
         }
+        // A tapped push notification: the appointment, the chat or the requests, over the current tab.
+        .sheet(item: $appState.pushRoute) { route in
+            PushRouteView(route: route)
+        }
     }
 }
 

@@ -17,6 +17,8 @@ nonisolated struct StudioSettings: Codable, Hashable, Sendable {
     var cancellation: CancellationRules? = nil
     /// Where clients leave a review; `nil` from a server that predates them (then never sent back).
     var reviewLinks: ReviewLinks? = nil
+    /// How clients book themselves; `nil` from a server that predates online booking (then never sent back).
+    var onlineBooking: OnlineBookingSettings? = nil
 }
 
 /// `StudioSettings.cancellation`: what the studio keeps of a prepayment when a visit is cancelled late or missed.
@@ -42,7 +44,7 @@ nonisolated struct ReviewLinks: Codable, Hashable, Sendable {
 
 extension StudioSettings {
     /// Tolerates `null` text fields — they become empty strings — and servers without working hours,
-    /// cancellation rules or review links.
+    /// cancellation rules, review links or online booking.
     nonisolated init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         func text(_ key: CodingKeys) throws -> String {
@@ -60,7 +62,8 @@ extension StudioSettings {
             workdayStart: try container.decodeIfPresent(String.self, forKey: .workdayStart) ?? WorkdayHours.standard.startText,
             workdayEnd: try container.decodeIfPresent(String.self, forKey: .workdayEnd) ?? WorkdayHours.standard.endText,
             cancellation: try container.decodeIfPresent(CancellationRules.self, forKey: .cancellation),
-            reviewLinks: try container.decodeIfPresent(ReviewLinks.self, forKey: .reviewLinks)
+            reviewLinks: try container.decodeIfPresent(ReviewLinks.self, forKey: .reviewLinks),
+            onlineBooking: try container.decodeIfPresent(OnlineBookingSettings.self, forKey: .onlineBooking)
         )
     }
 }

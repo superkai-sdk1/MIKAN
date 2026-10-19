@@ -2,13 +2,15 @@ import Foundation
 
 /// Texts of the audit log rows, sections and filters.
 nonisolated enum AuditLogText {
-    /// Who did it, shown above the summary: «Анна», «Анна · через бота», «Клиент в боте», «Автоматически».
+    /// Who did it, shown above the summary: «Анна», «Анна · через бота», «Клиент в боте», «Клиент онлайн»,
+    /// «Автоматически».
     static func actor(of entry: AuditEntry) -> String {
         let employee = entry.employee?.name.nonEmpty
         switch entry.source {
         case .app: return employee ?? "Сотрудник"
         case .botStaff: return "\(employee ?? "Сотрудник") · через бота"
         case .bot: return "Клиент в боте"
+        case .online: return "Клиент онлайн"
         case .system: return "Автоматически"
         case .other: return employee ?? "Автоматически"
         }

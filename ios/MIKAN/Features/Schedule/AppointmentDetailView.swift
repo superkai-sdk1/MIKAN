@@ -22,6 +22,10 @@ struct AppointmentDetailView: View {
     /// The refund-or-retain question after a cancellation / no-show.
     @State private var depositDecision: DepositDecision?
     @State private var successCount = 0
+    @State private var isConfirmingOnline = false
+    @State private var rejectsOnline = false
+    /// The refund-or-retain question after rejecting an online booking that holds money, asked once the sheet is gone.
+    @State private var pendingDepositDecision: DepositDecision?
 
     init(appointment: Appointment) {
         _appointment = State(initialValue: appointment)
@@ -30,6 +34,15 @@ struct AppointmentDetailView: View {
     var body: some View {
         List {
             AppointmentHeaderSection(appointment: appointment)
+            if AppointmentOnlineSection.isShown(for: appointment) {
+                AppointmentOnlineSection(
+                    appointment: appointment,
+                    actions: OnlineBookingAction.available(for: appointment, permissions: permissions),
+                    isConfirming: isConfirmingOnline,
+                    onConfirm: confirmOnline,
+                    onReject: { rejectsOnline = true }
+                )
+            }
             clientSection
             servicesSection
             detailsSection
@@ -70,6 +83,9 @@ struct AppointmentDetailView: View {
         }
         .sheet(item: $editorDraft) { draft in
             AppointmentEditorView(draft: draft) { saved in apply(saved) }
+        }
+        .sheet(isPresented: $rejectsOnline, onDismiss: askPendingDepositDecision) {
+            OnlineRejectSheet(appointment: appointment) { rejected in onlineRejected(rejected) }
         }
         .appointmentDepositFlows($depositFlow, appointment: appointment, decision: depositDecision, onChange: apply)
         .sheet(isPresented: $showsComplete, onDismiss: startPendingCheckout) {
@@ -211,12 +227,14 @@ struct AppointmentDetailView: View {
     }
 
     private var actions: [Action] {
-        switch appointment.status {
+        let all: [Action] = switch appointment.status {
         case .scheduled: [.confirm, .complete, .reschedule, .noShow, .cancel]
         case .confirmed: [.complete, .reschedule, .noShow, .cancel]
         case .cancelled, .noShow: [.restore]
         case .completed: []
         }
+        // An unsettled online booking is confirmed or rejected in «Онлайн-запись», so the client gets the answer.
+        return appointment.isUnsettledOnline ? all.filter { $0 != .confirm && $0 != .cancel } : all
     }
 
     private var actionsSection: some View {
@@ -286,6 +304,47 @@ struct AppointmentDetailView: View {
                 errorMessage = error.userMessage
             }
         }
+    }
+
+    // MARK: Online booking
+
+    private func confirmOnline() {
+        isWorking = true
+        isConfirmingOnline = true
+        Task {
+            defer {
+                isWorking = false
+                isConfirmingOnline = false
+            }
+            do {
+                apply(try await api.confirmOnlineBooking(id: appointment.id))
+                successCount += 1
+                Task { await appState.refreshBadges() }
+            } catch {
+                errorMessage = error.userMessage
+                // Often settled elsewhere meanwhile (`409`): show the booking as it is now.
+                await reload()
+            }
+        }
+    }
+
+    private func onlineRejected(_ rejected: Appointment) {
+        let before = appointment
+        apply(rejected)
+        appState.appointmentClosed(rejected)
+        successCount += 1
+        Task { await appState.refreshBadges() }
+        // Money taken before the rejection stays held: refund or retain it, as after a cancellation.
+        if DepositFlow.needsDecision(rejected) {
+            pendingDepositDecision = DepositDecision(before: before, after: rejected, at: .now)
+        }
+    }
+
+    private func askPendingDepositDecision() {
+        guard let decision = pendingDepositDecision else { return }
+        pendingDepositDecision = nil
+        depositDecision = decision
+        depositFlow = .decide
     }
 
     private func startPendingCheckout() {
