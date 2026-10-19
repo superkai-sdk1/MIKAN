@@ -48,6 +48,7 @@ struct MoreView: View {
                     NavigationLink { StudioSettingsView() } label: {
                         Label("Настройки студии", systemImage: "building.2")
                     }
+                    AuditLogMoreLink()
                 }
                 Section("Аккаунт") {
                     if let employee = appState.employee {

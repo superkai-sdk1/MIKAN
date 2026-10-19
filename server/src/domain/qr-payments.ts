@@ -7,6 +7,7 @@ import { AppError, badRequest, conflict, errorMessage, notFound } from '../lib/e
 import { qrPaymentOut, type QrPaymentRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
 import { QrProviderError, type CreatedQr, type QrBankStatus, type QrProvider } from '../payments/qr-provider.js';
+import { auditQrPaid } from './audit-events.js';
 import { announceQrDeposit } from './deposit-messages.js';
 import { recordQrDeposit } from './deposits.js';
 import { getSaleRow, serializeSale } from './refs.js';
@@ -201,6 +202,7 @@ async function checkBank(ctx: AppContext, id: number, force: boolean): Promise<Q
   const updated = applyBankStatus(ctx.db, id, bank, Date.now());
   if (updated.status === 'paid' && row.status !== 'paid') {
     ctx.log.info({ qrPaymentId: id, kind: updated.kind, saleId: updated.saleId, amount: updated.amount }, 'QR payment received');
+    auditQrPaid(ctx, updated);
     if (updated.error) await alertStaff(ctx, updated);
     if (updated.kind === 'deposit') await announceQrDeposit(ctx, updated);
   }

@@ -14,6 +14,8 @@ import { AppError, unauthorized } from './lib/errors.js';
 import type { EmployeeRow } from './lib/serialize.js';
 import { formatZodError } from './lib/validation.js';
 import { appointmentRoutes } from './routes/appointments.js';
+import { auditRoutes } from './routes/audit.js';
+import { registerAuditCapture } from './routes/audit-capture.js';
 import { authRoutes, publicAuthRoutes } from './routes/auth.js';
 import { botRoutes } from './routes/bot.js';
 import { cashRoutes } from './routes/cash.js';
@@ -156,6 +158,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
       await api.register(async (secured) => {
         secured.addHook('onRequest', authenticate(ctx));
         secured.addHook('preHandler', authorize(ctx.db));
+        registerAuditCapture(secured, ctx);
         authRoutes(secured, ctx);
         dashboardRoutes(secured, ctx);
         employeeRoutes(secured, ctx);
@@ -173,6 +176,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         cashRoutes(secured, ctx);
         botRoutes(secured, ctx);
         settingsRoutes(secured, ctx);
+        auditRoutes(secured, ctx);
       });
     },
     { prefix: '/api' },

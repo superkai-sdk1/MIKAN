@@ -11,6 +11,7 @@ import { openDatabase } from './db/client.js';
 import { seedDatabase } from './db/seed.js';
 import { DIGEST_CHECK_INTERVAL_MS, sendDueDigests } from './bot/digest.js';
 import { checkDiskSpace, DISK_CHECK_INTERVAL_MS, raiseAlert, resolveAlerts } from './domain/alerts.js';
+import { pruneAuditLog } from './domain/audit.js';
 import { runBackupIfDue } from './domain/backup.js';
 import { uploadBackupOffsite } from './domain/offsite-backup.js';
 import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
@@ -19,6 +20,7 @@ import { errorMessage } from './lib/errors.js';
 import { createQrProvider } from './payments/tochka.js';
 
 const BACKUP_CHECK_MS = 10 * 60_000;
+const AUDIT_PRUNE_MS = 24 * 60 * 60_000;
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -135,6 +137,18 @@ async function main(): Promise<void> {
   const diskTimer = setInterval(diskTick, DISK_CHECK_INTERVAL_MS);
   void diskTick();
 
+  // The action log keeps 2 years (docs/API.md «Audit log»).
+  const auditPruneTick = () => {
+    try {
+      const pruned = pruneAuditLog(db);
+      if (pruned) log.info({ pruned }, 'old audit log entries pruned');
+    } catch (err) {
+      log.error({ err: errorMessage(err) }, 'audit log pruning failed');
+    }
+  };
+  const auditPruneTimer = setInterval(auditPruneTick, AUDIT_PRUNE_MS);
+  auditPruneTick();
+
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
@@ -145,6 +159,7 @@ async function main(): Promise<void> {
     clearInterval(digestTimer);
     clearInterval(backupTimer);
     clearInterval(diskTimer);
+    clearInterval(auditPruneTimer);
     const force = setTimeout(() => process.exit(1), 15_000);
     force.unref();
     try {

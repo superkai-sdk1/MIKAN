@@ -4,6 +4,7 @@ import { appointments, depositOperations, qrPayments } from '../db/schema.js';
 import { badRequest, conflict } from '../lib/errors.js';
 import type { AppointmentRow, DepositOperationRow, QrPaymentRow, SaleRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
+import { auditAutoRetain } from './audit-events.js';
 import { closingRetain } from './cancellation.js';
 import { getOpenShift } from './cash.js';
 import {
@@ -188,7 +189,9 @@ export function autoRetainDeposit(
   if (held <= 0) return null;
   const retain = closingRetain(appointment.status, appointment.startsAt, at, held, rules);
   if (!retain || retain.amount <= 0) return null;
-  return retainDeposit(db, appointment.id, retain, employeeId);
+  const row = retainDeposit(db, appointment.id, retain, employeeId);
+  auditAutoRetain(db, row, retain);
+  return row;
 }
 
 /** Checkout: `amount` of the held prepayment is counted in `sale` (validated by `prepareSale`). */

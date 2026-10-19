@@ -50,6 +50,7 @@ struct SaleDetailView: View {
                     }
                 }
             }
+            AuditHistorySection(scope: .sale(id: sale.id))
         }
         .navigationTitle("Чек №\(sale.number)")
         .navigationBarTitleDisplayMode(.inline)

@@ -642,6 +642,10 @@ outside the hours, overlapping breaks, `end` ≤ `start` → `400` with the Russ
 |---|---|---|
 | GET | `/audit?from=&to=&employeeId=&entity=&entityId=&source=&limit=&offset=` | `{ items: [AuditEntry], total }` newest first · owner |
 
+`from` / `to` — instants (`to` exclusive); `entity` — one entity or a comma-separated list (`entity=appointment,deposit`:
+an appointment with its prepayment); `limit` default 50, max 200. Anyone but the owner → `403` «Это доступно владельцу
+студии».
+
 - Logged: every successful write request from the app (`POST`/`PUT`/`PATCH`/`DELETE`) except `POST /auth/login`,
   `POST /uploads`, `POST /bot/chats/:chatId/read`, `POST /bot/staff-code` and idempotent replays; client actions in
   the bot (booking request, reschedule, confirm «Приду») as `bot`; staff bot actions as `bot_staff`; automatic
@@ -650,7 +654,12 @@ outside the hours, overlapping breaks, `end` ≤ `start` → `400` with the Russ
   next to it): «Запись №1846 (Анна Иванова) перенесена с … на …», «Продажа №1580 возвращена: 3 500 ₽»,
   «Цена «Мочка»: 1 600 → 1 800 ₽», «Фатиме назначена роль «Мастер»». Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
   `service`, `product`, `stock`, `category`, `aftercare`, `knowledge`, `employee`, `schedule`, `payroll`,
-  `settings`, `bot`.
+  `settings`, `bot`. `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
+- `entityId` is the id of what the entry is about: `deposit` — the appointment; `stock` — the product (`null` for a
+  stock count); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
+  the booking request or the scheduled message; `sale` — the sale (`null` for a QR code not yet paid); `settings` and
+  a category reorder — `null`. An edit that changed nothing is logged too («… сохранена без изменений»); a write
+  without a specific summary gets «Изменение: PUT /…» with the entity taken from the path.
 - Kept 2 years (older rows are pruned daily). A failure to write the log never fails the request (it is logged).
 - The app shows the log to the owner (More → «Журнал действий», filters by employee and section) and, on an
   appointment, client, sale or product card, its own history (`?entity=&entityId=`).

@@ -47,6 +47,7 @@ struct AppointmentDetailView: View {
             } else if !actions.isEmpty {
                 ReadOnlyNotice(text: "Чужие записи меняют владелец и администратор.")
             }
+            AuditHistorySection(scope: .appointment(id: appointment.id))
         }
         .navigationTitle("Запись")
         .navigationBarTitleDisplayMode(.inline)
