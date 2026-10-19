@@ -75,10 +75,16 @@ function notesTooLong(kept: ClientRow, source: ClientRow, joined: string | null)
   return length > CLIENT_NOTES_MAX && length > Math.max(kept.notes?.length ?? 0, source.notes?.length ?? 0);
 }
 
-/** The source's last name, unless the kept card already spells it in its first name («Анна Иванова» in `name`). */
+/** The words after the first of an older card that holds the whole name in `name` («Анна Иванова»). */
+const lastNameInName = (name: string): string | null => filled(name.trim().split(/\s+/).slice(1).join(' '));
+
+/**
+ * The source's last name (its `lastName`, or what follows the first name in an older card's `name`), unless the kept
+ * card already spells it in its own `name`.
+ */
 function lastNameOf(kept: ClientRow, source: ClientRow): string | null {
   if (filled(kept.lastName)) return kept.lastName;
-  const last = filled(source.lastName);
+  const last = filled(source.lastName) ?? lastNameInName(source.name);
   if (!last) return null;
   const words = searchKey(kept.name).split(' ');
   return searchKey(last)

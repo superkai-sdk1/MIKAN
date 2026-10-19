@@ -800,7 +800,8 @@ source's chat stays attributed to the kept card. The same card, an unknown card 
   of two campaign recipients of one campaign the one that got further stays (`sent` > `blocked` > `failed` >
   `skipped` > `pending`, so nobody gets a campaign twice); of two retention sends of the same kind and period the kept
   card's stays. The source's dismissed duplicate pairs go to the kept card.
-- Fields: `lastName` is not added when the kept card's `name` already holds it; a note contained in the other is not
+- Fields: the source's last name is its `lastName`, or the words after the first name of an older card's `name`; it
+  is not added when the kept card's `name` already holds it; a note contained in the other is not
   repeated (joined with an empty line) — joined notes longer than 5 000 characters → `400` «Заметки двух карточек
   вместе длиннее 5000 символов — сократите их и повторите» (nothing changes). `telegramUsername` follows the link;
   with neither card linked, a link sent to the source and not opened yet links the kept card. A «no news» request

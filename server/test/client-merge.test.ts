@@ -202,6 +202,11 @@ describe('client merge', () => {
     expect(merged.archived).toBe(false);
     expect(mergedClientFields({ ...kept, notes: null }, { ...source, notes: null }).notes).toBeNull();
     expect(mergedClientFields({ ...kept, name: 'Анна' }, source).lastName).toBe('Иванова');
+    // An older card holds the whole name in `name`: its last name still carries over.
+    const legacy = { ...source, name: 'Анна  Иванова ', lastName: null };
+    expect(mergedClientFields({ ...kept, name: 'Анна' }, legacy).lastName).toBe('Иванова');
+    expect(mergedClientFields(kept, legacy).lastName).toBeNull();
+    expect(mergedClientFields({ ...kept, name: 'Анна' }, { ...legacy, name: 'Анна' }).lastName).toBeNull();
   });
 
   it('refuses notes that would not fit together, changing nothing', async () => {
