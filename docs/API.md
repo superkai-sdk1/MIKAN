@@ -24,7 +24,8 @@ If the implementation must deviate, update this file in the same change.
   `payment_provider_error` (502, the bank did not answer), `upstream_error` (502, an external service such as AI
   image generation failed), `internal` (500).
   `message` is always human-readable Russian; the app shows it as is.
-- All employees have identical permissions.
+- Roles: every employee has a `role` (`owner` | `admin` | `master`, see «Roles»); a request beyond it → `403 forbidden`
+  with a Russian message («Это доступно владельцу студии», «Можно менять только свои записи»).
 - Idempotency: `POST /sales`, `POST /sales/:id/refund`, `POST /receipts`, `POST /cash/operations`,
   `POST /products/:id/movements`, `POST /products/:id/movements/batch`, `POST /products/:id/purchases`
   and the prepayment writes `POST /appointments/:id/deposit`, `…/deposit/refund`, `…/deposit/retain` accept an optional `Idempotency-Key: <UUID>` header. The app generates one key per user action and resends the
@@ -43,9 +44,125 @@ If the implementation must deviate, update this file in the same change.
 ### Employee
 ```json
 { "id": 1, "name": "Анна", "login": "anna", "phone": "+79991234567", "color": "#FF7A1A",
-  "isMaster": true, "active": true, "createdAt": "..." }
+  "isMaster": true, "role": "master", "active": true, "createdAt": "..." }
 ```
 `color` — hex used for the master's appointments in the calendar. `isMaster` — performs procedures (shows in master pickers).
+`role` — what the employee may do (see «Roles»); independent of `isMaster` (an owner may also be a master).
+
+### Roles
+Three roles; the server checks every request (the app only hides what a role can't use).
+- `owner` — everything. The only role that manages employees (create, edit others, roles, deactivate), pay rules,
+  payroll of others and adjustments, and reads the audit log.
+- `admin` — everything except what is owner-only above.
+- `master` — sees the whole calendar and all clients; creates, edits, moves, completes and cancels **only their own
+  appointments** (`masterId` = themselves: creating for another master, editing another master's appointment or
+  giving theirs to another master → `403` «Можно менять только свои записи»), and the prepayment operations of their
+  own appointments. Full POS and cash register (receipts, sales, refunds, shifts, cash operations, QR), the
+  dashboard, clients (read, create, edit, Telegram link), bot chats (read, reply, mark read, `needsAttention`),
+  scheduled messages and booking requests, their own staff code. Reads the catalog, products, stock and settings but
+  does not change them; no reports or analytics.
+
+| Area | owner | admin | master |
+|---|---|---|---|
+| Employees: list | ✓ | ✓ | ✓ |
+| Employees: create, edit others, role, active | ✓ | — | — |
+| Own profile: name, phone, color, password (`PATCH /employees/:me`) | ✓ | ✓ | ✓ |
+| Appointments & prepayments | ✓ | ✓ | own only |
+| POS, sales, refunds, cash, QR, dashboard | ✓ | ✓ | ✓ |
+| Clients, history | ✓ | ✓ | ✓ |
+| Services, products, categories, aftercare templates, stock movements, purchases, revisions, image generation: write | ✓ | ✓ | — |
+| Reports and analytics (`/reports/*`) | ✓ | ✓ | — |
+| Settings (studio, bot), knowledge base, staff chat binding (`PUT/DELETE /bot/chats/:chatId/employee`), `POST /bot/test`: write | ✓ | ✓ | — |
+| Work schedules: read | ✓ | ✓ | ✓ |
+| Work schedules: change | ✓ | ✓ | — |
+| Payroll: own statement and own pay rules (read) | ✓ | ✓ | ✓ |
+| Payroll: others, pay rules (write), adjustments | ✓ | — | — |
+| Audit log | ✓ | — | — |
+
+Everything not listed (reads of catalog, settings, uploads, QR config, …) is open to every role. Rules:
+- At least one active `owner` must remain: demoting or deactivating the last one → `400` «В студии должен остаться
+  хотя бы один владелец». Nobody changes their own `role` or deactivates themselves.
+- The role is read from the database on every request: a change applies at once, no new login needed.
+- Bot staff mode follows the role: the `analytics` tool answers a master «Отчёты доступны владельцу и
+  администратору»; the other staff tools are read-only and open to all.
+- Existing staff after the update: the first account (created at install) is `owner`, masters are `master`, the rest
+  `admin`; the owner adjusts roles in the app. A new employee defaults to `master` when `isMaster`, else `admin`.
+
+### WorkSchedule (графики мастеров)
+```json
+{ "employeeId": 3,
+  "weekly": [ { "start": "11:00", "end": "20:00", "breaks": [ { "start": "14:00", "end": "14:30" } ] },
+              null, { "start": "12:00", "end": "21:00", "breaks": [] }, null, null, null, null ],
+  "days": [ { "date": "2026-10-23", "off": true, "start": null, "end": null, "breaks": [], "note": "Отпуск" } ] }
+```
+- `weekly` — 7 entries Monday…Sunday: `null` = day off, else working hours `"HH:MM"` in the studio timezone (`end`
+  later than `start`, `"24:00"` = midnight) with `breaks` inside them (non-overlapping). `weekly: null` = no own
+  schedule: the employee works the studio hours (`workdayStart`–`workdayEnd`) every day — today's behaviour.
+- `days` — exceptions for single dates (vacation, sick day, other hours): `off: true`, or own `start`/`end`/`breaks`.
+  An exception wins over `weekly`. `GET` returns exceptions from today on (past ones with `?from=`).
+- **Working time** of a date = its exception, else its `weekly` entry, else the studio hours; minus breaks.
+- Effects:
+  - The bot offers and accepts only the master's working time (free slots, `reschedule_appointment`); a master off
+    that day is not offered.
+  - Creating or moving an appointment (app) outside the master's working time — a day off, outside the hours, into a
+    break — → `409 schedule_conflict` «Фатима не работает 23 октября» / «У Фатимы перерыв 14:00–14:30» unless
+    `force: true` (same flag as the overlap check). Status changes and edits that keep the time are not checked.
+  - The app's calendar shades each master's non-working time and marks masters off for the day.
+  - The morning staff digest lists who works today with hours («Сегодня работают: Амина 11:00–20:00, Фатима
+    12:00–21:00»), when any master has a schedule.
+
+### PayRules (правила зарплаты)
+```json
+{ "salaryMonthly": 0, "perDay": 1500,
+  "servicePercent": 40, "categoryPercent": { "tattoo": 50, "piercing": null, "other": null },
+  "productPercent": 10, "deductMaterials": true }
+```
+All optional numbers default to 0 / `null`; percents 0…100, money ≥ 0 (integer rubles).
+- `salaryMonthly` — fixed pay per month, counted per day: each day of the period earns `salaryMonthly / days in that
+  month` (a whole month earns exactly `salaryMonthly`).
+- `perDay` — for each studio day on which the employee completed at least one visit (as master) or made a sale.
+- `servicePercent` — share of the **service revenue of their completed visits** (their `masterId`): the service lines
+  of the non-refunded sales of those visits, after the sale discount (split proportionally like analytics).
+  `categoryPercent` overrides it per service category (`null` = use `servicePercent`).
+- `deductMaterials` — the cost of consumables written off for the visit (usage movements × the product's unit cost)
+  is subtracted from that visit's service revenue before the percent (never below 0).
+- `productPercent` — share of the goods and jewelry revenue they sold: product lines of non-refunded sales, attributed
+  to the visit's master when the sale belongs to an appointment, else to the employee who made the sale.
+- Rules are versioned by `effectiveFrom` (studio date): each visit, sale and day is counted by the version in force
+  that day. Days before the first version earn nothing.
+
+### PayrollStatement (расчётный лист)
+```json
+{ "employee": { EmployeeRef }, "from": "2026-10-01", "to": "2026-10-31",
+  "services": { "visits": 42, "revenue": 210000, "materials": 6300, "amount": 81480 },
+  "products": { "revenue": 35000, "amount": 3500 },
+  "salary": 0, "days": 18, "perDay": 27000,
+  "adjustments": { "bonus": 5000, "penalty": 0, "advance": 20000, "payout": 0 },
+  "earned": 116980, "paid": 20000, "due": 96980 }
+```
+`from`/`to` — studio-local dates, inclusive. `earned` = services + products + salary + perDay + bonus − penalty;
+`paid` = advance + payout; `due` = earned − paid. Rounded to whole rubles per line.
+The detailed statement adds `"lines"`: `[ { "date", "kind": "service"|"product", "appointmentId", "saleId",
+"name", "category", "revenue", "materials", "percent", "amount" } ]` (date ascending) and `"adjustmentItems"`:
+`[PayrollAdjustment]`.
+
+### PayrollAdjustment
+```json
+{ "id": 1, "employee": { EmployeeRef }, "date": "2026-10-15", "kind": "advance", "amount": 20000,
+  "note": "Аванс", "cashOperationId": 31, "createdBy": { EmployeeRef }, "createdAt": "..." }
+```
+`kind`: `bonus` (премия) | `penalty` (штраф) | `advance` (аванс) | `payout` (выплата); `amount` > 0.
+
+### AuditEntry (журнал действий)
+```json
+{ "id": 1, "at": "...", "employee": { EmployeeRef } | null, "source": "app",
+  "action": "appointment.update", "entity": "appointment", "entityId": 1846,
+  "summary": "Перенесла запись №1846 (Анна Иванова) с 20 октября, 14:00 на 21 октября, 15:00",
+  "changes": { "startsAt": { "from": "...", "to": "..." } } }
+```
+`source`: `app` | `bot_staff` | `bot` (a client through the bot) | `system` (the server by itself: automatic
+prepayment retain, a QR payment confirmed by the bank). `employee` is `null` for `bot` and `system`.
+`changes` — `{ field: { from, to } }` of what changed (`null` when not applicable); passwords and tokens never appear.
 
 ### EmployeeRef / ClientRef / ServiceRef (embedded summaries)
 ```json
@@ -400,7 +517,7 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   "kind": "aftercare", "sendAt": "...", "text": "...",
   "status": "pending", "sentAt": null, "error": null }
 ```
-`kind`: `aftercare` | `reminder` | `healing_check` | `jewelry_change`. `status`: `pending` | `sent` | `failed` | `cancelled`.
+`kind`: `aftercare` | `reminder` | `healing_check` | `jewelry_change` | `reschedule_notice`. `status`: `pending` | `sent` | `failed` | `cancelled`.
 An appointment has one `reminder` per `BotSettings.reminderOffsets` entry whose moment is still in the future. A
 reminder sent on the day of the visit is headed «⏰ Сегодня ждём вас…», an earlier one «🗓 Напоминаем о записи…»; both
 carry the inline buttons «✅ Приду» and «🔁 Перенести» (see «Reminder buttons» in the Bot section).
@@ -486,8 +603,50 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/employees?includeInactive=true` | — | `{ items: [Employee] }` (active only by default) |
-| POST | `/employees` | `{ name, login, password (≥6), phone?, color?, isMaster }` | `Employee` · `409 conflict` if login taken |
-| PATCH | `/employees/:id` | any of `{ name, login, password, phone, color, isMaster, active }` | `Employee` · cannot deactivate yourself (`400`) |
+| POST | `/employees` | `{ name, login, password (≥6), phone?, color?, isMaster, role? }` | `Employee` · owner · `409 conflict` if login taken |
+| PATCH | `/employees/:id` | any of `{ name, login, password, phone, color, isMaster, role, active }` | `Employee` · owner; anyone for themselves: `name`, `phone`, `color`, `password` only · cannot deactivate yourself or change your own role (`400`) |
+
+### Work schedules
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/schedules?from=&to=` (studio dates, ≤ 62 days) | — | `{ items: [ScheduleDayOut] }` — every active master × every date |
+| GET | `/employees/:id/schedule?from=` | — | `WorkSchedule` |
+| PUT | `/employees/:id/schedule` | `{ weekly: [7 × entry \| null] \| null }` | `WorkSchedule` · owner, admin |
+| PUT | `/employees/:id/schedule/days` | `{ from, to (≤ 62 days), off, start?, end?, breaks?, note? }` | `WorkSchedule` · sets every date in range · owner, admin |
+| DELETE | `/employees/:id/schedule/days?from=&to=` | — | `WorkSchedule` · removes the exceptions in range · owner, admin |
+
+`ScheduleDayOut`: `{ "employeeId": 3, "date": "2026-10-21", "working": true, "start": "12:00", "end": "21:00",
+"breaks": [ { "start": "15:00", "end": "15:30" } ], "source": "weekly", "note": null }` — `source`: `weekly` |
+`day` (an exception) | `studio` (no own schedule); `working: false` → `start`/`end` `null`. Invalid times, a break
+outside the hours, overlapping breaks, `end` ≤ `start` → `400` with the Russian reason.
+
+### Payroll
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/payroll?from=&to=` (studio dates, ≤ 400 days) | — | `{ from, to, items: [PayrollStatement] }` — owner: every employee with rules or activity in the period; others: only themselves |
+| GET | `/payroll/:employeeId?from=&to=` | — | `PayrollStatement` + `lines` + `adjustmentItems` · owner or themselves |
+| GET | `/employees/:id/pay-rules` | — | `{ current: PayRules \| null, history: [ { effectiveFrom, rules: PayRules, createdBy: EmployeeRef \| null, createdAt } ] }` · owner or themselves |
+| PUT | `/employees/:id/pay-rules` | `{ effectiveFrom? (default today), ...PayRules }` | same as GET · owner · the same `effectiveFrom` replaces that version |
+| POST | `/payroll/adjustments` | `{ employeeId, date?, kind, amount, note?, fromCash? }` | `PayrollAdjustment` · owner · `fromCash: true` (advance / payout only) also records a cash withdrawal «Аванс: Фатима» in the open shift (`409` without one) · accepts `Idempotency-Key` |
+| DELETE | `/payroll/adjustments/:id` | — | `204` · owner · its cash withdrawal, if any, stays (correct it in the till) |
+
+### Audit log
+| Method | Path | Response |
+|---|---|---|
+| GET | `/audit?from=&to=&employeeId=&entity=&entityId=&source=&limit=&offset=` | `{ items: [AuditEntry], total }` newest first · owner |
+
+- Logged: every successful write request from the app (`POST`/`PUT`/`PATCH`/`DELETE`) except `POST /auth/login`,
+  `POST /uploads`, `POST /bot/chats/:chatId/read`, `POST /bot/staff-code` and idempotent replays; client actions in
+  the bot (booking request, reschedule, confirm «Приду») as `bot`; staff bot actions as `bot_staff`; automatic
+  prepayment retain and bank-confirmed QR payments as `system`.
+- `summary` is written for people, in Russian, with the verb in the actor's form where the app shows it
+  («Перенесла запись №…», «Вернул продажу №… на 3 500 ₽», «Изменила цену «Мочка»: 1 600 → 1 800 ₽»,
+  «Назначил Фатиме роль «Мастер»»). Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
+  `service`, `product`, `stock`, `category`, `aftercare`, `knowledge`, `employee`, `schedule`, `payroll`,
+  `settings`, `bot`.
+- Kept 2 years (older rows are pruned daily). A failure to write the log never fails the request (it is logged).
+- The app shows the log to the owner (More → «Журнал действий», filters by employee and section) and, on an
+  appointment, client, sale or product card, its own history (`?entity=&entityId=`).
 
 ### Clients
 | Method | Path | Body | Response |
@@ -640,7 +799,7 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 | GET | `/appointments?from=&to=&masterId=&clientId=&status=` | — | `{ items: [Appointment] }` overlapping `[from, to)`, sorted by `startsAt` |
 | GET | `/appointments/:id` | — | `Appointment` |
 | POST | `/appointments` | `{ clientId, masterId, services?, serviceId?, title?, startsAt, endsAt?, price?, depositRequired?, notes?, status?, force? }` | `Appointment` |
-| PATCH | `/appointments/:id` | any of the above (incl. `status`) + `force?` | `Appointment` |
+| PATCH | `/appointments/:id` | any of the above (incl. `status`) + `force?`, `notifyClient?` | `Appointment` |
 | POST | `/appointments/:id/complete` | `{ sendAftercare: true, aftercareTemplateId?, consumables?: [{ productId, variantId?, quantity }] }` | `{ appointment: Appointment, scheduledMessages: 3, consumption: Consumption }` |
 | POST | `/appointments/:id/deposit` | `{ amount > 0, method: "cash"\|"card"\|"transfer", note? }` | `Appointment` · accepts `Idempotency-Key` |
 | POST | `/appointments/:id/deposit/refund` | `{ amount?, method?, reason? }` | `Appointment` · accepts `Idempotency-Key` |
@@ -664,7 +823,15 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 - Overlap check: if the master already has a non-cancelled, non-no-show appointment overlapping the time, respond
   `409 schedule_conflict` (message names the conflicting client and time) unless `force: true`.
 - The studio's working hours (`StudioSettings.workdayStart` / `workdayEnd`) do not restrict `startsAt` / `endsAt`:
-  appointments before opening or after closing are accepted.
+  appointments before opening or after closing are accepted. A master's own work schedule does (see
+  «WorkSchedule»): outside it → `409 schedule_conflict` unless `force: true`.
+- A master may create and change only their own appointments (see «Roles»).
+- `notifyClient: true` on a PATCH that changes `startsAt` (a move: drag in the calendar or the edit form): when the
+  client has Telegram linked and `botEnabled`, the server queues a `reschedule_notice` scheduled message sent at once
+  (the sender delivers it within 30 s, with retries) with the «✅ Приду» / «🔁 Перенести» buttons:
+  «Анна, ваша запись перенесена 🗓\n\nБыло: 20 октября, 14:00\nСтало: **21 октября, 15:00**\nМастер: Фатима\n\nЕсли
+  новое время не подходит — нажмите «🔁 Перенести».» A pending notice of the same appointment is replaced. Without
+  Telegram (or without the flag) nothing is sent. Reminders are rescheduled as before either way.
 - Consumption: `consumables` **omitted or `null`** → the server deducts the norms of the appointment's services
   (Σ over its service lines of each service's `consumables`, quantity-mode only), never failing: a consumable short of
   stock gives what it has and is reported. `consumables` given (an array, `[]` included) → exactly those, and a shortage
@@ -685,6 +852,15 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
   `BotSettings.reminderOffsets` entry (minutes before `startsAt`; if `remindersEnabled` and that moment is in the
   future). Cancelling / no-show / rescheduling (from the app or by the client through the bot) cancels or replaces
   pending reminders.
+
+#### Moving an appointment in the calendar (app)
+Long press on an appointment in the day / 3-day / week calendar lifts it; dragging moves it in time (snapped to 15
+minutes; the duration is kept) and, in views with several days, to another day; in the day view with master columns,
+to another master (owner and admin only). On release the app asks «Перенести запись Анны на 21 октября, 15:00?»
+with «Уведомить клиента в Telegram» (on by default; hidden when the client has no Telegram) and sends `PATCH`
+with `startsAt`, `endsAt` (and `masterId`), `notifyClient`. A `schedule_conflict` asks «Записать всё равно?» and
+retries with `force: true`; cancelling or an error puts the appointment back. A master can lift only their own
+appointments; completed, cancelled and no-show appointments are not draggable.
 
 ### Prepayments (deposits)
 Every prepayment movement is a `DepositOperation`; the appointment's `deposit` (held amount) and `depositStatus` are

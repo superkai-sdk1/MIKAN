@@ -14,6 +14,13 @@ export const employees = sqliteTable('employees', {
   phone: text('phone'),
   color: text('color').notNull(),
   isMaster: bool('is_master').notNull().default(false),
+  /** `owner` | `admin` | `master` — what the employee may do (docs/API.md «Roles»). */
+  role: text('role').notNull().default('admin'),
+  /**
+   * JSON `WorkSchedule.weekly`: 7 entries Monday…Sunday, each `null` (day off) or `{ start, end, breaks }`;
+   * NULL = no own schedule (the studio working hours every day).
+   */
+  weeklySchedule: text('weekly_schedule'),
   active: bool('active').notNull().default(true),
   /** Embedded in JWTs; bumped on password change / deactivation to revoke existing tokens. */
   tokenVersion: integer('token_version').notNull().default(0),
@@ -647,4 +654,96 @@ export const idempotencyKeys = sqliteTable(
     createdAt: ms('created_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.employeeId, t.key] }), index('idempotency_keys_created_idx').on(t.createdAt)],
+);
+
+/**
+ * The action log (docs/API.md «Audit log»): who changed what and when — every successful write from the app, staff
+ * actions in the bot and what the server does by itself. Rows are never edited; old ones are pruned after 2 years.
+ */
+export const auditLog = sqliteTable(
+  'audit_log',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    at: ms('at').notNull(),
+    /** NULL for the server itself or a client in the bot. */
+    employeeId: integer('employee_id').references(() => employees.id),
+    /** `app` | `bot_staff` | `bot` | `system`. */
+    source: text('source').notNull(),
+    /** `<entity>.<verb>`, e.g. `appointment.update`, `sale.refund`. */
+    action: text('action').notNull(),
+    /** `appointment`, `sale`, `client`, `product`, `service`, `employee`, `settings`, … */
+    entity: text('entity').notNull(),
+    entityId: integer('entity_id'),
+    /** Russian sentence for people, e.g. «Перенесла запись №1846 (Анна Иванова) на 21 октября, 14:00». */
+    summary: text('summary').notNull(),
+    /** JSON `{ field: { from, to } }` of what changed, when known. */
+    changes: text('changes'),
+  },
+  (t) => [
+    index('audit_log_at_idx').on(t.at),
+    index('audit_log_entity_idx').on(t.entity, t.entityId, t.at),
+    index('audit_log_employee_idx').on(t.employeeId, t.at),
+  ],
+);
+
+/** One day that differs from the employee's weekly schedule: a day off, other hours or other breaks. */
+export const scheduleDays = sqliteTable(
+  'schedule_days',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    employeeId: integer('employee_id')
+      .notNull()
+      .references(() => employees.id),
+    /** Studio-local "YYYY-MM-DD". */
+    date: text('date').notNull(),
+    off: bool('off').notNull().default(false),
+    /** "HH:MM" studio time; NULL when `off`. */
+    start: text('start'),
+    end: text('end'),
+    /** JSON `[{ start, end }]`. */
+    breaks: text('breaks').notNull().default('[]'),
+    note: text('note'),
+    createdAt: ms('created_at').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('schedule_days_employee_date_unique').on(t.employeeId, t.date)],
+);
+
+/** How an employee is paid from `effectiveFrom` on (each version kept: a past period is counted by its rules). */
+export const payRules = sqliteTable(
+  'pay_rules',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    employeeId: integer('employee_id')
+      .notNull()
+      .references(() => employees.id),
+    /** Studio-local "YYYY-MM-DD". */
+    effectiveFrom: text('effective_from').notNull(),
+    /** JSON `PayRules`. */
+    rules: text('rules').notNull(),
+    createdBy: integer('created_by').references(() => employees.id),
+    createdAt: ms('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('pay_rules_employee_from_unique').on(t.employeeId, t.effectiveFrom)],
+);
+
+/** Manual payroll entries: `bonus`, `penalty`, `advance`, `payout` (amount always positive). */
+export const payrollAdjustments = sqliteTable(
+  'payroll_adjustments',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    employeeId: integer('employee_id')
+      .notNull()
+      .references(() => employees.id),
+    /** Studio-local "YYYY-MM-DD". */
+    date: text('date').notNull(),
+    kind: text('kind').notNull(),
+    amount: integer('amount').notNull(),
+    note: text('note'),
+    /** The cash withdrawal when it was paid from the till. */
+    cashOperationId: integer('cash_operation_id').references(() => cashOperations.id),
+    createdBy: integer('created_by').references(() => employees.id),
+    createdAt: ms('created_at').notNull(),
+  },
+  (t) => [index('payroll_adjustments_employee_idx').on(t.employeeId, t.date)],
 );
