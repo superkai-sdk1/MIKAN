@@ -24,6 +24,8 @@ nonisolated struct Client: Codable, Hashable, Identifiable, Sendable {
     var updatedAt: Date
     /// `nil` in lists, filled by `GET /clients/:id`.
     var stats: ClientStats?
+    /// Bonuses and the birthday discount; `nil` in lists and from a server without loyalty.
+    var loyalty: ClientLoyalty? = nil
 
     var ref: ClientRef { ClientRef(id: id, name: name, lastName: lastName, phone: phone, telegramLinked: telegramLinked) }
     /// "Иван Петров" — how the app names the client everywhere.

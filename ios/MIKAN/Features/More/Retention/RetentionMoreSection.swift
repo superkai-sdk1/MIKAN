@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// More → «Лояльность»: campaigns (owner, admin) and the retention settings (a master reads them).
+/// More → «Лояльность»: campaigns (owner, admin), gift certificates and the retention settings (a master reads them).
 struct RetentionMoreSection: View {
     @Environment(\.permissions) private var permissions
 
@@ -11,6 +11,7 @@ struct RetentionMoreSection: View {
                     Label("Рассылки", systemImage: "megaphone")
                 }
             }
+            CertificatesMoreLink()
             NavigationLink { RetentionSettingsView() } label: {
                 Label("Удержание клиентов", systemImage: "heart.text.square")
             }

@@ -37,6 +37,8 @@ struct SaleDetailView: View {
             }
             SaleItemsSection(sale: sale)
             SalePaymentsSection(payments: sale.payments)
+            SaleBonusEarnedSection(sale: sale)
+            IssuedCertificatesSection(sale: sale)
             if let note = sale.note.nonEmpty {
                 Section("Комментарий") { Text(note) }
             }
@@ -104,12 +106,24 @@ private struct RefundSheet: View {
                     if sale.payments.deposit > 0 {
                         LabeledContent("Предоплата вернётся на запись") { MoneyText(sale.payments.deposit) }
                     }
+                    if sale.payments.bonus > 0 {
+                        LabeledContent("Бонусы вернутся на счёт") { Text(BonusText.count(sale.payments.bonus)).monospacedDigit() }
+                    }
+                    if sale.payments.certificate > 0 {
+                        LabeledContent("Вернётся на сертификат") { MoneyText(sale.payments.certificate) }
+                    }
+                    if sale.earnedBonuses > 0 {
+                        LabeledContent("Начисленные бонусы спишутся") { Text(BonusText.count(sale.earnedBonuses)).monospacedDigit() }
+                    }
                 } footer: {
                     VStack(alignment: .leading, spacing: 6) {
                         if sale.payments.qr > 0 {
                             Text("Деньги по QR-коду приложение не возвращает: оформите возврат по СБП в интернет-банке Точки.")
                         }
                         if let note = SaleRefundText.depositNote(sale.payments) {
+                            Text(note)
+                        }
+                        if let note = SaleRefundText.certificatesSoldNote(sale) {
                             Text(note)
                         }
                     }
@@ -211,7 +225,20 @@ nonisolated enum SaleRefundText {
         if let note = depositNote(payments) {
             parts.append(note)
         }
+        if payments.bonus > 0 {
+            let verb = Plural.word(payments.bonus, one: "вернётся", few: "вернутся", many: "вернутся")
+            parts.append("На счёт клиента \(verb) \(BonusText.count(payments.bonus)).")
+        }
+        if payments.certificate > 0 {
+            parts.append("Оплата сертификатом (\(Money.format(payments.certificate))) вернётся на сертификат.")
+        }
         return parts.joined(separator: " ")
+    }
+
+    /// «Проданный сертификат будет отменён …»; `nil` when the sale sold none.
+    static func certificatesSoldNote(_ sale: Sale) -> String? {
+        guard !sale.certificateItems.isEmpty else { return nil }
+        return "Проданный в этом чеке сертификат будет отменён. Если им уже частично оплатили покупку, возврат не пройдёт."
     }
 
     /// «Предоплата 2 000 ₽ вернётся на запись — …»; `nil` when the sale used no prepayment.
