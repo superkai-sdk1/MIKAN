@@ -30,6 +30,7 @@ struct StudioSettingsView: View {
     private static let closingBounds = 30...TimeGridLayout.minutesPerDay
 
     private var hasChanges: Bool { settings != nil && settings != remote.value }
+    private var reviewLinksIssue: String? { settings?.reviewLinks.flatMap(ReviewLinksRules.issue) }
     private var hasValidHours: Bool {
         guard let settings else { return false }
         return WorkdayHours(start: settings.workdayStart, end: settings.workdayEnd, timeZoneIdentifier: settings.timezone) != nil
@@ -62,6 +63,13 @@ struct StudioSettingsView: View {
                 } footer: {
                     Text("Эти сведения бот использует в ответах клиентам.")
                 }
+                // Only on servers that know them (older ones omit the fields).
+                if let rules = Binding(settings.cancellation) {
+                    CancellationRulesSection(rules: rules)
+                }
+                if let links = Binding(settings.reviewLinks) {
+                    ReviewLinksSection(links: links)
+                }
                 Section {
                     Picker("Часовой пояс", selection: settings.timezone) {
                         ForEach(timeZoneOptions(current: settings.wrappedValue.timezone), id: \.id) { zone in
@@ -80,7 +88,7 @@ struct StudioSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!hasChanges || !hasValidHours) }
+                if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!hasChanges || !hasValidHours || reviewLinksIssue != nil) }
             }
         }
         .refreshable { await load() }

@@ -18,6 +18,8 @@ struct AppointmentDetailView: View {
     @State private var confirmsNoShow = false
     @State private var showsChat = false
     @State private var depositFlow: DepositFlow?
+    /// The refund-or-retain question after a cancellation / no-show.
+    @State private var depositDecision: DepositDecision?
     @State private var successCount = 0
 
     init(appointment: Appointment) {
@@ -65,7 +67,7 @@ struct AppointmentDetailView: View {
         .sheet(item: $editorDraft) { draft in
             AppointmentEditorView(draft: draft) { saved in apply(saved) }
         }
-        .appointmentDepositFlows($depositFlow, appointment: appointment, onChange: apply)
+        .appointmentDepositFlows($depositFlow, appointment: appointment, decision: depositDecision, onChange: apply)
         .sheet(isPresented: $showsComplete, onDismiss: startPendingCheckout) {
             CompleteAppointmentSheet(appointment: appointment) { completed in
                 apply(completed)
@@ -77,7 +79,9 @@ struct AppointmentDetailView: View {
             Button("Отменить запись", role: .destructive) { setStatus(.cancelled) }
             Button("Не отменять", role: .cancel) {}
         } message: {
-            if appointment.deposit > 0 {
+            if let rule = DepositRules.closingNote(appointment, becoming: .cancelled) {
+                Text("Клиенту не придёт напоминание об этой записи. \(rule)")
+            } else if appointment.deposit > 0 {
                 Text("Клиенту не придёт напоминание об этой записи. Предоплату \(Money.format(appointment.deposit)) затем можно вернуть или удержать.")
             } else {
                 Text("Клиенту не придёт напоминание об этой записи.")
@@ -86,6 +90,10 @@ struct AppointmentDetailView: View {
         .confirmationDialog("Отметить неявку?", isPresented: $confirmsNoShow, titleVisibility: .visible) {
             Button("Клиент не пришёл", role: .destructive) { setStatus(.noShow) }
             Button("Отмена", role: .cancel) {}
+        } message: {
+            if let rule = DepositRules.closingNote(appointment, becoming: .noShow) {
+                Text(rule)
+            }
         }
         .errorAlert($errorMessage)
         .sensoryFeedback(.success, trigger: successCount)
@@ -243,6 +251,8 @@ struct AppointmentDetailView: View {
     }
 
     private func setStatus(_ status: AppointmentStatus) {
+        let before = appointment
+        let changedAt = Date.now
         isWorking = true
         Task {
             defer { isWorking = false }
@@ -251,8 +261,12 @@ struct AppointmentDetailView: View {
                 apply(updated)
                 appState.appointmentClosed(updated)
                 successCount += 1
-                // Cancelled / no-show with money held: refund or retain is the staff's call.
-                if DepositFlow.needsDecision(updated) { depositFlow = .decide }
+                // Cancelled / no-show with money held: refund or retain is the staff's call (the studio's rules
+                // suggest how much; with automatic retain the server has already kept its share).
+                if DepositFlow.needsDecision(updated) {
+                    depositDecision = DepositDecision(before: before, after: updated, at: changedAt)
+                    depositFlow = .decide
+                }
             } catch {
                 errorMessage = error.userMessage
             }

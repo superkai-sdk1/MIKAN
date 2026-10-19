@@ -38,6 +38,11 @@ struct AppointmentDepositSection: View {
                     .font(.subheadline)
                     .foregroundStyle(.orange)
             }
+            if let freeUntil = DepositRules.freeUntilLine(appointment) {
+                Label(freeUntil, systemImage: "calendar.badge.clock")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         }
         .monospacedDigit()
         .padding(.vertical, 4)
