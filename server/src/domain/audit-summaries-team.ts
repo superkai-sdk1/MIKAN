@@ -309,6 +309,26 @@ function bookingUpdate(c: SummaryContext): AuditDraft {
   return draft('bot', 'booking_update', b.id, summary);
 }
 
+// ---------- sign-in sessions (entity `employee`, id of the employee) ----------
+
+interface SessionSnapshot {
+  employee: NamedRef;
+  device: string | null;
+}
+
+const onDevice = (s: SessionSnapshot | undefined) => (s?.device ? ` на устройстве ${quote(s.device)}` : '');
+
+function logout(c: SummaryContext): AuditDraft {
+  const session = c.before as SessionSnapshot | undefined;
+  return draft('employee', 'logout', session?.employee.id ?? null, `Выход из приложения${onDevice(session)}`);
+}
+
+function sessionEnd(c: SummaryContext): AuditDraft {
+  const session = c.before as SessionSnapshot | undefined;
+  const whose = session ? ` ${quote(session.employee.name)}` : ` №${c.params.id}`;
+  return draft('employee', 'session_end', session?.employee.id ?? null, `Сессия${whose}${onDevice(session)} завершена`);
+}
+
 export const teamSummaries: Record<string, SummaryBuilder> = {
   'POST /employees': employeeCreate,
   'PATCH /employees/:id': employeeUpdate,
@@ -330,4 +350,6 @@ export const teamSummaries: Record<string, SummaryBuilder> = {
   'POST /bot/scheduled/:id/cancel': scheduledCancel,
   'POST /bot/test': () => draft('bot', 'test', null, 'Бот проверен тестовым сообщением'),
   'PATCH /booking-requests/:id': bookingUpdate,
+  'POST /auth/logout': logout,
+  'DELETE /auth/sessions/:id': sessionEnd,
 };

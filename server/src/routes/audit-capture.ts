@@ -20,6 +20,7 @@ import { serializeProduct } from '../domain/products.js';
 import { getReceiptRow, serializeReceipt } from '../domain/receipts.js';
 import { getAppointmentRow, getClientRow, serializeAppointment } from '../domain/refs.js';
 import { serializeService } from '../domain/services.js';
+import { sessionSnapshot } from '../domain/sessions.js';
 import { getStudioSettings, studioTimezone } from '../domain/settings.js';
 import { getProductRow } from '../domain/stock.js';
 import { errorMessage } from '../lib/errors.js';
@@ -62,7 +63,7 @@ export const AUDIT_EXCLUDED = new Set([
 
 type Params = Record<string, string | undefined>;
 /** Reads the entity a route is about to change, in the shape the route answers with. */
-type SnapshotLoader = (ctx: AppContext, params: Params) => unknown;
+type SnapshotLoader = (ctx: AppContext, params: Params, request: FastifyRequest) => unknown;
 
 const idOf = (params: Params) => Number(params.id);
 const chatIdOf = (params: Params) => Number(params.chatId);
@@ -177,6 +178,9 @@ const SNAPSHOTS: Record<string, SnapshotLoader> = {
   'POST /campaigns/:id/test': campaign,
   'POST /campaigns/:id/cancel': campaign,
   'DELETE /campaigns/:id': campaign,
+  // Whose session ends and on which device.
+  'POST /auth/logout': (ctx, _p, request) => sessionSnapshot(ctx.db, request.sessionId),
+  'DELETE /auth/sessions/:id': (ctx, p) => sessionSnapshot(ctx.db, idOf(p)),
 };
 
 /** `/api/appointments/:id` → `/appointments/:id` */
@@ -189,7 +193,7 @@ function startCapture(ctx: AppContext, request: FastifyRequest): void {
   if (AUDIT_EXCLUDED.has(key)) return;
   let before: unknown;
   try {
-    before = SNAPSHOTS[key]?.(ctx, request.params as Params);
+    before = SNAPSHOTS[key]?.(ctx, request.params as Params, request);
   } catch {
     // The entity is missing: the handler answers 404 and nothing is logged.
     before = undefined;
