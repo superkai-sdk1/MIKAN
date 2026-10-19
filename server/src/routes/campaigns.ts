@@ -83,6 +83,11 @@ export function campaignRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/campaigns', async () => ({ items: serializeCampaigns(db, listCampaigns(db)) }));
 
+  app.get('/campaigns/:id', async (request) => {
+    const { id } = parse(idParams, request.params);
+    return serializeCampaign(db, getCampaignRow(db, id));
+  });
+
   app.post('/campaigns', async (request) => {
     const input = parse(createBody, request.body);
     assertCaption(input);
@@ -134,7 +139,7 @@ export function campaignRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
     getCampaignRow(db, id);
     if (!ctx.gateway.isRunning()) throw conflict(BOT_OFFLINE);
-    return serializeCampaign(db, startCampaign(db, id, now, studioTimezone(db), { refuseEmpty: true }).row);
+    return serializeCampaign(db, startCampaign(db, id, now, studioTimezone(db), 'staff').row);
   });
 
   app.post('/campaigns/:id/cancel', async (request) => {

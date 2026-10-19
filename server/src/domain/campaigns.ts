@@ -179,28 +179,29 @@ export function scheduleCampaign(db: DbOrTx, id: number, at: number, now = Date.
     .get();
 }
 
+export const NOBODY_MESSAGE = 'Под условия рассылки не подходит ни один клиент с Telegram, который согласен получать новости';
+
 /**
  * Fixes the recipients (the segment as it is now) and marks the campaign `sending`; the background sender takes it
- * from there. With nobody to send to, a campaign started by staff is refused (`409`) and a scheduled one whose time
- * came ends at once as `sent`.
+ * from there. Started by staff («send now», also for a scheduled one): with nobody to send to it is refused (`409`),
+ * and a planned time is dropped. Started by its schedule: with nobody to send to it ends at once as `sent`.
  */
 export function startCampaign(
   db: DbOrTx,
   id: number,
   now: number,
   tz: string,
-  options: { refuseEmpty: boolean },
+  startedBy: 'staff' | 'schedule',
 ): { row: CampaignRow; recipients: number } {
   return db.transaction((tx) => {
     const row = startable(tx, id);
     const recipients = insertRecipients(tx, id, parseStoredSegment(row.segment), now, tz);
-    if (recipients === 0 && options.refuseEmpty) {
-      throw conflict('Под условия рассылки не подходит ни один клиент с Telegram, который согласен получать новости');
-    }
+    if (recipients === 0 && startedBy === 'staff') throw conflict(NOBODY_MESSAGE);
     const updated = tx
       .update(campaigns)
       .set({
         status: recipients === 0 ? 'sent' : 'sending',
+        scheduledAt: startedBy === 'staff' ? null : row.scheduledAt,
         startedAt: now,
         finishedAt: recipients === 0 ? now : null,
         updatedAt: now,

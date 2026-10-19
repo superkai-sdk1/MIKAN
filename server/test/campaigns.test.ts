@@ -77,6 +77,13 @@ describe('campaigns API', () => {
 
     const list = (await t.api('GET', '/api/campaigns')).json().items;
     expect(list.map((c: { title: string }) => c.title)).toEqual(['Запись', 'Новая коллекция', 'Осенняя акция']);
+
+    const one = await t.api('GET', `/api/campaigns/${first.id}`);
+    expect(one.statusCode).toBe(200);
+    expect(one.json()).toEqual(first);
+    const missing = await t.api('GET', '/api/campaigns/999');
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.message).toBe('Рассылка не найдена');
   });
 
   it('validates the text, the picture caption limit, buttons and links', async () => {
@@ -140,7 +147,10 @@ describe('campaigns API', () => {
     const campaign = await create({ ...draftBody, segment: {} });
     const empty = await t.api('POST', `/api/campaigns/${campaign.id}/send`, {});
     expect(empty.statusCode).toBe(409);
-    expect(empty.json().error.message).toMatch(/^Под условия рассылки не подходит ни один клиент/);
+    expect(empty.json().error).toEqual({
+      code: 'conflict',
+      message: 'Под условия рассылки не подходит ни один клиент с Telegram, который согласен получать новости',
+    });
     expect((await t.api('GET', '/api/campaigns')).json().items[0].status).toBe('draft');
 
     await addClient(t, 'Анна', { chatId: 7001 });
@@ -167,6 +177,22 @@ describe('campaigns API', () => {
     expect(again.statusCode).toBe(409);
     // A time already past means «now» (here: refused, it is already sending).
     expect((await t.api('POST', `/api/campaigns/${campaign.id}/send`, { at: '2026-10-19T08:00:00.000Z' })).statusCode).toBe(409);
+  });
+
+  it('a scheduled campaign can be sent now (send without `at`) or moved (send with `at`)', async () => {
+    await addClient(t, 'Анна', { chatId: 7001 });
+    const campaign = await create({ ...draftBody, segment: {} });
+    await t.api('POST', `/api/campaigns/${campaign.id}/send`, { at: '2026-10-25T07:00:00.000Z' });
+    const moved = await t.api('POST', `/api/campaigns/${campaign.id}/send`, { at: '2026-10-26T07:00:00.000Z' });
+    expect(moved.json()).toMatchObject({ status: 'scheduled', scheduledAt: '2026-10-26T07:00:00.000Z', startedAt: null });
+    const now = await t.api('POST', `/api/campaigns/${campaign.id}/send`, {});
+    expect(now.statusCode).toBe(200);
+    expect(now.json()).toMatchObject({
+      status: 'sending',
+      scheduledAt: null,
+      startedAt: '2026-10-19T09:00:00.000Z',
+      stats: { recipients: 1, pending: 1 },
+    });
   });
 
   it('schedules, reschedules and cancels', async () => {
@@ -236,6 +262,7 @@ describe('campaigns API', () => {
     const campaign = await create();
     for (const [method, url, body] of [
       ['GET', '/api/campaigns'],
+      ['GET', `/api/campaigns/${campaign.id}`],
       ['POST', '/api/campaigns', draftBody],
       ['PATCH', `/api/campaigns/${campaign.id}`, { title: 'x' }],
       ['POST', '/api/campaigns/preview', { segment: {} }],

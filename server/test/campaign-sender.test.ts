@@ -130,6 +130,16 @@ describe('campaign delivery', () => {
     const messages = (await t.api('GET', '/api/bot/chats/7001/messages')).json().items;
     expect(messages.at(-1).text).toBe(`[Фото] ${photo.caption}`);
 
+    // A long name pushes the caption past the limit: it is cut at a word boundary with «…».
+    const template = `{name}, ${'скидка '.repeat(200).slice(0, 1016)}`;
+    expect(template).toHaveLength(1024);
+    const words = await create({ text: template, imageUrl: 'https://cdn.example.com/b.jpg' });
+    await send(words.id);
+    await run();
+    const cut = gateway.photos[1]!.caption;
+    expect(cut.length).toBeLessThanOrEqual(1024);
+    expect(cut).toMatch(/^Анастасия, скидка .* скидка…$/);
+
     // An upload that is missing on disk falls back to text.
     const second = await create({ text: 'Без фото', imageUrl: '/uploads/missing.jpg' });
     await send(second.id);

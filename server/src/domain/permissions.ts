@@ -75,6 +75,7 @@ const RESTRICTED_ROUTES: ReadonlyMap<string, readonly Role[]> = new Map([
   ['POST /bot/test', MANAGERS],
   // Telegram campaigns.
   ['GET /campaigns', MANAGERS],
+  ['GET /campaigns/:id', MANAGERS],
   ['POST /campaigns', MANAGERS],
   ['PATCH /campaigns/:id', MANAGERS],
   ['POST /campaigns/preview', MANAGERS],

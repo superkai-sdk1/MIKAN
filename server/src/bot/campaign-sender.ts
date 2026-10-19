@@ -119,7 +119,7 @@ async function startDue(run: Run): Promise<void> {
   for (const campaign of due) {
     let row: CampaignRow;
     try {
-      row = startCampaign(ctx.db, campaign.id, now, tz, { refuseEmpty: false }).row;
+      row = startCampaign(ctx.db, campaign.id, now, tz, 'schedule').row;
     } catch (err) {
       // Staff started or cancelled it at this very moment: nothing to do.
       const raced = err instanceof AppError && err.code === 'conflict';

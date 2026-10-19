@@ -11,7 +11,7 @@ import { bookingWebAppUrl } from '../domain/online-booking-links.js';
 import { getStudioSettings } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
 import { clientFullName, type ClientRow } from '../lib/serialize.js';
-import { TELEGRAM_MAX_CAPTION, truncate } from '../lib/text.js';
+import { TELEGRAM_MAX_CAPTION } from '../lib/text.js';
 import { encodeCallback, type CallbackAction } from './callback-data.js';
 import type { CallbackAnswer, CallbackDeps, CallbackQueryInput } from './callbacks.js';
 import type { InlineButton, InlineKeyboard } from './gateway.js';
@@ -40,6 +40,20 @@ export const BOOKING_WISH = '[Кнопка] 📅 Хочу записаться';
 
 /** `{name}` → the client's first name. */
 export const personalize = (text: string, name: string): string => text.replaceAll('{name}', name.trim());
+
+/** A cut further back than this share of the limit loses too much: then the text is cut mid-word. */
+const MIN_WORD_CUT = 0.8;
+
+/**
+ * At most `max` characters: cut at the last word boundary with «…» (staff check the limit with `{name}` as written, so
+ * a long name may push a caption a little over it).
+ */
+export function cutAtWord(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const head = text.slice(0, max - 1);
+  const space = head.search(/\s\S*$/);
+  return `${(space >= max * MIN_WORD_CUT ? head.slice(0, space) : head).trimEnd()}…`;
+}
 
 /** «📅 Записаться»: the booking Mini App while online booking is on (and the page is https), else the AI books. */
 export function bookButton(ctx: AppContext, text: string = MARKETING_BUTTONS.book): InlineButton {
@@ -76,7 +90,7 @@ export interface NewsMessage {
 export async function sendNews(ctx: AppContext, chatId: number, message: NewsMessage): Promise<string> {
   const photo = message.imageUrl ? photoSourceFor(ctx.config.dataDir, message.imageUrl) : null;
   if (photo) {
-    const caption = truncate(message.text, TELEGRAM_MAX_CAPTION);
+    const caption = cutAtWord(message.text, TELEGRAM_MAX_CAPTION);
     await ctx.gateway.sendPhoto(chatId, photo, caption, { keyboard: message.keyboard });
     return photoMessageText(caption);
   }

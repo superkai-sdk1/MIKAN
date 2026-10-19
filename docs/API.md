@@ -728,7 +728,7 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 | GET | `/clients?search=&archived=false&limit=&offset=` | — | `{ items: [Client], total }` — search matches the full name (first and last name), phone digits, instagram, Telegram nick and bot username; sorted by full name |
 | GET | `/clients/:id` | — | `Client` with `stats` |
 | POST | `/clients` | `{ name, phone, lastName?, birthday?, telegramNick?, instagram?, notes?, source?, botEnabled? }` | `Client` · `400` without `phone` («Телефон»: обязательное поле) · `409 conflict` if phone already belongs to another client (message names that client) |
-| PATCH | `/clients/:id` | any of the same fields + `archived`, `marketingOptOut` | `Client` · `400` when clearing a phone the client has |
+| PATCH | `/clients/:id` | `{ name?, phone?, lastName?, birthday?, telegramNick?, instagram?, notes?, source?, botEnabled?, archived?, marketingOptOut? }` | `Client` · `400` when clearing a phone the client has |
 
 - PATCH: omitted fields are kept, `null` / `""` clears an optional field. A phone, once set, can be changed but not
   removed. For a card without a phone, `phone: null` changes nothing, so older builds (which send every field, the
@@ -1483,18 +1483,22 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/campaigns` | — | `{ items: [Campaign] }` newest first |
+| GET | `/campaigns/:id` | — | `Campaign` (e.g. to follow `stats` while sending) · `404` «Рассылка не найдена» |
 | POST | `/campaigns` | `{ title, text, imageUrl?, button?, segment }` | `Campaign` (draft) |
 | PATCH | `/campaigns/:id` | any of the above | `Campaign` · drafts and scheduled only |
-| POST | `/campaigns/preview` | `{ segment }` | `{ count, sample: [ClientRef] }` (≤ 5) |
+| POST | `/campaigns/preview` | `{ segment }` | `{ count, sample: [ClientRef] }` (≤ 5, by name) |
 | POST | `/campaigns/:id/test` | — | `{ sent: true }` — to the staff chat of the employee (or the group) |
-| POST | `/campaigns/:id/send` | `{ at? }` | `Campaign` — `sending` now, or `scheduled` for `at` |
+| POST | `/campaigns/:id/send` | `{ at? }` | `Campaign` — `sending` now, or `scheduled` for `at`; also for a scheduled one (see below) |
 | POST | `/campaigns/:id/cancel` | — | `Campaign` — stops a scheduled or sending one (sent messages stay) |
 | DELETE | `/campaigns/:id` | — | `204` · drafts only |
 
-- `title` ≤ 200; `text` ≤ 3 500 characters, light Markdown like other bot messages; `{name}` = the client's first
-  name. `imageUrl` — an upload (`/uploads/…`) or an `https://` link; with it the message is a photo with the text as
-  caption, so `text` must then be ≤ 1 024 characters (`400` on POST / PATCH; a longer text after `{name}` is cut). A
-  picture Telegram can't take (a missing file, HEIC) is left out and the text goes alone.
+- Limits (`400 validation_error` otherwise): `title` 1…200 characters; `text` 1…3 500, light Markdown like other bot
+  messages, `{name}` = the client's first name; button `text` ≤ 64; the segment ranges above; `at` at most a year
+  ahead. `imageUrl` — an upload (`/uploads/…`) or an `https://` link; with it the message is a photo with the text as
+  caption, so `text` must then be ≤ 1 024 characters as written (`{name}` counts as its 6 characters; «Текст»: с
+  картинкой — не длиннее 1 024 символов (это подпись к фото)). When a client's name makes a caption longer, it is cut
+  at the last word boundary with «…» — never refused. A picture Telegram can't take (a missing file, HEIC) is left out
+  and the text goes alone.
 - `button` (`null` = none): `kind: "book"` — «📅 Записаться» (`text` optional, ≤ 64, default «📅 Записаться»): the
   booking Mini App while `onlineBooking.enabled` and the booking page is `https://`, else a button that stores
   «[Кнопка] 📅 Хочу записаться» as the client's message and the AI books as usual; `kind: "url"` — `text` (≤ 64) and an
@@ -1503,14 +1507,20 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
   on, the button press and the bot's confirmation («Хорошо, больше не будем присылать новости и предложения 🙌 …») are
   stored in the chat, and the confirmation offers «🔔 Снова получать новости» (turns it off again and removes itself).
   Only a chat linked to a client card can use them. Both are logged as `bot` (see «Audit log»).
-- `PATCH` / `DELETE` of a campaign that is not a draft (PATCH: or scheduled) → `409`.
+- `PATCH` of a campaign that is sending, sent or cancelled → `409` «Рассылку уже нельзя изменить: она отправляется
+  или завершена»; `DELETE` of anything but a draft → `409` «Удалить можно только черновик — запущенную рассылку можно
+  остановить».
 - `test` goes to the employee's own staff chat with the bot, else the staff group bound with `/staff` (where a Mini App
   button becomes a link to the same page), with `{name}` = the employee's name; nothing is stored or changed. `409`
-  when there is no such chat or the bot is not running; `502 upstream_error` when Telegram refuses it.
-- `send` — a draft or a scheduled campaign (else `409`). `at` in the future (≤ 1 year) → `scheduled` (sending again
-  reschedules); no `at` or a past one → sending starts now: `409` when the bot is not running or nobody matches. A
-  scheduled campaign starts when its time comes, with the recipients of that moment (none → it ends `sent` at once and
-  the staff chat is told).
+  when there is no such chat («Некуда отправить тест: поделитесь своим номером с ботом в Telegram или привяжите рабочий
+  чат командой /staff») or the bot is not running; `502 upstream_error` when Telegram refuses it.
+- `send` — a draft or a scheduled campaign (sending, sent or cancelled → `409` «Эта рассылка уже отправляется или
+  завершена»). `at` in the future → `scheduled` for it; on a scheduled campaign this moves it («Перенести»). No `at`
+  (or a past one) → sending starts now — on a scheduled campaign too («Отправить сейчас»; its `scheduledAt` becomes
+  `null`). Starting now is refused with `409 conflict` when the bot is not running («Telegram-бот не запущен —
+  проверьте настройки бота») or nobody matches («Под условия рассылки не подходит ни один клиент с Telegram, который
+  согласен получать новости»); the campaign stays as it was. A scheduled campaign starts by itself when its time comes,
+  with the recipients of that moment (none → it ends `sent` at once and the staff chat is told).
 - Recipients are fixed when sending starts; delivery runs in the background (checked every 5 s) at ≤ 20 messages a
   second — together with birthday and win-back messages. A failure is retried after 30 s, 1 min and 1.5 min (the first
   try and up to 3 retries), then `failed`; a client who blocked the bot is `blocked`; Telegram's flood limit (429)
@@ -1518,7 +1528,8 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
   Telegram, turned the bot off or was archived is skipped. Each outcome is stored before the next message, so a restart
   continues where it stopped (delivery is at least once: a send that timed out after Telegram took it is retried).
   Messages are stored in the chats as `system` (a photo as «[Фото] caption»).
-- `cancel` — a scheduled or sending campaign (else `409`): whoever was not reached yet is skipped; sent messages stay.
+- `cancel` — a scheduled or sending campaign (else `409` «Остановить можно только запланированную или идущую
+  рассылку»): whoever was not reached yet is skipped; sent messages stay.
 - When a campaign finishes the staff chat gets «📣 Рассылка «Осень» завершена / ✅ Доставлено: 120 из 130 /
   🚫 Заблокировали бота: 6 / ⚠️ Не доставлено: 4 / ➖ Пропущено (отписались или отвязали Telegram): 2» (one line each,
   zero counts left out).
