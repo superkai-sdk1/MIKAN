@@ -268,6 +268,13 @@ export const appointments = sqliteTable(
     notes: text('notes'),
     saleId: integer('sale_id'),
     completedAt: ms('completed_at'),
+    /** Where it was booked: `app` (staff) | `bot` | `miniapp` | `web` (docs/API.md «Online booking»). */
+    channel: text('channel').notNull().default('app'),
+    /** An online booking not settled yet: `awaiting_payment` (held until `hold_until`) | `awaiting_confirmation`. */
+    onlineState: text('online_state'),
+    holdUntil: ms('hold_until'),
+    /** Secret of the client's booking page `/book/b/<token>` (online bookings only). */
+    publicToken: text('public_token').unique(),
     createdAt: ms('created_at').notNull(),
     updatedAt: ms('updated_at').notNull(),
   },
@@ -275,6 +282,7 @@ export const appointments = sqliteTable(
     index('appointments_starts_idx').on(t.startsAt),
     index('appointments_master_idx').on(t.masterId, t.startsAt),
     index('appointments_client_idx').on(t.clientId),
+    index('appointments_online_idx').on(t.onlineState),
   ],
 );
 
@@ -746,4 +754,22 @@ export const payrollAdjustments = sqliteTable(
     createdAt: ms('created_at').notNull(),
   },
   (t) => [index('payroll_adjustments_employee_idx').on(t.employeeId, t.date)],
+);
+
+/** Staff iPhones that get push notifications (docs/API.md «Push notifications»). */
+export const pushDevices = sqliteTable(
+  'push_devices',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    employeeId: integer('employee_id')
+      .notNull()
+      .references(() => employees.id),
+    /** APNs device token, hex. */
+    token: text('token').notNull().unique(),
+    /** `production` (TestFlight, App Store) | `sandbox` (debug builds). */
+    environment: text('environment').notNull(),
+    createdAt: ms('created_at').notNull(),
+    lastSeenAt: ms('last_seen_at').notNull(),
+  },
+  (t) => [index('push_devices_employee_idx').on(t.employeeId)],
 );
