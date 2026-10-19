@@ -1612,6 +1612,21 @@ reminders like the bot does.
   студии. Все записи и клиенты есть в приложении MIKAN.». `/start me` (the page's «Получить ссылку в Telegram» for a
   website visitor without a link) greets and sends the sign-in message instead of the booking offer.
 - Limited per IP like the public booking routes: 120 reads / 20 writes a minute.
+- **The page `/book/me`** (`X-Robots-Tag: noindex`, styles in `cabinet.css`). Website: `?t=` is taken out of the
+  address bar and kept in `localStorage` (only in memory when storage is off) and sent as `X-Client-Token`; without a
+  link, or when the server refuses it, the sign-in screen: «Личный кабинет» / «Ссылка для входа устарела» / «Вы вышли из
+  кабинета» with how to get a link, «Получить ссылку в Telegram» (`https://t.me/<bot>?start=me`) and «Записаться
+  онлайн». Mini App: the init data only; an unlinked chat sees «Нужен ваш номер» (share the phone in the chat).
+  Tabs: «Записи» — upcoming appointments (time, status, services, master, price, prepayment, «Бесплатная отмена — до
+  …») with «Перенести», «Отменить» and «Оплатить предоплату» / «Страница записи» (`/book/b/<token>`), the waitlist
+  with «Не ждать», the history; «Бонусы» — balance, «500 бонусов действуют до 2 ноября», certificates, the history
+  (`…/bonuses`, loaded when the tab opens); «Уход» — memos by day with their dates, today's step marked «Сегодня».
+  «Перенести» opens the booking flow's day strip and free times (`…/days`, `…/slots`) as a history entry («Назад» and
+  Telegram's BackButton return; the MainButton moves in Telegram); a taken time reloads them with the reason.
+  «Отменить» asks first and says what it costs: nothing without a prepayment, «Сейчас отмена бесплатная: студия вернёт
+  предоплату …» until `freeCancellationUntil`, otherwise that the free cancellation is over plus the config's
+  `cancellationText`. «Записаться» (the MainButton in Telegram) opens `/book`; «Выйти» (website) calls `logout` and
+  forgets the link. Telegram theme as on the booking page.
 
 ### Portfolio
 Photos of each master's work, optionally tied to a service. Masters manage their own; owner and admin manage all.
