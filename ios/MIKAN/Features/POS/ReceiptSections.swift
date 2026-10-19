@@ -129,7 +129,7 @@ struct ReceiptLinesSection: View {
             } else {
                 ForEach($cart.lines) { $line in
                     if line.isCertificate {
-                        CertificateLineEditor(line: $line, showsLocalNote: true)
+                        CertificateLineEditor(line: $line)
                     } else {
                         ReceiptLineRow(
                             line: $line,

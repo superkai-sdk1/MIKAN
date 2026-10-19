@@ -5,6 +5,8 @@ nonisolated enum CertificateRules {
     static let minAmount = 500
     static let maxAmount = 100_000
     static let lineName = "Подарочный сертификат"
+    /// `recipientName` is kept up to this many characters (`400` beyond).
+    static let recipientNameLimit = 100
     /// Nominal chips of the sale sheet.
     static let suggestedAmounts = [1_000, 3_000, 5_000, 10_000]
 

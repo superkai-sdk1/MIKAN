@@ -11,7 +11,10 @@ struct CertificateSaleSheet: View {
     @State private var recipientName = ""
     @FocusState private var focusesRecipient: Bool
 
-    private var isValid: Bool { amount.map(CertificateRules.isValidAmount) ?? false }
+    private var isValid: Bool {
+        (amount.map(CertificateRules.isValidAmount) ?? false)
+            && recipientName.trimmed.count <= CertificateRules.recipientNameLimit
+    }
 
     var body: some View {
         NavigationStack {
@@ -64,7 +67,7 @@ struct CertificateSaleSheet: View {
     private var footer: String {
         let validity = cart.loyaltyRules.map { CertificateRules.validityText(months: $0.certificateValidityMonths) }
         let parts = [
-            "Имя будет на карточке сертификата. Код появится после оплаты.",
+            "Имя будет на карточке сертификата (до \(CertificateRules.recipientNameLimit) символов). Код появится после оплаты.",
             validity.map { "\($0)." },
         ]
         return parts.compactMap { $0 }.joined(separator: " ")
@@ -102,11 +105,9 @@ private struct AmountChips: View {
     }
 }
 
-/// A certificate line of the receipt or checkout: its nominal and recipient (quantity is always 1).
+/// A certificate line of the receipt or checkout: its nominal and recipient (quantity is always 1, no discount).
 struct CertificateLineEditor: View {
     @Binding var line: CartLine
-    /// Show the note that the line is kept on this phone until paid.
-    var showsLocalNote = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -130,8 +131,12 @@ struct CertificateLineEditor: View {
                 Label(CertificateRules.amountHint, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.orange)
-            } else if showsLocalNote {
-                Text("Код появится после оплаты. Пока чек открыт, сертификат хранится в нём только на этом телефоне.")
+            } else if line.recipientName.trimmed.count > CertificateRules.recipientNameLimit {
+                Label("Имя — не длиннее \(CertificateRules.recipientNameLimit) символов", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.orange)
+            } else {
+                Text("Код появится после оплаты. Скидка на сертификат не действует.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

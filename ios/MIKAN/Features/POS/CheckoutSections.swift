@@ -93,7 +93,10 @@ struct CheckoutTotalsSection: View {
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 if !cart.isDiscountValid {
-                    Text("Скидка не может быть больше суммы чека.").foregroundStyle(.red)
+                    Text(cart.sellsCertificate
+                        ? "Скидка не может быть больше суммы чека без подарочного сертификата."
+                        : "Скидка не может быть больше суммы чека.")
+                        .foregroundStyle(.red)
                 }
                 if cart.depositRemainder > 0 {
                     Text("Остаток предоплаты \(Money.format(cart.depositRemainder)) останется за записью — верните его клиенту в карточке записи.")

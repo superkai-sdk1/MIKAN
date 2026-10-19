@@ -168,65 +168,64 @@ struct CheckoutCreditsTests {
         #expect(!twice.isValid)
     }
 
-    @Test("The open receipt never carries a certificate line, and its discount is capped to what it holds")
-    func receiptBodySkipsCertificates() throws {
+    @Test("The open receipt keeps a certificate to sell; the discount never covers it")
+    func receiptBodyKeepsCertificates() throws {
         let cart = try makeCart()
         cart.addCustomService(name: "Хеликс", price: 3_000)
         cart.addCertificate(amount: 5_000, recipientName: "Маше")
         cart.discount = 4_000
 
         let body = cart.makeReceiptBody()
-        #expect(body.items?.map(\.name) == ["Хеликс"])
-        #expect(body.discount == 3_000)
+        #expect(body.items?.map(\.type) == [.service, .certificate])
+        #expect(body.items?.last?.recipientName == "Маше")
+        #expect(body.items?.last?.price == 5_000)
+        #expect(body.discount == 3_000, "capped to the lines it may cover")
+        #expect(!cart.isDiscountValid)
+        #expect(!cart.canSubmit)
+
+        cart.discount = 3_000
+        #expect(cart.isDiscountValid)
         #expect(cart.makeSaleBody().items.map(\.type) == [.service, .certificate])
     }
 
-    @Test("Reloading the same receipt keeps the certificate to sell and the credits; another receipt drops them")
-    func reloadKeepsLocalParts() throws {
+    @Test("A certificate line saved in the receipt comes back with its recipient and note")
+    func receiptRestoresCertificate() throws {
+        let cart = try makeCart()
+        let certificateLine = OpenReceiptItem(
+            type: .service, name: CertificateRules.lineName, quantity: 1, price: 5_000, total: 5_000,
+            certificate: OpenReceiptCertificate(recipientName: "Маше", note: "Упаковать")
+        )
+        cart.load(Self.receipt(id: 7, extra: [certificateLine]))
+
+        #expect(cart.lines.map(\.isCertificate) == [false, true])
+        let line = try #require(cart.lines.last)
+        #expect(line.unitPrice == 5_000)
+        #expect(line.recipientName == "Маше")
+        let saved = try #require(cart.makeReceiptBody().items?.last)
+        #expect(saved == SaleItemBody(
+            type: .certificate, productId: nil, serviceId: nil, name: nil, quantity: 1, price: 5_000,
+            recipientName: "Маше", note: "Упаковать"
+        ))
+    }
+
+    @Test("Reloading the same receipt keeps the bonuses and certificates chosen to pay; another receipt drops them")
+    func reloadKeepsCredits() throws {
         let cart = try loyalCart()
         let receipt = Self.receipt(id: 7)
         cart.load(receipt)
         cart.client = Self.ivan
         cart.setClientLoyalty(ClientLoyalty(bonusBalance: 2_000), for: Self.ivan.id)
-        cart.addCertificate(amount: 5_000, recipientName: "Маше")
         cart.bonusRequested = 300
+        cart.addCertificateCharge(Self.certificate("MIKAN-7K3Q-9F2D", balance: 2_000), amount: 1_000)
 
         cart.load(receipt)
-        #expect(cart.lines.filter(\.isCertificate).map(\.unitPrice) == [5_000])
         #expect(cart.bonusRequested == 300)
+        #expect(cart.certificateCharges.map(\.code) == ["MIKAN-7K3Q-9F2D"])
 
         cart.load(Self.receipt(id: 8))
-        #expect(!cart.sellsCertificate)
         #expect(cart.bonusRequested == 0)
+        #expect(cart.certificateCharges.isEmpty)
         #expect(cart.activeLoyalty == nil)
-    }
-
-    @Test("A discount above the saved lines survives a reload of the same receipt with a certificate to sell")
-    func reloadKeepsDiscount() throws {
-        let cart = try makeCart()
-        cart.load(Self.receipt(id: 7))
-        cart.addCertificate(amount: 5_000, recipientName: "")
-        cart.discount = 6_000
-
-        let saved = cart.makeReceiptBody()
-        #expect(saved.discount == 5_000, "capped to the receipt's own 5 000 ₽ line")
-        cart.load(Self.receipt(id: 7, discount: saved.discount))
-        #expect(cart.discount == 6_000)
-
-        cart.load(Self.receipt(id: 7, discount: 1_000))
-        #expect(cart.discount == 1_000, "a discount changed on another phone wins")
-    }
-
-    @Test("Another receipt is not opened over a certificate to sell")
-    func certificateBlocksSwitching() async throws {
-        let cart = try makeCart()
-        let server = try #require(URL(string: "https://example.invalid"))
-        let store = OpenReceiptsStore(api: APIClient(serverURL: server), cart: cart)
-        cart.addCertificate(amount: 5_000, recipientName: "")
-
-        await #expect(throws: CertificateInCartError.self) { try await store.openNew() }
-        await #expect(throws: CertificateInCartError.self) { try await store.open(Self.receipt(id: 8)) }
-        #expect(cart.sellsCertificate, "the certificate is still in the cart")
     }
 
     @Test("Clearing the cart forgets bonuses, certificates and the client's loyalty but keeps the studio's rules")
@@ -315,12 +314,14 @@ struct CheckoutCreditsTests {
         )
     }
 
-    private static func receipt(id: Int, discount: Int = 0) -> OpenReceipt {
+    private static func receipt(id: Int, extra: [OpenReceiptItem] = []) -> OpenReceipt {
         let line = OpenReceiptItem(type: .service, serviceId: 3, name: "Хеликс", quantity: 1, price: 5_000, total: 5_000)
+        let items = [line] + extra
+        let subtotal = items.reduce(0) { $0 + $1.total }
         return OpenReceipt(
-            id: id, appointment: nil, client: ivan, items: [line], subtotal: 5_000, discount: discount,
-            total: 5_000 - discount,
-            itemCount: 1, note: nil, openedBy: nil, createdAt: Fixtures.referenceDate, updatedAt: Fixtures.referenceDate
+            id: id, appointment: nil, client: ivan, items: items, subtotal: subtotal, discount: 0, total: subtotal,
+            itemCount: items.count, note: nil, openedBy: nil, createdAt: Fixtures.referenceDate,
+            updatedAt: Fixtures.referenceDate
         )
     }
 }

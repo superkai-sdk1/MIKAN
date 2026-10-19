@@ -75,7 +75,7 @@ extension CartStore {
         return discount
     }
 
-    /// Lines the discount applies to: everything but a gift certificate being sold.
+    /// Lines the discount applies to: everything but a gift certificate being sold (the server's rule too).
     var discountableSubtotal: Int { lines.filter { !$0.isCertificate }.reduce(0) { $0 + $1.total } }
 
     /// The birthday discount in rubles for the current lines.

@@ -63,7 +63,6 @@ final class OpenReceiptsStore {
 
     /// «Новый чек» (or «Продать» for a client): a new receipt in the cart. One left empty is deleted on leaving.
     func openNew(for client: ClientRef? = nil) async throws {
-        try keepsCertificateToSell(switchingTo: nil)
         let receipt = try await create(.blank(clientId: client?.id))
         try await open(receipt)
         newBlankId = receipt.id
@@ -73,7 +72,6 @@ final class OpenReceiptsStore {
     /// device has already opened for it. Returns it.
     @discardableResult
     func startVisit(_ appointment: Appointment) async throws -> OpenReceipt {
-        if cart.appointmentId != appointment.id { try keepsCertificateToSell(switchingTo: nil) }
         let receipt = try await create(.visit(appointmentId: appointment.id))
         try await open(receipt)
         return receipt
@@ -87,7 +85,6 @@ final class OpenReceiptsStore {
             await flush()
             guard pendingSave == nil else { return }
         } else {
-            try keepsCertificateToSell(switchingTo: receipt.id)
             await leave()
             guard pendingSave == nil else { throw UnsavedReceiptError(reason: saveError) }
         }
@@ -95,13 +92,6 @@ final class OpenReceiptsStore {
         cart.load(fresh)
         remember(fresh)
         if newBlankId != fresh.id { newBlankId = nil }
-    }
-
-    /// A gift certificate to sell lives only in the cart (open receipts do not hold it): another receipt is not
-    /// opened over it, so it is never dropped unnoticed.
-    private func keepsCertificateToSell(switchingTo receiptId: Int?) throws {
-        guard cart.sellsCertificate, receiptId == nil || receiptId != cart.receiptId else { return }
-        throw CertificateInCartError()
     }
 
     /// Re-reads the cart's receipt (receipt screen, checkout): one paid or deleted on another device is let go with
@@ -312,13 +302,6 @@ nonisolated struct UnsavedReceiptError: LocalizedError, Sendable {
         let prefix = "Открытый сейчас чек не сохранён, поэтому другой не открыт."
         guard let reason else { return prefix }
         return "\(prefix) \(reason)"
-    }
-}
-
-/// The cart sells a gift certificate that is not paid yet: opening another receipt would lose it.
-nonisolated struct CertificateInCartError: LocalizedError, Sendable {
-    var errorDescription: String? {
-        "В текущем чеке продаётся подарочный сертификат. Оплатите этот чек или уберите из него сертификат, чтобы открыть другой."
     }
 }
 

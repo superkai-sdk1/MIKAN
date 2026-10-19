@@ -75,15 +75,36 @@ nonisolated extension GiftCertificateStatus {
     }
 }
 
-/// A movement of a certificate's balance. The contract names no types; the app knows the likely ones and shows any
-/// other as a plain operation.
+/// A movement of a certificate's balance, oldest first; Σ `amount` = `balance`.
 nonisolated struct GiftCertificateOperation: Decodable, Hashable, Sendable {
-    let type: String
-    /// As the server sends it (credits positive, debits usually negative).
+    let type: GiftCertificateOperationType
+    /// Signed: credits > 0, debits < 0.
     let amount: Int
     var saleId: Int?
     var saleNumber: Int?
     let createdAt: Date
+}
+
+nonisolated enum GiftCertificateOperationType: String, Codable, Sendable {
+    /// Sold: + the nominal, `saleId` — the sale that sold it.
+    case issue
+    /// − spent in sale `saleId`.
+    case redeem
+    /// + given back: sale `saleId` was refunded.
+    case refund
+    /// − the rest burnt by the owner, or because the sale that sold it was refunded.
+    case cancel
+    /// − the rest burnt at `expiresAt`.
+    case expire
+    /// A type from a newer server.
+    case unknown
+}
+
+nonisolated extension GiftCertificateOperationType {
+    init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = GiftCertificateOperationType(rawValue: raw) ?? .unknown
+    }
 }
 
 /// Gift certificate codes: «MIKAN-XXXX-XXXX», letters and digits. Staff type, paste or dictate them in any shape.
