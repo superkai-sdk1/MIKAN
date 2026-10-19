@@ -673,7 +673,7 @@ one (`POST /auth/logout`); devices still on a token without `sid` stay signed in
 ### Badges & dashboard
 | Method | Path | Response |
 |---|---|---|
-| GET | `/badges` | `{ "unreadChats": 2, "needsAttention": 1, "newBookingRequests": 1, "lowStock": 3, "onlineAwaiting": 2 }` (the app polls every 30 s; `lowStock` — active products with at least one low size; `onlineAwaiting` — online bookings in the future waiting for staff confirmation) |
+| GET | `/badges` | `{ "unreadChats": 2, "needsAttention": 1, "newBookingRequests": 1, "lowStock": 3, "onlineAwaiting": 2, "waitlist": 4 }` (the app polls every 30 s; `lowStock` — active products with at least one low size; `onlineAwaiting` — online bookings in the future waiting for staff confirmation; `waitlist` — entries still waiting) |
 | GET | `/dashboard` | `{ "date": "2026-10-15", "appointments": [Appointment] (today, studio tz, excl. cancelled), "revenueToday": 12000 (revenue as in analytics: without bonus payments and certificates sold), "salesCountToday": 4, "openShift": CashShift \| null, "badges": {…same as /badges} }` |
 
 ### Employees
@@ -1532,6 +1532,82 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
   `https://` `PUBLIC_URL`; a failure is logged). After the `/start` greeting a client chat also gets «📅 Записаться можно
   прямо здесь: выберите услугу, мастера и свободное время — это займёт минуту.» with the inline `web_app` button
   «📅 Записаться онлайн», while online booking is on.
+
+### Client cabinet (личный кабинет)
+The client's own page: `PUBLIC_URL/book/me` (the same static app as the booking page). In the Mini App the client is
+known by the Telegram init data (the chat's linked card). On the website the client signs in with a link from the
+bot: «👤 Мои записи и бонусы» in the bot (greeting button, the `/me` command, a phrase the AI recognises) sends
+`PUBLIC_URL/book/me?t=<token>` (valid 30 days; the page stores the token and sends `X-Client-Token`). Without a
+linked card the bot first asks to share the phone. Every cabinet endpoint answers `401` «Войдите через Telegram-бота
+студии» without a valid identity.
+
+| Method | Path (no staff auth) | Body | Response |
+|---|---|---|---|
+| GET | `/public/cabinet` | — | `Cabinet` |
+| POST | `/public/cabinet/appointments/:id/reschedule` | `{ startsAt }` | `CabinetAppointment` · the online booking free-time rules, own future scheduled/confirmed appointments only; `409 schedule_conflict` «Это время уже занято» |
+| POST | `/public/cabinet/appointments/:id/cancel` | — | `CabinetAppointment` · own future appointments; cancellation rules apply as for staff (late → the rule's retain when `autoRetain`), staff are told (`client_cancelled`) |
+| GET | `/public/cabinet/bonuses` | — | `{ balance, items: [ { type, amount, expiresAt, createdAt, note } ] }` (last 50) |
+| DELETE | `/public/cabinet/waitlist/:id` | — | `204` · own entry |
+| POST | `/public/cabinet/logout` | — | `204` · ends the website token |
+
+`Cabinet`: `{ client: { name, phone: "+7 *** ***-**-01" }, loyalty: { bonusBalance, expiring } | null,
+upcoming: [CabinetAppointment], past: [CabinetAppointment] (last 20), waitlist: [WaitlistEntryPublic],
+certificates: [ { code, balance, expiresAt } ] (bought by the client, active), aftercare: [ { appointmentId, date,
+title, steps: [ { day, text } ] } ] (memos of the last 60 days) }`.
+`CabinetAppointment`: `{ id, startsAt, endsAt, status, onlineState, items: [ { name, price } ], master: { name },
+price, deposit, depositRequired, freeCancellationUntil, canReschedule, canCancel, bookingToken }` — `canReschedule` /
+`canCancel` false for past, completed or cancelled ones; reschedule and cancel are offered only when online booking
+is on. Reschedules and cancellations here are audited as `online`, notify the staff chat (and push) and rebuild the
+reminders like the bot does.
+
+### Portfolio
+Photos of each master's work, optionally tied to a service. Masters manage their own; owner and admin manage all.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/portfolio?employeeId=&serviceId=` | — | `{ items: [PortfolioPhoto] }` in `sort` order |
+| POST | `/portfolio` | `{ employeeId, imageUrl, serviceId?, caption? }` | `PortfolioPhoto` (added last) · `imageUrl` from `POST /uploads` |
+| PATCH | `/portfolio/:id` | `{ caption?, serviceId? }` | `PortfolioPhoto` |
+| PUT | `/portfolio/order` | `{ employeeId, ids: [...] }` | `{ items }` |
+| DELETE | `/portfolio/:id` | — | `204` |
+| GET | `/public/booking/masters/:id/portfolio` | — | `{ items: [ { imageUrl, caption, service: { id, name } \| null } ] }` (no auth) |
+| GET | `/public/booking/portfolio?serviceId=` | — | the same, every active master's photos of that service, newest first, ≤ 30 |
+
+`PortfolioPhoto`: `{ id, employee: EmployeeRef, imageUrl, caption, service: ServiceRef | null, sort, createdAt }`.
+`GET /public/booking/masters` items gain `photos` (count) and `cover` (the first photo's URL or `null`). The booking
+page shows a master's works on the master step and «Работы мастеров» on a service; the bot's tool
+`show_portfolio { masterId?, serviceId? }` sends up to 5 photos.
+
+### Waitlist (лист ожидания)
+When the wanted time is taken, a client (or staff for a client) puts a wish on the waitlist: items, a master or any,
+a date range of at most 30 days. At most 3 waiting entries per client.
+
+`WaitlistEntry`: `{ id, client: ClientRef, items: [ { serviceId, variant?, name } ], master: EmployeeRef | null,
+dateFrom, dateTo, status: "waiting"|"notified"|"booked"|"cancelled"|"expired", channel, notifiedAt, appointmentId,
+note, createdAt }`; `WaitlistEntryPublic` — the same without `client`.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/waitlist?status=` | — | `{ items: [WaitlistEntry] }` oldest first |
+| POST | `/waitlist` | `{ clientId, items, masterId?, dateFrom, dateTo, note? }` | `WaitlistEntry` (`channel: app`) |
+| PATCH | `/waitlist/:id` | `{ status: "cancelled" }` | `WaitlistEntry` |
+| POST | `/public/booking/waitlist` | `{ items, masterId?, dateFrom, dateTo, name, phone, note? }` (+ init data) | `WaitlistEntryPublic` · rate-limited like bookings |
+
+- **Freed time.** When an appointment is cancelled, marked no-show, moved, deleted or an online hold is released —
+  and when a work schedule or exception adds time — the server looks for waiting entries (oldest first) whose range
+  covers that date and whose items now fit a free start (the online booking rules). Up to 3 entries per freed slot are
+  told in Telegram: «Освободилось время: 21 октября, 15:00 у Фатимы — записаться?» with «📅 Записаться» (the Mini App
+  opened on that time) → status `notified`. Whoever books first gets it; an entry is told at most once a day.
+- A booking by the client (any channel) that matches an entry marks it `booked` (`appointmentId`). Entries past
+  `dateTo` become `expired` (checked hourly).
+- Only clients with a linked Telegram chat can be told; the booking page asks a website client to open the bot link
+  (`/start` deep link) after joining. The bot tool `join_waitlist { items, masterId?, dateFrom, dateTo, note? }`.
+- Staff see the list in the app (More → «Лист ожидания», badge `waitlist`) and can add or cancel entries.
+
+### Offline mode (app)
+The app keeps the last loaded schedule (today ± 7 days, with appointment details), clients, the catalog and settings
+on the phone. Without a network it shows them read-only under «Нет сети — данные на 14:32»; writes are disabled with
+«Нужен интернет». It refreshes as soon as the network is back. No server changes.
 
 ### Push notifications
 Staff iPhones get push notifications through APNs (token auth). Configured by env `APNS_KEY_ID`, `APNS_TEAM_ID`,

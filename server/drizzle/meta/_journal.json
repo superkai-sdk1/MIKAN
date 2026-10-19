@@ -127,6 +127,13 @@
       "when": 1792441642217,
       "tag": "0018_auth_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792444177700,
+      "tag": "0019_client_cabinet",
+      "breakpoints": true
     }
   ]
 }

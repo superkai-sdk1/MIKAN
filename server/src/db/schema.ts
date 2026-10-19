@@ -939,3 +939,67 @@ export const authSessions = sqliteTable(
   },
   (t) => [index('auth_sessions_employee_idx').on(t.employeeId, t.revokedAt)],
 );
+
+/** Photos of masters' work (docs/API.md «Portfolio»): shown when clients choose a master online and by the bot. */
+export const portfolioPhotos = sqliteTable(
+  'portfolio_photos',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    employeeId: integer('employee_id')
+      .notNull()
+      .references(() => employees.id),
+    serviceId: integer('service_id').references(() => services.id, { onDelete: 'set null' }),
+    /** `/uploads/…` */
+    imageUrl: text('image_url').notNull(),
+    caption: text('caption'),
+    sort: integer('sort').notNull().default(0),
+    createdBy: integer('created_by').references(() => employees.id),
+    createdAt: ms('created_at').notNull(),
+  },
+  (t) => [index('portfolio_photos_employee_idx').on(t.employeeId, t.sort)],
+);
+
+/** Clients waiting for free time (docs/API.md «Waitlist»). */
+export const waitlistEntries = sqliteTable(
+  'waitlist_entries',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    /** JSON `[{ serviceId, variant? }]` — what the client wants booked. */
+    items: text('items').notNull(),
+    /** NULL — any master. */
+    masterId: integer('master_id').references(() => employees.id),
+    /** Studio-local "YYYY-MM-DD", inclusive. */
+    dateFrom: text('date_from').notNull(),
+    dateTo: text('date_to').notNull(),
+    /** `waiting` | `notified` | `booked` | `cancelled` | `expired`. */
+    status: text('status').notNull(),
+    /** `bot` | `miniapp` | `web` | `app`. */
+    channel: text('channel').notNull(),
+    notifiedAt: ms('notified_at'),
+    appointmentId: integer('appointment_id').references(() => appointments.id),
+    note: text('note'),
+    createdAt: ms('created_at').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  (t) => [index('waitlist_entries_status_idx').on(t.status, t.dateFrom)],
+);
+
+/** Sign-in links of the client cabinet on the website (docs/API.md «Client cabinet»); the Mini App needs none. */
+export const clientAccessTokens = sqliteTable(
+  'client_access_tokens',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    /** SHA-256 of the token; the token itself is only in the link. */
+    tokenHash: text('token_hash').notNull().unique(),
+    createdAt: ms('created_at').notNull(),
+    expiresAt: ms('expires_at').notNull(),
+    lastUsedAt: ms('last_used_at'),
+  },
+  (t) => [index('client_access_tokens_client_idx').on(t.clientId)],
+);
