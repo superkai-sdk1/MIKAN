@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { AUDIT_SOURCES, listAudit } from '../domain/audit.js';
-import { AppError } from '../lib/errors.js';
 import { pagination, parse, queryId, queryInstant } from '../lib/validation.js';
+import { assertRole } from '../domain/permissions.js';
 
 /** One entity or a comma-separated list («appointment,deposit»: an appointment's own history). */
 const entities = z
@@ -26,7 +26,7 @@ const listQuery = pagination.extend({
 /** The action log (docs/API.md «Audit log»), for the studio owner. */
 export function auditRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/audit', async (request) => {
-    if (request.employee.role !== 'owner') throw new AppError('forbidden', 'Это доступно владельцу студии');
+    assertRole(request.employee, ['owner']);
     const q = parse(listQuery, request.query);
     return listAudit(ctx.db, {
       from: q.from,

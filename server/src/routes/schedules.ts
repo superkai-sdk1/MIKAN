@@ -15,10 +15,11 @@ import {
   scheduleDaysFor,
   workScheduleOut,
 } from '../domain/work-schedule.js';
-import { AppError, badRequest, notFound } from '../lib/errors.js';
+import { badRequest, notFound } from '../lib/errors.js';
 import type { EmployeeRow } from '../lib/serialize.js';
 import { isValidCalendarDate, localDate } from '../lib/time.js';
 import { idParams, nullableText, parse } from '../lib/validation.js';
+import { assertRole } from '../domain/permissions.js';
 
 /** Work schedules of masters (docs/API.md «Work schedules»): everyone reads, owners and admins change them. */
 
@@ -46,9 +47,7 @@ function checkedRange(from: string, to: string): string[] {
 }
 
 function assertCanChange(request: FastifyRequest): void {
-  if (request.employee.role !== 'owner' && request.employee.role !== 'admin') {
-    throw new AppError('forbidden', 'Это доступно владельцу и администратору');
-  }
+  assertRole(request.employee, ['owner', 'admin']);
 }
 
 function employeeOr404(db: DbOrTx, id: number): EmployeeRow {

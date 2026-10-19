@@ -8,15 +8,15 @@ import { ADJUSTMENT_KINDS, adjustmentsOut, createAdjustment, deleteAdjustment } 
 import { payRulesInput, payRulesOut, savePayRules } from '../domain/payroll-rules.js';
 import { payrollList, payrollPeriod, payrollStatement } from '../domain/payroll.js';
 import { studioTimezone } from '../domain/settings.js';
-import { AppError, notFound } from '../lib/errors.js';
+import { notFound } from '../lib/errors.js';
 import { idempotent } from '../lib/idempotency.js';
 import type { EmployeeRow } from '../lib/serialize.js';
 import { isValidCalendarDate, localDate } from '../lib/time.js';
 import { idParams, money, nullableText, parse } from '../lib/validation.js';
+import { assertRole } from '../domain/permissions.js';
 
 /** Payroll (docs/API.md «Payroll»): the owner sees and manages everyone's pay, everyone else reads their own. */
 
-const OWNER_ONLY = 'Это доступно владельцу студии';
 
 const studioDate = z.string().trim().refine(isValidCalendarDate, { message: 'дата должна быть в формате ГГГГ-ММ-ДД' });
 const periodQuery = z.object({ from: studioDate, to: studioDate });
@@ -34,7 +34,7 @@ const adjustmentBody = z.object({
 const isOwner = (employee: EmployeeRow) => employee.role === 'owner';
 
 function assertOwner(request: FastifyRequest): void {
-  if (!isOwner(request.employee)) throw new AppError('forbidden', OWNER_ONLY);
+  assertRole(request.employee, ['owner']);
 }
 
 /** The owner may look at anyone; everyone else only at themselves. */
