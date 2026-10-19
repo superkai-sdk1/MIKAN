@@ -16,13 +16,15 @@ import { checkDiskSpace, DISK_CHECK_INTERVAL_MS, raiseAlert, resolveAlerts } fro
 import { pruneAuditLog } from './domain/audit.js';
 import { runBackupIfDue } from './domain/backup.js';
 import { expireLoyalty, LOYALTY_EXPIRY_INTERVAL_MS } from './domain/loyalty.js';
-import { HOLD_CHECK_INTERVAL_MS, releaseUnpaidHolds } from './domain/online-booking-lifecycle.js';
+import { HOLD_CHECK_INTERVAL_MS, rejectUnconfirmedBookings, releaseUnpaidHolds } from './domain/online-booking-lifecycle.js';
 import { uploadBackupOffsite } from './domain/offsite-backup.js';
+import { backupUploadsOffsite } from './domain/offsite-uploads.js';
 import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
 import { studioTimezone } from './domain/settings.js';
 import { expireWaitlist } from './domain/waitlist.js';
 import { FREED_CHECK_INTERVAL_MS, offerFreedTime, WAITLIST_EXPIRY_INTERVAL_MS } from './domain/waitlist-matcher.js';
 import { errorMessage } from './lib/errors.js';
+import { localDate } from './lib/time.js';
 import { createQrProvider } from './payments/tochka.js';
 import { createHttp2Transport } from './push/apns.js';
 
@@ -95,7 +97,8 @@ async function main(): Promise<void> {
       });
   }, QR_SWEEP_INTERVAL_MS);
 
-  // Online bookings whose prepayment did not arrive in time free their time (docs/API.md «Online booking»).
+  // Online bookings whose prepayment did not arrive in time free their time, and the ones nobody confirmed in time are
+  // rejected (docs/API.md «Online booking», «StudioSettings»).
   let releasing = false;
   const holdTimer = setInterval(() => {
     if (releasing) return;
@@ -103,6 +106,9 @@ async function main(): Promise<void> {
     releaseUnpaidHolds(ctx)
       .then((released) => released && log.info({ released }, 'unpaid online holds released'))
       .catch((err) => log.error({ err: errorMessage(err) }, 'online hold check failed'))
+      .then(() => rejectUnconfirmedBookings(ctx))
+      .then((rejected) => rejected && log.info({ rejected }, 'unconfirmed online bookings rejected'))
+      .catch((err) => log.error({ err: errorMessage(err) }, 'unconfirmed online booking check failed'))
       .finally(() => {
         releasing = false;
       });
@@ -170,7 +176,7 @@ async function main(): Promise<void> {
   }, RETENTION_CHECK_INTERVAL_MS);
 
   const backupDir = path.join(config.dataDir, 'backups');
-  // The daily copy, then its encrypted off-site copy; staff hear about failures (domain/alerts.ts).
+  // The daily copy, then its encrypted off-site copy and the photo archive; staff hear about failures (domain/alerts.ts).
   const copyOffsite = async (file: string) => {
     if (!config.offsiteBackup) {
       if (config.offsiteBackupProblem) {
@@ -195,6 +201,7 @@ async function main(): Promise<void> {
           log.info({ file }, 'database backup created');
           await resolveAlerts(ctx, ['backup'], '✅ Бэкап базы снова создаётся');
           await copyOffsite(file);
+          if (config.offsiteBackup) await backupUploadsOffsite(ctx, config.offsiteBackup, localDate(Date.now(), studioTimezone(db)));
         },
         async (err) => {
           log.error({ err: errorMessage(err) }, 'database backup failed');

@@ -38,6 +38,8 @@ export const CLOSED_SHOWN_DAYS = 90;
 export const STAFF_LIMIT_MESSAGE = `В листе ожидания уже ${MAX_OPEN_PER_CLIENT} заявки этого клиента`;
 export const CLIENT_LIMIT_MESSAGE = `У вас уже ${MAX_OPEN_PER_CLIENT} заявки в листе ожидания — дождитесь сообщения или отмените одну из них`;
 export const CLOSED_MESSAGE = 'Эта запись листа ожидания уже закрыта';
+/** The same in the client cabinet (docs/API.md «Client cabinet» → «Waitlist»). */
+export const CLIENT_CLOSED_MESSAGE = 'Эта запись в листе ожидания уже неактуальна';
 
 export interface WaitlistInput {
   channel: WaitlistChannel;
@@ -175,14 +177,28 @@ export function listWaitlist(db: DbOrTx, statuses: string[] | undefined, now = D
     .all();
 }
 
-/** Staff cancel an open entry; an entry cancelled already is returned as is. */
-export function cancelWaitlistEntry(db: DbOrTx, id: number, now = Date.now()): WaitlistRow {
+/**
+ * Cancels an open entry; an entry cancelled already is returned as is. Staff cancel any entry; the client in the
+ * cabinet (`by.clientId`) only their own — somebody else's reads as not found.
+ */
+export function cancelWaitlistEntry(db: DbOrTx, id: number, now = Date.now(), by: { clientId?: number } = {}): WaitlistRow {
   return db.transaction((tx) => {
     const row = getWaitlistRow(tx, id);
+    if (by.clientId !== undefined && row.clientId !== by.clientId) throw notFound('Запись листа ожидания не найдена');
     if (row.status === 'cancelled') return row;
-    if (!isOpenStatus(row.status)) throw conflict(CLOSED_MESSAGE);
+    if (!isOpenStatus(row.status)) throw conflict(by.clientId !== undefined ? CLIENT_CLOSED_MESSAGE : CLOSED_MESSAGE);
     return tx.update(waitlistEntries).set({ status: 'cancelled', updatedAt: now }).where(eq(waitlistEntries.id, id)).returning().get()!;
   });
+}
+
+/** The client's open (`waiting` / `notified`) entries, oldest first. */
+export function clientOpenEntries(db: DbOrTx, clientId: number): WaitlistRow[] {
+  return db
+    .select()
+    .from(waitlistEntries)
+    .where(and(eq(waitlistEntries.clientId, clientId), inArray(waitlistEntries.status, [...OPEN_WAITLIST_STATUSES])))
+    .orderBy(asc(waitlistEntries.createdAt), asc(waitlistEntries.id))
+    .all();
 }
 
 /** Entries whose last date is before today (studio) become `expired`; returns how many. */
@@ -246,9 +262,15 @@ export function serializeWaitlistEntry(db: DbOrTx, row: WaitlistRow): WaitlistEn
   return serializeWaitlist(db, [row])[0]!;
 }
 
-/** `WaitlistEntryPublic`: the entry without the client. */
-export function publicWaitlistEntry(db: DbOrTx, row: WaitlistRow) {
-  const { client: _client, ...rest } = serializeWaitlistEntry(db, row);
-  return rest;
+/**
+ * `WaitlistEntryPublic` of each row: the entry without the client, and without the note of an entry staff added in
+ * the app (it is theirs); the client's own words are shown.
+ */
+export function publicWaitlistEntries(db: DbOrTx, rows: WaitlistRow[]) {
+  return serializeWaitlist(db, rows).map(({ client: _client, ...rest }) => ({ ...rest, note: rest.channel === 'app' ? null : rest.note }));
 }
-export type WaitlistEntryPublic = ReturnType<typeof publicWaitlistEntry>;
+export type WaitlistEntryPublic = ReturnType<typeof publicWaitlistEntries>[number];
+
+export function publicWaitlistEntry(db: DbOrTx, row: WaitlistRow): WaitlistEntryPublic {
+  return publicWaitlistEntries(db, [row])[0]!;
+}

@@ -205,7 +205,7 @@ describe('cabinet page: dates, bonuses, memos and the waitlist', () => {
 
   it('sums up a waitlist entry', () => {
     const entry = {
-      items: [{ name: 'Соски — Два' }, { name: 'Мочка' }], master: { name: 'Фатима' }, dateFrom: '2026-10-20', dateTo: '2026-10-25', status: 'waiting',
+      items: [{ name: 'Соски', variant: 'Два' }, { name: 'Мочка', variant: null }], master: { name: 'Фатима' }, dateFrom: '2026-10-20', dateTo: '2026-10-25', status: 'waiting',
     };
     expect(waitlistSummary(entry)).toEqual({ title: 'Соски — Два, Мочка', details: `20–25${NBSP}октября · мастер Фатима`, notice: null });
     expect(waitlistSummary({ ...entry, master: null, status: 'notified' })).toEqual({

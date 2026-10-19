@@ -4,10 +4,10 @@ import type { AppContext } from '../context.js';
 import { assertChangeable, cancelFromCabinet, ownAppointment, rescheduleFromCabinet } from '../domain/cabinet-actions.js';
 import { CABINET_SIGN_IN, clientByCabinetToken, revokeCabinetToken } from '../domain/cabinet-access.js';
 import { durationOf, rescheduleDays, rescheduleStarts } from '../domain/cabinet-slots.js';
-import { cancelWaitlistByClient } from '../domain/cabinet-waitlist.js';
 import { buildCabinet, cabinetAppointment, cabinetBonuses } from '../domain/cabinet.js';
 import { findClientByChat } from '../domain/clients.js';
 import { assertOnlineEnabled } from '../domain/online-booking.js';
+import { cancelWaitlistEntry } from '../domain/waitlist.js';
 import { badRequest, unauthorized } from '../lib/errors.js';
 import type { AppointmentRow, ClientRow } from '../lib/serialize.js';
 import { validateInitData } from '../lib/telegram-webapp.js';
@@ -106,7 +106,7 @@ export function publicCabinetRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.delete('/waitlist/:id', WRITE_LIMIT, async (request, reply) => {
     const { client } = identify(ctx, request);
-    cancelWaitlistByClient(db, client.id, parse(idParams, request.params).id);
+    cancelWaitlistEntry(db, parse(idParams, request.params).id, Date.now(), { clientId: client.id });
     return reply.code(204).send();
   });
 

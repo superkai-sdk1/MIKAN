@@ -6,12 +6,12 @@ import { parseSteps, type AppointmentRow, type ClientRow } from '../lib/serializ
 import { DAY_MS, localDate, toIso } from '../lib/time.js';
 import { bonusBalance, nearestExpiring } from './bonuses.js';
 import { freeUntil } from './cancellation.js';
-import { openWaitlist } from './cabinet-waitlist.js';
 import { heldDeposit } from './deposits.js';
 import { onlineMasters } from './online-booking-slots.js';
 import { employeesByIds, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { getRetentionSettings } from './retention-settings.js';
 import { getStudioSettings, type CancellationRules } from './settings.js';
+import { clientOpenEntries, publicWaitlistEntries } from './waitlist.js';
 
 /**
  * What the client sees in their cabinet (docs/API.md «Client cabinet»): their appointments with what they may do with
@@ -193,7 +193,7 @@ export function buildCabinet(db: DbOrTx, client: ClientRow, now = Date.now()) {
     loyalty: loyaltyOf(db, client.id, now),
     upcoming: cabinetAppointments(db, upcomingRows(db, client.id, now), now),
     past: cabinetAppointments(db, pastRows(db, client.id, now), now),
-    waitlist: openWaitlist(db, client.id),
+    waitlist: publicWaitlistEntries(db, clientOpenEntries(db, client.id)),
     certificates: activeCertificates(db, client.id, now),
     aftercare: aftercareMemos(db, client.id, now),
   };

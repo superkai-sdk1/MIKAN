@@ -73,6 +73,9 @@ export const staffPaidText = (f: BookingFacts, amount: number): string =>
 export const staffReleasedText = (f: BookingFacts): string =>
   `⌛ Онлайн-запись №${f.id} снята — предоплата не поступила вовремя: ${summary(f)}`;
 
+export const staffUnconfirmedText = (f: BookingFacts): string =>
+  `⌛ Онлайн-запись №${f.id} отклонена — её не подтвердили вовремя: ${summary(f)}`;
+
 export function staffClientCancelText(db: DbOrTx, a: AppointmentRow, f: BookingFacts): string {
   const held = heldOf(db, a);
   const head = `❌ Клиент отменил онлайн-запись №${f.id}: ${summary(f)}`;

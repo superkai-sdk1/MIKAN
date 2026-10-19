@@ -605,7 +605,8 @@ carry the inline buttons «✅ Приду» and «🔁 Перенести» (see
   booking still `awaiting_confirmation` that long after it was made, or 2 hours before its start if that comes first,
   is rejected by itself with the reason «Студия не успела подтвердить запись — выберите, пожалуйста, другое время»
   (the client is told with the booking link, staff see it in the staff chat; audited as `system`; checked every
-  minute). On PUT omitted = unchanged.
+  minute). Never sooner than 30 minutes after it was made (a booking for the nearest free time is not rejected at
+  once); one holding a prepayment staff took is left to staff. On PUT omitted = unchanged.
 - `cancellation` — the studio's prepayment rules, told to clients and applied when a visit that holds a prepayment is
   cancelled or missed:
   - `freeHours` (0…336) — a cancellation at least this many hours before the start is free (the whole prepayment can
@@ -744,7 +745,8 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   cancellations on the booking page and moves / cancellations in the client cabinet as `online`; client actions in the bot (online booking, booking request,
   reschedule, confirm «Приду», «🔕 Не присылать новости» / «Снова получать новости» — `client.marketing_opt_out` /
   `client.marketing_opt_in`) as `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed
-  QR payments, an online hold confirmed by its prepayment and an unpaid hold released as `system`. Staff confirming / rejecting an online booking
+  QR payments, an online hold confirmed by its prepayment, an unpaid hold released and an online booking nobody
+  confirmed in time (`appointment.online_reject`) as `system`. Staff confirming / rejecting an online booking
   in the app is `appointment.online_confirm` / `appointment.online_reject`. Signing out is `employee.logout`
   («Выход из приложения на устройстве «iPhone 16 Pro · MIKAN 13»»), ending a session from the list
   `employee.session_end` («Сессия «Анна» на устройстве «…» завершена»), both with the id of the session's employee.
@@ -1461,7 +1463,9 @@ most 2 unsettled online bookings per client: a third → `409` «У вас уж�
 - Staff are told in the staff chat (and by push): «🆕 Онлайн-запись (сайт): Анна, +7…, Мочка — 21 октября, 15:00,
   мастер Фатима · ждёт подтверждения» / «· ждёт оплату до 14:35» (channel: `сайт` | `Mini App` | `бот`; the client's
   comment on a second line «Комментарий: …») / «💳 Онлайн-запись оплачена: … · предоплата 1 000 ₽» (instead of the usual
-  «💳 Предоплата … получена»); a released hold — «⌛ Онлайн-запись №… снята — предоплата не поступила вовремя: …».
+  «💳 Предоплата … получена»); a released hold — «⌛ Онлайн-запись №… снята — предоплата не поступила вовремя: …»; a
+  booking nobody confirmed in time (`confirmationHours`, see «StudioSettings») — «⌛ Онлайн-запись №… отклонена — её не
+  подтвердили вовремя: …».
 - The client with a Telegram chat (the chat linked to the card; the Mini App chat that booked) gets: on booking —
   «Заявка принята, время за вами 🙌 Подтвердим в ближайшее время.» with the time, services and master, or the payment
   request with the link button «💳 Оплатить предоплату»; on confirmation or payment — «✅ Запись подтверждена: 21
@@ -1470,8 +1474,9 @@ most 2 unsettled online bookings per client: a third → `409` «У вас уж�
   (`PUBLIC_URL/book`); on release — «⌛ Время … освободилось — предоплата не поступила вовремя.» and the booking link.
   In the bot the AI tells the booking itself; only the payment request follows its reply. Reminders are scheduled as for
   any appointment.
-- Background: unpaid holds are checked every minute.
-- Audit: the booking is logged with source `bot` / `online`, its release with `system`.
+- Background: unpaid holds and bookings past their confirmation deadline are checked every minute.
+- Audit: the booking is logged with source `bot` / `online`, its release and a rejection nobody confirmed in time
+  (`appointment.online_reject`) with `system`.
 
 **Booking page and Mini App** (`PUBLIC_URL/book`, static files in `server/public/book` served by the server; `/book/*`
 paths that are not files return the page, a missing `.js` / `.css` / `.png`… → `404`).
@@ -1697,9 +1702,10 @@ a date range of at most 30 days. At most 3 open (`waiting` / `notified`) entries
 
 `WaitlistEntry`: `{ id, client: ClientRef, items: [ { serviceId, variant?, name } ], master: EmployeeRef | null,
 dateFrom, dateTo, status: "waiting"|"notified"|"booked"|"cancelled"|"expired", channel, notifiedAt, appointmentId,
-note, createdAt }`; `WaitlistEntryPublic` — the same without `client`. `items[].name` — the service's name (`variant`
-— the variant's name or `null`); `channel` — `app` | `bot` | `miniapp` | `web`; `dateFrom` / `dateTo` — studio-local
-`"YYYY-MM-DD"`, inclusive; `notifiedAt` — the last freed-time message (instant or `null`).
+note, createdAt }`; `WaitlistEntryPublic` (the booking page, the cabinet) — the same without `client`, and `note` is
+`null` on entries staff added in the app (`channel: app`). `items[].name` — the service's name (`variant` — the
+variant's name or `null`; pages show «Соски — Два»); `channel` — `app` | `bot` | `miniapp` | `web`; `dateFrom` /
+`dateTo` — studio-local `"YYYY-MM-DD"`, inclusive; `notifiedAt` — the last freed-time message (instant or `null`).
 
 | Method | Path | Body | Response |
 |---|---|---|---|
@@ -2156,8 +2162,8 @@ bot off for themselves, and skipped if the visit is no longer `completed` when i
 #### Alerts
 The staff chat (bound with `/staff`; else every staff chat) is told when something needs a person: the AI provider
 refuses for lack of balance («⚠️ Закончился баланс ИИ (Polza) — бот отвечает заглушкой»), the AI fails several times
-in a row, a daily backup or its off-site copy fails, free disk space runs low. Each kind at most once every 6 hours,
-and once more when it recovers.
+in a row, a daily backup or its off-site copy (the database or the photo archive) fails, free disk space runs low.
+Each kind at most once every 6 hours, and once more when it recovers.
 
 #### Formatting
 Bot messages may use light Markdown that the server renders for Telegram (HTML parse mode): `**bold**`, a heading
@@ -2175,8 +2181,10 @@ without the AI (no AI cost), personalised with the employee's name (their own ap
   open receipts left from earlier days, new booking requests, chats waiting for staff, low stock, the cash shift
   (yesterday's left open / none open), clients with a birthday among today's visits — or «Всё спокойно»; tomorrow's
   count and first appointment.
-- **Evening** (`eveningDigestAt`): revenue of the day with the number of sales, the average check and the payment
-  split (with bonuses and gift certificates when there were any), certificates sold, refunds; visits done / no-shows / cancelled; today's visits left unpaid; open receipts; the open cash shift
+- **Evening** (`eveningDigestAt`): revenue of the day as analytics counts it (`net`: sales made minus refunds made that
+  day, without bonus payments and certificates sold) with the number of sales, the average check and the payment
+  split (with bonuses and gift certificates when there were any), certificates sold («🎁 Продано сертификатов: 2 на
+  8 000 ₽», when any), refunds; visits done / no-shows / cancelled; today's visits left unpaid; open receipts; the open cash shift
   with the expected cash («не забудьте закрыть»); tomorrow's appointments and prepayments still awaited for them.
 Each digest is sent once per studio day when its time comes (not later than 3 hours after it, e.g. after a server
 restart), only while the bot is running; it is stored in the chat as an `assistant` message.

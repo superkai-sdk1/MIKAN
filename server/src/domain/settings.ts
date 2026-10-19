@@ -37,6 +37,11 @@ export interface OnlineBookingSettings {
   stepMinutes: number;
   /** Shown to clients on the booking page (≤ 500 characters). */
   note: string;
+  /**
+   * An unconfirmed booking rejects itself this many hours after it was made (or 2 hours before its start, if that
+   * comes first); 1…168, `null` = never (see domain/online-booking-lifecycle.ts).
+   */
+  confirmationHours: number | null;
 }
 
 export interface CancellationRules {
@@ -66,6 +71,8 @@ export const ONLINE_HOLD_MIN = 5;
 export const ONLINE_HOLD_MAX = 60;
 export const ONLINE_STEPS = [15, 30, 60] as const;
 export const ONLINE_NOTE_MAX = 500;
+export const ONLINE_CONFIRMATION_MIN = 1;
+export const ONLINE_CONFIRMATION_MAX = 7 * 24;
 
 export interface BotSettingsStored {
   enabled: boolean;
@@ -122,7 +129,7 @@ export const DEFAULT_STUDIO: StudioSettings = {
   workdayEnd: '21:00',
   cancellation: { freeHours: 24, lateRetainPercent: 100, noShowRetainPercent: 100, autoRetain: false },
   reviewLinks: { yandex: '', twogis: '', google: '' },
-  onlineBooking: { enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '' },
+  onlineBooking: { enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '', confirmationHours: 24 },
 };
 
 export const DEFAULT_BOT: BotSettingsStored = {
@@ -149,6 +156,7 @@ const KEY_ALERTS = 'alerts';
 const KEY_RETENTION = 'retention';
 const KEY_DISMISSED_DUPLICATES = 'clientDuplicatesDismissed';
 const KEY_WAITLIST_FREED = 'waitlistFreed';
+const KEY_OFFSITE_UPLOADS = 'offsiteUploads';
 
 function readKey<T>(db: DbOrTx, key: string): T | null {
   const row = db.select().from(settings).where(eq(settings.key, key)).get();
@@ -328,4 +336,23 @@ export function readWaitlistFreed(db: DbOrTx): unknown {
 
 export function writeWaitlistFreed(db: DbOrTx, value: unknown): void {
   writeKey(db, KEY_WAITLIST_FREED, value);
+}
+
+/** The last photo archive sent off-site (domain/offsite-uploads.ts): the manifest hash of its file set. */
+export interface OffsiteUploadsState {
+  hash: string;
+  /** A fingerprint of the storage (endpoint, bucket, prefix) and the encryption key it was sent to and with. */
+  target: string;
+  key: string;
+  files: number;
+  uploadedAt: number;
+}
+
+export function getOffsiteUploads(db: DbOrTx): OffsiteUploadsState | null {
+  const value = readKey<OffsiteUploadsState>(db, KEY_OFFSITE_UPLOADS);
+  return value && typeof value.hash === 'string' ? value : null;
+}
+
+export function setOffsiteUploads(db: DbOrTx, value: OffsiteUploadsState): void {
+  writeKey(db, KEY_OFFSITE_UPLOADS, value);
 }

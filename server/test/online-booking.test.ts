@@ -46,11 +46,11 @@ describe('online booking: settings, catalog and free time', () => {
 
   it('keeps the onlineBooking settings: defaults, validation, omitted fields unchanged', async () => {
     expect((await t.api('GET', '/api/settings/studio')).json().onlineBooking).toEqual({
-      enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '',
+      enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '', confirmationHours: 24,
     });
     const put = await t.api('PUT', '/api/settings/studio', { onlineBooking: { leadMinutes: 60, note: 'Возьмите паспорт' } });
     expect(put.json().onlineBooking).toEqual({
-      enabled: true, leadMinutes: 60, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: 'Возьмите паспорт',
+      enabled: true, leadMinutes: 60, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: 'Возьмите паспорт', confirmationHours: 24,
     });
     // Another subset keeps the rest; null clears the note.
     const again = await t.api('PUT', '/api/settings/studio', { name: 'MIKAN', onlineBooking: { stepMinutes: 15, note: null } });
