@@ -31,6 +31,15 @@ final class CartStore {
     /// Cash handed over by the client (single cash mode only); used for the change, never sent to the server.
     var cashReceived: Int?
 
+    /// Bonuses the cashier asked to spend; checkout applies at most `bonusLimit` of them (see `bonusApplied`).
+    var bonusRequested = 0
+    /// Gift certificates spent at this checkout, in the order they were added.
+    private(set) var certificateCharges: [CertificateCharge] = []
+    /// The studio's loyalty rules (`GET /settings/retention`); `nil` until checkout loads them.
+    private(set) var loyaltyRules: CheckoutLoyaltyRules?
+    /// The bonuses and birthday discount of the cart's client, loaded at checkout.
+    private(set) var clientLoyalty: CartClientLoyalty?
+
     /// `POST /appointments/:id/complete` before the sale (only while the appointment is not completed yet).
     var completesAppointment = true
     /// Aftercare via the Telegram bot; effective only when the appointment's client has linked the bot.
@@ -59,25 +68,35 @@ final class CartStore {
 
     /// Part of the held prepayment counted in this receipt: `min(held, total)`.
     var depositApplied: Int { CheckoutRules.depositApplied(deposit, total: total) }
-    /// What the client pays now: total minus the applied prepayment. The payment methods cover only this.
-    var amountDue: Int { CheckoutRules.amountDue(total: total, deposit: deposit) }
+    /// What is left after the prepayment: bonuses, certificates and the payment methods cover it.
+    var amountAfterDeposit: Int { CheckoutRules.amountDue(total: total, deposit: deposit) }
+    /// What the client pays now by the payment methods: total minus the prepayment, bonuses and certificates.
+    var amountDue: Int { max(0, amountAfterDeposit - creditsApplied) }
     /// Prepayment that stays held for the appointment after this receipt (more was paid than the receipt costs).
     var depositRemainder: Int { CheckoutRules.depositRemainder(deposit, total: total) }
-    /// Nothing is left to pay now: the prepayment covers the whole receipt.
-    var isPaidByDeposit: Bool { depositApplied > 0 && amountDue == 0 }
+    /// The prepayment alone covers the whole receipt.
+    var isPaidByDeposit: Bool { depositApplied > 0 && amountAfterDeposit == 0 }
+    /// Nothing is left for the payment methods: the prepayment, bonuses and certificates cover the whole receipt.
+    var isPaidInFull: Bool { amountDue == 0 && depositApplied + creditsApplied > 0 }
 
-    /// How `amountDue` is paid now (the prepayment is not part of it). Empty when the prepayment covers everything
-    /// (checkout then hides the methods, so amounts typed earlier in «Разделить» must not count).
+    /// How `amountDue` is paid now (the prepayment, bonuses and certificates are not part of it). Empty when they
+    /// cover everything (checkout then hides the methods, so amounts typed earlier in «Разделить» must not count).
     var split: PaymentSplit {
-        guard !isPaidByDeposit else { return PaymentSplit() }
+        guard !isPaidInFull else { return PaymentSplit() }
         return switch paymentMode {
-        case .single(let method): PaymentSplit.single(method, total: total, deposit: deposit)
+        case .single(let method): PaymentSplit.single(method, due: amountDue)
         case .split: manualSplit
         }
     }
 
-    /// Payments sent with the sale: the split plus the applied prepayment (always sent, 0 when none).
-    var payments: Payments { split.payments(deposit: depositApplied) }
+    /// Payments sent with the sale: the split, the applied prepayment (always sent, 0 when none), bonuses and the
+    /// certificates spent.
+    var payments: Payments {
+        CheckoutCredits.payments(
+            split: split, deposit: depositApplied, bonus: bonusApplied,
+            charges: certificateCharges, amounts: certificateAmounts
+        )
+    }
 
     /// Positive: still to distribute; negative: overpaid. Always 0 in single mode.
     var remaining: Int { split.remaining(for: amountDue) }
@@ -104,6 +123,7 @@ final class CartStore {
             subtotal: subtotal,
             discount: discount,
             deposit: deposit,
+            credits: creditsApplied,
             split: split
         ) && isCashReceivedEnough
     }
@@ -137,6 +157,38 @@ final class CartStore {
             manualSplit.transfer += manualSplit.qr
             manualSplit.qr = 0
         }
+    }
+
+    // MARK: Bonuses and gift certificates (see `CartStore+Loyalty.swift`)
+
+    func setLoyaltyRules(_ rules: CheckoutLoyaltyRules) {
+        loyaltyRules = rules
+    }
+
+    /// The client's bonuses as `GET /clients/:id` reported them. Bonuses asked for another client are dropped.
+    func setClientLoyalty(_ loyalty: ClientLoyalty?, for clientId: Int) {
+        if clientLoyalty?.clientId != clientId { bonusRequested = 0 }
+        clientLoyalty = loyalty.map { CartClientLoyalty(clientId: clientId, loyalty: $0) }
+    }
+
+    /// Adds a looked-up certificate taking `amount` (a second lookup of the same code updates it instead).
+    func addCertificateCharge(_ certificate: GiftCertificate, amount: Int) {
+        let charge = CertificateCharge(certificate: certificate, amount: amount)
+        if let index = certificateCharges.firstIndex(where: { $0.code == charge.code }) {
+            certificateCharges[index] = charge
+        } else {
+            certificateCharges.append(charge)
+        }
+    }
+
+    /// What was typed is kept; `certificateAmounts` takes at most the balance and what is unpaid.
+    func setCertificateAmount(_ amount: Int, code: String) {
+        guard let index = certificateCharges.firstIndex(where: { $0.code == code }) else { return }
+        certificateCharges[index].amount = max(0, amount)
+    }
+
+    func removeCertificateCharge(code: String) {
+        certificateCharges.removeAll { $0.code == code }
     }
 
     // MARK: Appointment
@@ -248,6 +300,11 @@ final class CartStore {
         }
     }
 
+    /// «Подарочный сертификат» for `amount` rubles; the sale issues it. Such a receipt is paid with money only.
+    func addCertificate(amount: Int, recipientName: String) {
+        lines.append(.certificate(amount: amount, recipientName: recipientName))
+    }
+
     func addCustomService(name: String, price: Int) {
         lines.append(CartLine(kind: .service(id: nil), name: name.trimmed, unitPrice: max(0, price)))
     }
@@ -290,7 +347,9 @@ final class CartStore {
         let isSameReceipt = receipt.id == receiptId
         let kept = (
             paymentMode: paymentMode, manualSplit: manualSplit, cashReceived: cashReceived,
-            completesAppointment: completesAppointment, sendsAftercare: sendsAftercare
+            completesAppointment: completesAppointment, sendsAftercare: sendsAftercare,
+            certificateLines: lines.filter(\.isCertificate), bonusRequested: bonusRequested,
+            certificateCharges: certificateCharges, clientLoyalty: clientLoyalty
         )
         clear()
         receiptId = receipt.id
@@ -307,16 +366,23 @@ final class CartStore {
         cashReceived = kept.cashReceived
         completesAppointment = kept.completesAppointment
         sendsAftercare = kept.sendsAftercare
+        // Certificates to sell live only here (the open receipt does not hold them); spent ones stay chosen.
+        lines += kept.certificateLines
+        bonusRequested = kept.bonusRequested
+        certificateCharges = kept.certificateCharges
+        clientLoyalty = kept.clientLoyalty
     }
 
     /// The whole receipt for `PUT /receipts/:id`. A discount above the lines (being typed, or lines removed) is
-    /// saved capped, so the save still goes through; checkout keeps flagging it.
+    /// saved capped, so the save still goes through; checkout keeps flagging it. A gift certificate to sell is not
+    /// part of it: the contract has no certificate lines in open receipts, so it stays in this cart until paid.
     func makeReceiptBody() -> ReceiptBody {
-        ReceiptBody(
+        let saved = lines.filter { !$0.isCertificate }
+        return ReceiptBody(
             appointmentId: appointmentId,
             clientId: client?.id,
-            items: lines.map(\.body),
-            discount: min(max(0, discount), subtotal),
+            items: saved.map(\.body),
+            discount: min(max(0, discount), saved.reduce(0) { $0 + $1.total }),
             note: note.nonEmpty
         )
     }
@@ -371,6 +437,9 @@ final class CartStore {
         cashReceived = nil
         completesAppointment = true
         sendsAftercare = false
+        bonusRequested = 0
+        certificateCharges = []
+        clientLoyalty = nil
     }
 
     /// The last used method, unless the studio no longer takes it (card).
