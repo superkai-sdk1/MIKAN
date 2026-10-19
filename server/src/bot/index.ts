@@ -66,8 +66,15 @@ async function withMarkup<T>(text: string, send: (formatted: { text: string; par
   }
 }
 
+/** Telegram's flood limit when it names no wait. */
+const DEFAULT_RETRY_AFTER_SECONDS = 5;
+
 function toSendError(err: unknown): BotSendError {
   if (err instanceof GrammyError) {
+    if (err.error_code === 429) {
+      const seconds = err.parameters.retry_after ?? DEFAULT_RETRY_AFTER_SECONDS;
+      return new BotSendError(`Telegram: ${err.description}`, false, seconds * 1000);
+    }
     const unreachable = err.error_code === 403 || (err.error_code === 400 && /chat not found|user not found/i.test(err.description));
     return new BotSendError(`Telegram: ${err.description}`, unreachable);
   }

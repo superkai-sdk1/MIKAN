@@ -1,13 +1,14 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAMPAIGN_RATE_PER_SECOND, runCampaigns } from '../src/bot/campaign-sender.js';
-import type { PhotoSource, SendOptions, SentMessage } from '../src/bot/gateway.js';
+import { BotSendError, BotUnavailableError, type PhotoSource, type SendOptions, type SentMessage } from '../src/bot/gateway.js';
 import { handleStaffCommand } from '../src/bot/onboarding.js';
+import { sendDueRetention } from '../src/bot/retention.js';
 import { issueStaffCode } from '../src/bot/staff.js';
 import { campaignRecipients, clients } from '../src/db/schema.js';
 import { cancelCampaign } from '../src/domain/campaigns.js';
-import { blocked, createTestApp, FakeGateway, type TestApp } from './helpers.js';
-import { addClient, FakeClock } from './retention-fixtures.js';
+import { blocked, createTestApp, FakeGateway, make, type TestApp } from './helpers.js';
+import { addClient, addVisit, FakeClock, monthsBefore } from './retention-fixtures.js';
 
 const NOW = Date.parse('2026-10-19T09:00:00.000Z'); // Mon 12:00 Moscow
 const STAFF_GROUP = -5001;
@@ -150,26 +151,35 @@ describe('campaign delivery', () => {
     expect(clock.now() - start).toBeGreaterThanOrEqual(2200);
   });
 
-  it('retries a failed message in later ticks up to 3 times; a blocked client is «blocked»', async () => {
+  it('retries a failed message after 30 s, 1 min, 1.5 min (4 tries); a blocked client is «blocked»', async () => {
     const anna = await addClient(t, 'Анна', { chatId: 7001 });
     await addClient(t, 'Борис', { chatId: 7002 });
     await addClient(t, 'Вера', { chatId: 7003 });
     const c = await create();
     await send(c.id);
 
-    gateway.failures.push(new Error('Telegram: Too Many Requests'), blocked(), new Error('Telegram недоступен'));
+    gateway.failures.push(new Error('Telegram недоступен'), blocked(), new Error('Telegram недоступен'));
     expect(await run()).toMatchObject({ sent: 0, blocked: 1, retried: 2, finished: 0 });
     expect(recipients(c.id).map((r) => [r.status, r.attempts])).toEqual([
       ['pending', 1],
       ['blocked', 1],
       ['pending', 1],
     ]);
+    // Not before the delay.
+    clock.advance(29_000);
+    expect(await run()).toMatchObject({ sent: 0, retried: 0, finished: 0 });
+    expect(gateway.textsTo(7001)).toEqual([]);
 
-    // Анна fails three more times (4 tries in all) → failed; Вера goes through.
+    // Анна fails three more times (4 tries in all) → failed; Вера goes through on her third try.
+    clock.advance(1_200);
     gateway.failures.push(new Error('e2'), new Error('e2'));
     expect(await run()).toMatchObject({ sent: 0, retried: 2 });
+    clock.advance(59_000);
+    expect(await run()).toMatchObject({ sent: 0, retried: 0 });
+    clock.advance(1_200);
     gateway.failures.push(new Error('e3'));
     expect(await run()).toMatchObject({ sent: 1, retried: 1 });
+    clock.advance(90_200);
     gateway.failures.push(new Error('e4'));
     expect(await run()).toMatchObject({ sent: 0, failed: 1, finished: 1 });
 
@@ -193,7 +203,44 @@ describe('campaign delivery', () => {
     await send(c.id);
     gateway.photoFailures.push(new Error('Telegram: wrong file'));
     expect(await run()).toMatchObject({ retried: 1, sent: 0 });
+    clock.advance(30_000);
     expect(await run()).toMatchObject({ sent: 1, finished: 1 });
+  });
+
+  it('Telegram’s flood limit (429) pauses sending for the time it asks, without counting a try', async () => {
+    await addClient(t, 'Анна', { chatId: 7001 });
+    await addClient(t, 'Борис', { chatId: 7002 });
+    const c = await create();
+    await send(c.id);
+    gateway.failures.push(new BotSendError('Telegram: Too Many Requests: retry after 3', false, 3_000));
+    expect(await run()).toMatchObject({ sent: 0, retried: 0, failed: 0 });
+    expect(recipients(c.id).map((r) => [r.status, r.attempts])).toEqual([
+      ['pending', 0],
+      ['pending', 0],
+    ]);
+    clock.advance(2_000);
+    expect(await run()).toMatchObject({ sent: 0 });
+    clock.advance(1_000);
+    expect(await run()).toMatchObject({ sent: 2, finished: 1 });
+  });
+
+  it('campaigns, birthday and win-back messages share one rate: ≤ 20 a second together', async () => {
+    const helix = await make(t, '/api/services', { name: 'Хеликс', category: 'piercing', price: 3000, durationMin: 30 });
+    for (let i = 0; i < 25; i++) {
+      const client = await addClient(t, `Клиент${i}`, { chatId: 8000 + i });
+      addVisit(t, client.id, { at: monthsBefore(NOW, 12), serviceIds: [helix.id] });
+    }
+    await t.api('PUT', '/api/settings/retention', { winback: { sendAt: '12:00', dailyLimit: 25 } });
+    const c = await create();
+    await send(c.id);
+    const [campaignRun, retentionRun] = await Promise.all([run(), sendDueRetention(t.ctx, { now: NOW, clock })]);
+    expect(campaignRun.sent).toBe(25);
+    expect(retentionRun.winback).toBe(25);
+    const times = [...gateway.times].sort((a, b) => a - b);
+    expect(times).toHaveLength(50);
+    for (let i = CAMPAIGN_RATE_PER_SECOND; i < times.length; i++) {
+      expect(times[i]! - times[i - CAMPAIGN_RATE_PER_SECOND]!).toBeGreaterThanOrEqual(1000);
+    }
   });
 
   it('stops while the bot is offline and resumes where it stopped (a restart repeats nothing)', async () => {
@@ -201,6 +248,10 @@ describe('campaign delivery', () => {
     const c = await create();
     await send(c.id);
     expect(await run({ maxMessages: 2 })).toMatchObject({ sent: 2, finished: 0 });
+    // A send that dies with the bot (stopped meanwhile) is not counted against the client.
+    gateway.failures.push(new BotUnavailableError());
+    expect(await run()).toMatchObject({ sent: 0, retried: 0 });
+    expect(recipients(c.id).map((r) => r.attempts)).toEqual([1, 1, 0, 0, 0]);
     expect((await campaign(c.id)).stats).toMatchObject({ sent: 2, pending: 3 });
 
     gateway.running = false;

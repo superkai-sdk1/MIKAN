@@ -64,14 +64,19 @@ export class BotUnavailableError extends Error {
   }
 }
 
-/** Telegram delivery failure. `blocked` = the user blocked the bot / chat is unreachable (HTTP 403). */
+/**
+ * Telegram delivery failure. `blocked` = the user blocked the bot / chat is unreachable (HTTP 403). `retryAfterMs` —
+ * Telegram's flood limit (HTTP 429): nothing should be sent for that long.
+ */
 export class BotSendError extends Error {
   readonly blocked: boolean;
+  readonly retryAfterMs: number | null;
 
-  constructor(message: string, blocked: boolean) {
+  constructor(message: string, blocked: boolean, retryAfterMs: number | null = null) {
     super(message);
     this.name = 'BotSendError';
     this.blocked = blocked;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 

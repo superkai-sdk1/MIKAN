@@ -1,6 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BotSendError } from '../src/bot/gateway.js';
+import { handleStaffCommand } from '../src/bot/onboarding.js';
 import { GIFT_NOTES, isDue, sendDueRetention } from '../src/bot/retention.js';
+import { issueStaffCode } from '../src/bot/staff.js';
 import { bonusOperations, retentionSends } from '../src/db/schema.js';
 import { claimRetentionSend, releaseRetentionSend } from '../src/domain/retention-audience.js';
 import { DEFAULT_RETENTION } from '../src/domain/retention-settings.js';
@@ -11,6 +14,7 @@ import { addClient, addVisit, DAY, FakeClock, monthsBefore, TZ } from './retenti
 const msk = (date: string, time: string) => Date.parse(`${date}T${time}:00+03:00`);
 const BIRTHDAY_GREETING = DEFAULT_RETENTION.birthday.text.replace('{name}', 'Анна');
 const OPT_OUT = [{ text: '🔕 Не присылать новости', data: 'mo' }];
+const STAFF_GROUP = -5001;
 
 describe('birthday and win-back messages', () => {
   let t: TestApp;
@@ -144,6 +148,28 @@ describe('birthday and win-back messages', () => {
       for (let minute = 3; minute < 8; minute++) await run(msk('2026-10-19', `10:0${minute}`));
       expect(t.gateway.textsTo(7003)).toEqual([]);
       expect(sends().map((s) => s.clientId)).toEqual([boris.id, anna.id, vera.id]);
+    });
+  });
+
+  describe('delivery problems', () => {
+    it('Telegram’s flood limit (429) holds the messages for the time it asks, without counting a try', async () => {
+      await addClient(t, 'Анна', { chatId: 7001, birthday: '1995-10-19' });
+      t.gateway.failures.push(new BotSendError('Telegram: Too Many Requests: retry after 5', false, 5_000));
+      expect((await run(msk('2026-10-19', '10:00'))).birthday).toBe(0);
+      expect(sends()).toEqual([]);
+      expect((await run(msk('2026-10-19', '10:00') + 4_000)).birthday).toBe(0);
+      expect((await run(msk('2026-10-19', '10:00') + 5_000)).birthday).toBe(1);
+      expect(t.gateway.textsTo(7001)).toHaveLength(1);
+    });
+
+    it('a gift that could not be credited is reported to the staff chat', async () => {
+      handleStaffCommand(t.ctx, STAFF_GROUP, issueStaffCode(t.ctx.db).code);
+      const anna = await addClient(t, 'Анна', { chatId: 7001, birthday: '1995-10-19' });
+      t.ctx.sqlite.exec('drop table bonus_operations');
+      expect((await run(msk('2026-10-19', '10:00'))).birthday).toBe(1);
+      expect(t.gateway.textsTo(STAFF_GROUP)).toEqual([
+        `⚠️ Не удалось начислить 500 бонусов в подарок на день рождения клиенту «Анна» (карточка №${anna.id}) — начислите их вручную`,
+      ]);
     });
   });
 

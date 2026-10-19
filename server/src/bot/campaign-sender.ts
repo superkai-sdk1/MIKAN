@@ -11,8 +11,8 @@ import {
   type RecipientRow,
 } from '../domain/campaigns.js';
 import { studioTimezone } from '../domain/settings.js';
-import { errorMessage } from '../lib/errors.js';
-import { Pacer, realClock, type Clock } from '../lib/pacer.js';
+import { AppError, errorMessage } from '../lib/errors.js';
+import { BULK_MESSAGES_PER_SECOND, bulkPacer, realClock, type Clock, type Pacer } from '../lib/pacer.js';
 import type { ClientRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
 import { BotSendError, BotUnavailableError, type InlineKeyboard } from './gateway.js';
@@ -21,14 +21,18 @@ import { notifyStaff } from './staff.js';
 
 /**
  * Delivers campaigns in the background (docs/API.md «Campaigns»): starts scheduled ones when their time comes, sends
- * the pending recipients at ≤ 20 messages a second, retries failures, and tells the staff chat when a campaign ends.
- * Every recipient's outcome is stored before the next one, so a restart picks up where it stopped.
+ * the pending recipients at ≤ 20 messages a second (shared with birthday and win-back messages), retries failures,
+ * and tells the staff chat when a campaign ends. Every recipient's outcome is stored before the next one, so a
+ * restart picks up where it stopped. Delivery is at least once: a send that timed out after Telegram took it is tried
+ * again, so a client may rarely get a message twice.
  */
 
 export const CAMPAIGN_TICK_MS = 5_000;
-export const CAMPAIGN_RATE_PER_SECOND = 20;
-/** The first try and up to 3 retries (each in a later tick). */
+export const CAMPAIGN_RATE_PER_SECOND = BULK_MESSAGES_PER_SECOND;
+/** The first try and up to 3 retries. */
 export const CAMPAIGN_MAX_ATTEMPTS = 4;
+/** A failed message waits this long times the tries so far: 30 s, 1 min, 1.5 min. */
+export const CAMPAIGN_RETRY_DELAY_MS = 30_000;
 /** At most this many messages per tick (10 s at the full rate); the rest go in the next ticks. */
 const BATCH = 200;
 const BLOCKED_ERROR = 'Клиент заблокировал бота или чат недоступен';
@@ -47,6 +51,27 @@ export interface CampaignRunOptions {
   clock?: Clock;
   /** Messages this run may send at most. */
   maxMessages?: number;
+}
+
+/** One tick's tools and tallies. */
+interface Run {
+  ctx: AppContext;
+  clock: Clock;
+  pacer: Pacer;
+  stats: CampaignRunStats;
+  /** Recipient id → when its next try may go (in memory: after a restart failed ones are tried at once). */
+  retryAt: Map<number, number>;
+}
+
+const retryTimes = new WeakMap<AppContext, Map<number, number>>();
+
+function retryAtOf(ctx: AppContext): Map<number, number> {
+  let map = retryTimes.get(ctx);
+  if (!map) {
+    map = new Map();
+    retryTimes.set(ctx, map);
+  }
+  return map;
 }
 
 /** Why a fixed recipient no longer gets the message, or null. */
@@ -81,7 +106,9 @@ async function announceFinished(ctx: AppContext, row: CampaignRow): Promise<void
 }
 
 /** Scheduled campaigns whose time has come start now (recipients fixed as of now). */
-async function startDue(ctx: AppContext, now: number, stats: CampaignRunStats): Promise<void> {
+async function startDue(run: Run): Promise<void> {
+  const { ctx, stats } = run;
+  const now = run.clock.now();
   const due = ctx.db
     .select()
     .from(campaigns)
@@ -90,15 +117,19 @@ async function startDue(ctx: AppContext, now: number, stats: CampaignRunStats): 
     .all();
   const tz = studioTimezone(ctx.db);
   for (const campaign of due) {
+    let row: CampaignRow;
     try {
-      const { row } = startCampaign(ctx.db, campaign.id, now, tz, { refuseEmpty: false });
-      stats.started += 1;
-      if (row.status === 'sent') {
-        stats.finished += 1;
-        await announceFinished(ctx, row);
-      }
+      row = startCampaign(ctx.db, campaign.id, now, tz, { refuseEmpty: false }).row;
     } catch (err) {
-      ctx.log.error({ campaignId: campaign.id, err: errorMessage(err) }, 'scheduled campaign did not start');
+      // Staff started or cancelled it at this very moment: nothing to do.
+      const raced = err instanceof AppError && err.code === 'conflict';
+      ctx.log[raced ? 'warn' : 'error']({ campaignId: campaign.id, err: errorMessage(err) }, 'scheduled campaign did not start');
+      continue;
+    }
+    stats.started += 1;
+    if (row.status === 'sent') {
+      stats.finished += 1;
+      await announceFinished(ctx, row);
     }
   }
 }
@@ -108,59 +139,58 @@ const isSending = (ctx: AppContext, id: number) =>
 
 const recipientRow = (ctx: AppContext, id: number) => ctx.db.select().from(campaignRecipients).where(eq(campaignRecipients.id, id)).get();
 
-interface DeliveryOutcome {
-  /** Messages handed to Telegram (successful or not). */
-  attempted: number;
-  /** The bot went offline: stop for now, nothing was counted against the recipient. */
-  offline: boolean;
+/** `done` — the outcome is stored; `stop` — the bot went offline or Telegram asked to wait, nothing counted. */
+type SendOutcome = 'done' | 'stop';
+
+/** Stores a failed try: blocked, out of tries, or waiting for its next one. */
+function noteFailure(run: Run, campaign: CampaignRow, recipient: RecipientRow, chatId: number, err: unknown): void {
+  const { ctx, stats } = run;
+  const attempts = recipient.attempts + 1;
+  if (err instanceof BotSendError && err.blocked) {
+    mark(ctx, recipient.id, { status: 'blocked', attempts, error: BLOCKED_ERROR, chatId });
+    stats.blocked += 1;
+    run.retryAt.delete(recipient.id);
+  } else if (attempts >= CAMPAIGN_MAX_ATTEMPTS) {
+    mark(ctx, recipient.id, { status: 'failed', attempts, error: truncate(errorMessage(err), 500), chatId });
+    stats.failed += 1;
+    run.retryAt.delete(recipient.id);
+  } else {
+    mark(ctx, recipient.id, { attempts, error: truncate(errorMessage(err), 500) });
+    stats.retried += 1;
+    run.retryAt.set(recipient.id, run.clock.now() + attempts * CAMPAIGN_RETRY_DELAY_MS);
+  }
+  ctx.log.warn({ campaignId: campaign.id, clientId: recipient.clientId, attempts, err: errorMessage(err) }, 'campaign message not delivered');
 }
 
 /** Sends one message; the recipient's outcome is stored at once. */
-async function deliverOne(
-  ctx: AppContext,
-  campaign: CampaignRow,
-  keyboard: InlineKeyboard,
-  recipient: RecipientRow,
-  client: ClientRow,
-  stats: CampaignRunStats,
-  now: () => number,
-): Promise<'done' | 'offline'> {
+async function deliverOne(run: Run, campaign: CampaignRow, keyboard: InlineKeyboard, recipient: RecipientRow, client: ClientRow): Promise<SendOutcome> {
+  const { ctx } = run;
   const chatId = client.telegramChatId!;
-  const attempts = recipient.attempts + 1;
   try {
     const stored = await sendNews(ctx, chatId, { text: personalize(campaign.text, client.name), imageUrl: campaign.imageUrl, keyboard });
-    mark(ctx, recipient.id, { status: 'sent', attempts, error: null, sentAt: now(), chatId });
+    mark(ctx, recipient.id, { status: 'sent', attempts: recipient.attempts + 1, error: null, sentAt: run.clock.now(), chatId });
     storeNews(ctx.db, chatId, client.id, stored);
-    stats.sent += 1;
+    run.stats.sent += 1;
+    run.retryAt.delete(recipient.id);
+    return 'done';
   } catch (err) {
-    if (err instanceof BotUnavailableError) return 'offline';
-    if (err instanceof BotSendError && err.blocked) {
-      mark(ctx, recipient.id, { status: 'blocked', attempts, error: BLOCKED_ERROR, chatId });
-      stats.blocked += 1;
-    } else if (attempts >= CAMPAIGN_MAX_ATTEMPTS) {
-      mark(ctx, recipient.id, { status: 'failed', attempts, error: truncate(errorMessage(err), 500), chatId });
-      stats.failed += 1;
-    } else {
-      mark(ctx, recipient.id, { attempts, error: truncate(errorMessage(err), 500) });
-      stats.retried += 1;
+    if (err instanceof BotUnavailableError) return 'stop';
+    if (err instanceof BotSendError && err.retryAfterMs !== null) {
+      run.pacer.holdFor(err.retryAfterMs);
+      ctx.log.warn({ campaignId: campaign.id, retryAfterMs: err.retryAfterMs }, 'Telegram flood limit: campaign paused');
+      return 'stop';
     }
-    ctx.log.warn({ campaignId: campaign.id, clientId: client.id, attempts, err: errorMessage(err) }, 'campaign message not delivered');
+    noteFailure(run, campaign, recipient, chatId, err);
+    return 'done';
   }
-  return 'done';
 }
 
 /**
- * Sends up to `budget` pending messages of one campaign: fresh recipients first, then retries (a recipient that
- * failed in this run waits for the next one). Stops when the campaign is cancelled meanwhile.
+ * Sends up to `budget` pending messages of one campaign: fresh recipients first, then retries whose time has come.
+ * Stops when the campaign is cancelled meanwhile. Returns how many messages went to Telegram and whether to stop.
  */
-async function deliverCampaign(
-  ctx: AppContext,
-  campaign: CampaignRow,
-  pacer: Pacer,
-  budget: number,
-  stats: CampaignRunStats,
-  clock: Clock,
-): Promise<DeliveryOutcome> {
+async function deliverCampaign(run: Run, campaign: CampaignRow, budget: number): Promise<{ attempted: number; stop: boolean }> {
+  const { ctx } = run;
   const keyboard = newsKeyboard(ctx, parseButton(campaign.button));
   const batch = ctx.db
     .select()
@@ -171,34 +201,33 @@ async function deliverCampaign(
     .all();
   let attempted = 0;
   for (const listed of batch) {
-    if (!ctx.gateway.isRunning()) return { attempted, offline: true };
+    if (!ctx.gateway.isRunning()) return { attempted, stop: true };
+    if ((run.retryAt.get(listed.id) ?? 0) > run.clock.now()) continue;
     const client = ctx.db.select().from(clients).where(eq(clients.id, listed.clientId)).get();
     const reason = skipReason(client);
-    if (!reason) await pacer.wait();
+    if (!reason) await run.pacer.wait();
     // Checked after the wait: a cancel that came meanwhile stops the campaign before its next message.
     if (!isSending(ctx, campaign.id)) break;
     const recipient = recipientRow(ctx, listed.id);
     if (recipient?.status !== 'pending') continue;
     if (reason || !client) {
       mark(ctx, recipient.id, { status: 'skipped', error: reason });
-      stats.skipped += 1;
+      run.stats.skipped += 1;
       continue;
     }
     attempted += 1;
-    if ((await deliverOne(ctx, campaign, keyboard, recipient, client, stats, () => clock.now())) === 'offline') {
-      return { attempted, offline: true };
-    }
+    if ((await deliverOne(run, campaign, keyboard, recipient, client)) === 'stop') return { attempted, stop: true };
   }
-  return { attempted, offline: false };
+  return { attempted, stop: false };
 }
 
-/** One tick of the background sender (every CAMPAIGN_TICK_MS). Does nothing while the bot is offline. */
+/** One tick of the background sender (every CAMPAIGN_TICK_MS). Does nothing while the bot is offline or held. */
 export async function runCampaigns(ctx: AppContext, options: CampaignRunOptions = {}): Promise<CampaignRunStats> {
   const clock = options.clock ?? realClock;
   const stats: CampaignRunStats = { started: 0, sent: 0, failed: 0, blocked: 0, retried: 0, skipped: 0, finished: 0 };
-  if (!ctx.gateway.isRunning()) return stats;
-  await startDue(ctx, clock.now(), stats);
-  const pacer = new Pacer(clock, CAMPAIGN_RATE_PER_SECOND);
+  const run: Run = { ctx, clock, pacer: bulkPacer(clock), stats, retryAt: retryAtOf(ctx) };
+  if (!ctx.gateway.isRunning() || run.pacer.isHeld()) return stats;
+  await startDue(run);
   let budget = options.maxMessages ?? BATCH;
   const sending = ctx.db
     .select()
@@ -208,9 +237,9 @@ export async function runCampaigns(ctx: AppContext, options: CampaignRunOptions 
     .all();
   for (const campaign of sending) {
     if (budget <= 0) break;
-    const outcome = await deliverCampaign(ctx, campaign, pacer, budget, stats, clock);
+    const outcome = await deliverCampaign(run, campaign, budget);
     budget -= outcome.attempted;
-    if (outcome.offline) break;
+    if (outcome.stop) break;
     const finished = finishIfDone(ctx.db, campaign.id, clock.now());
     if (finished) {
       stats.finished += 1;

@@ -13,18 +13,19 @@ import {
 import { getRetentionSettings, type RetentionSettings } from '../domain/retention-settings.js';
 import { studioTimezone } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
-import { Pacer, realClock, type Clock } from '../lib/pacer.js';
+import { bulkPacer, realClock, type Clock, type Pacer } from '../lib/pacer.js';
 import { formatAmount, pluralWord } from '../lib/text.js';
 import { HOUR_MS, localDayBounds, parseTimeOfDay } from '../lib/time.js';
-import { CAMPAIGN_RATE_PER_SECOND } from './campaign-sender.js';
 import { BotSendError, BotUnavailableError, type InlineKeyboard } from './gateway.js';
 import { newsKeyboard, personalize, sendNews, storeNews } from './marketing.js';
+import { notifyStaff } from './staff.js';
 
 /**
  * Birthday greetings and win-back messages (docs/API.md «Birthday and win-back»), checked every minute: each goes out
  * at its `sendAt` studio time (not later than RETENTION_GRACE_MS after it, e.g. after a restart). A send is logged in
  * `retention_sends` before it goes out, so neither a restart nor a parallel run repeats it; a delivery failure frees
- * the log for the next minute, up to RETENTION_MAX_ATTEMPTS tries.
+ * the log for the next minute, up to RETENTION_MAX_ATTEMPTS tries, and Telegram's flood limit holds every bulk sender.
+ * The gift bonuses are credited once the message is delivered; if that fails, the staff chat is asked to do it.
  */
 
 export const RETENTION_CHECK_INTERVAL_MS = 60_000;
@@ -33,6 +34,8 @@ export const RETENTION_GRACE_MS = 6 * HOUR_MS;
 export const RETENTION_MAX_ATTEMPTS = 4;
 
 export const GIFT_NOTES = { birthday: 'Подарок на день рождения', winback: 'Подарок: давно не виделись' } as const;
+/** «в подарок на день рождения» — what a gift was for, in the staff alert. */
+const GIFT_REASONS = { birthday: 'на день рождения', winback: 'к сообщению «давно не виделись»' } as const;
 
 export interface RetentionRunStats {
   birthday: number;
@@ -118,6 +121,21 @@ function noteFailure(ctx: AppContext, msg: RetentionMessage, err: unknown): void
   ctx.log.warn({ kind: msg.kind, clientId: msg.candidate.clientId, tries, blocked, err: errorMessage(err) }, 'retention message not delivered');
 }
 
+/** Credits the gift of a delivered message; a failure is told to the staff chat (the client was promised it). */
+async function creditGift(ctx: AppContext, msg: RetentionMessage, gift: Gift, now: number): Promise<void> {
+  const { candidate } = msg;
+  try {
+    grantGiftBonuses(ctx, candidate.clientId, gift.amount, gift.days, GIFT_NOTES[msg.kind], now);
+  } catch (err) {
+    ctx.log.error({ kind: msg.kind, clientId: candidate.clientId, err: errorMessage(err) }, 'gift bonuses not credited');
+    await notifyStaff(
+      ctx,
+      `⚠️ Не удалось начислить ${bonusWords(gift.amount)} в подарок ${GIFT_REASONS[msg.kind]} клиенту «${candidate.name}» ` +
+        `(карточка №${candidate.clientId}) — начислите их вручную`,
+    );
+  }
+}
+
 async function deliver(ctx: AppContext, msg: RetentionMessage, pacer: Pacer, now: number): Promise<Outcome> {
   const { candidate } = msg;
   if (!claimRetentionSend(ctx.db, msg.kind, candidate, now)) return 'skipped';
@@ -126,25 +144,22 @@ async function deliver(ctx: AppContext, msg: RetentionMessage, pacer: Pacer, now
     const stored = await sendNews(ctx, candidate.chatId, { text: msg.text, keyboard: msg.keyboard });
     storeNews(ctx.db, candidate.chatId, candidate.clientId, stored);
   } catch (err) {
-    if (err instanceof BotUnavailableError) {
+    const flood = err instanceof BotSendError && err.retryAfterMs !== null;
+    if (err instanceof BotUnavailableError || flood) {
+      // Not the client's fault: nothing counted, tried again once the bot is back / the hold is over.
       releaseRetentionSend(ctx.db, msg.kind, candidate);
+      if (flood) pacer.holdFor((err as BotSendError).retryAfterMs!);
       return 'offline';
     }
     noteFailure(ctx, msg, err);
     return 'failed';
   }
   failures.get(ctx)?.delete(`${msg.kind}:${candidate.clientId}:${candidate.periodKey}`);
-  if (msg.gift) {
-    try {
-      grantGiftBonuses(ctx, candidate.clientId, msg.gift.amount, msg.gift.days, GIFT_NOTES[msg.kind], now);
-    } catch (err) {
-      ctx.log.error({ kind: msg.kind, clientId: candidate.clientId, err: errorMessage(err) }, 'gift bonuses not credited');
-    }
-  }
+  if (msg.gift) await creditGift(ctx, msg, msg.gift, now);
   return 'sent';
 }
 
-/** Sends the messages in order; stops when the bot goes offline. Returns how many were delivered. */
+/** Sends the messages in order; stops when the bot goes offline or Telegram holds us. Returns how many were delivered. */
 async function deliverAll(ctx: AppContext, messages: RetentionMessage[], pacer: Pacer, now: number): Promise<{ sent: number; offline: boolean }> {
   let sent = 0;
   for (const msg of messages) {
@@ -182,15 +197,15 @@ function winbackMessages(ctx: AppContext, settings: RetentionSettings, now: numb
   }));
 }
 
-/** One check (every RETENTION_CHECK_INTERVAL_MS). Does nothing while the bot is offline. */
+/** One check (every RETENTION_CHECK_INTERVAL_MS). Does nothing while the bot is offline or Telegram holds us. */
 export async function sendDueRetention(ctx: AppContext, options: RetentionRunOptions = {}): Promise<RetentionRunStats> {
   const clock = options.clock ?? realClock;
   const now = options.now ?? clock.now();
   const stats: RetentionRunStats = { birthday: 0, winback: 0 };
-  if (!ctx.gateway.isRunning()) return stats;
+  const pacer = bulkPacer(clock);
+  if (!ctx.gateway.isRunning() || pacer.isHeld()) return stats;
   const settings = getRetentionSettings(ctx.db);
   const tz = studioTimezone(ctx.db);
-  const pacer = new Pacer(clock, CAMPAIGN_RATE_PER_SECOND);
   if (settings.birthday.enabled && isDue(settings.birthday.sendAt, now, tz)) {
     const result = await deliverAll(ctx, birthdayMessages(ctx, settings, now, tz), pacer, now);
     stats.birthday = result.sent;

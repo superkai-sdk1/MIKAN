@@ -1512,10 +1512,12 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
   scheduled campaign starts when its time comes, with the recipients of that moment (none → it ends `sent` at once and
   the staff chat is told).
 - Recipients are fixed when sending starts; delivery runs in the background (checked every 5 s) at ≤ 20 messages a
-  second. A failure is retried in later rounds — the first try and up to 3 retries, then `failed`; a client who blocked
-  the bot is `blocked`. A recipient who meanwhile opted out, unlinked Telegram, turned the bot off or was archived is
-  skipped. Each outcome is stored before the next message, so a restart continues where it stopped. Messages are
-  stored in the chats as `system` (a photo as «[Фото] caption»).
+  second — together with birthday and win-back messages. A failure is retried after 30 s, 1 min and 1.5 min (the first
+  try and up to 3 retries), then `failed`; a client who blocked the bot is `blocked`; Telegram's flood limit (429)
+  pauses all of them for the time Telegram asks, without counting a try. A recipient who meanwhile opted out, unlinked
+  Telegram, turned the bot off or was archived is skipped. Each outcome is stored before the next message, so a restart
+  continues where it stopped (delivery is at least once: a send that timed out after Telegram took it is retried).
+  Messages are stored in the chats as `system` (a photo as «[Фото] caption»).
 - `cancel` — a scheduled or sending campaign (else `409`): whoever was not reached yet is skipped; sent messages stay.
 - When a campaign finishes the staff chat gets «📣 Рассылка «Осень» завершена / ✅ Доставлено: 120 из 130 /
   🚫 Заблокировали бота: 6 / ⚠️ Не доставлено: 4 / ➖ Пропущено (отписались или отвязали Telegram): 2» (one line each,
@@ -1537,10 +1539,12 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
   действуют до 18 ноября»); at most `dailyLimit` a day, the longest absent first.
 - Both messages carry «🔕 Не присылать новости» (see «Campaigns»), are stored in the chat as `system`, and go out from
   `sendAt` until 6 hours after it on that studio day (e.g. after a restart). Gift bonuses (and their line) only while
-  `loyalty.enabled`; they are credited once the message is delivered.
+  `loyalty.enabled`; they are credited once the message is delivered — if that fails, the staff chat gets «⚠️ Не
+  удалось начислить 500 бонусов в подарок на день рождения клиенту «Анна» (карточка №12) — начислите их вручную».
 - Both are logged (`retention_sends`: the birthday by year, the win-back by the date of the last visit) before the
   message goes out, so a restart never repeats them. A failed delivery is tried again the next minute (4 tries in all);
-  a client who blocked the bot is not tried again for that year / absence.
+  a client who blocked the bot is not tried again for that year / absence; Telegram's flood limit holds them (and
+  campaigns) without counting a try.
 
 ### Bot (Telegram + AI)
 | Method | Path | Body | Response |

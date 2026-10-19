@@ -84,13 +84,43 @@ export function addBonusLot(t: TestApp, clientId: number, remaining: number, exp
     .run();
 }
 
-/** A clock whose sleep moves time forward at once. */
+/**
+ * Virtual time: `sleep` resolves at once in virtual terms, in the order of the moments asked for, one sleeper per
+ * event-loop turn — so concurrent senders each see the clock at their own moment.
+ */
 export class FakeClock implements Clock {
+  private timers: Array<{ until: number; resolve: () => void }> = [];
+  private firing = false;
+
   constructor(public t: number) {}
+
   now(): number {
     return this.t;
   }
-  async sleep(ms: number): Promise<void> {
+
+  sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.timers.push({ until: this.t + ms, resolve });
+      this.timers.sort((a, b) => a.until - b.until);
+      this.fireSoon();
+    });
+  }
+
+  /** Moves time forward. */
+  advance(ms: number): void {
     this.t += ms;
+  }
+
+  private fireSoon(): void {
+    if (this.firing) return;
+    this.firing = true;
+    setImmediate(() => {
+      this.firing = false;
+      const next = this.timers.shift();
+      if (!next) return;
+      this.t = Math.max(this.t, next.until);
+      next.resolve();
+      if (this.timers.length) this.fireSoon();
+    });
   }
 }
