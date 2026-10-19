@@ -244,7 +244,7 @@ nonisolated struct MergeFold {
     static func display(_ field: ClientMergeField, _ raw: String) -> String {
         switch field {
         case .phone: PhoneText.display(raw)
-        case .birthday: CalendarDay.date(from: raw).map(DateText.fullDate) ?? raw
+        case .birthday: Birthday(raw)?.text ?? raw
         case .telegramNick, .instagram: "@\(raw)"
         case .telegramBot: raw.isEmpty ? "Подключён" : "Подключён · @\(raw)"
         case .source: ClientSource.title(for: raw)
@@ -282,7 +282,7 @@ nonisolated enum DuplicateComparison {
         let optional = [
             row("Instagram", clients, identity: true) { $0.instagram.nonEmpty.map { "@\($0)" } },
             row("Дата рождения", clients, identity: true) { client in
-                client.birthday.nonEmpty.map { CalendarDay.date(from: $0).map(DateText.fullDate) ?? $0 }
+                client.birthday.nonEmpty.map { Birthday($0)?.text ?? $0 }
             },
         ]
         return always + optional.filter { $0.values.contains { $0 != nil } }

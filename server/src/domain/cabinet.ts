@@ -186,10 +186,10 @@ function loyaltyOf(db: DbOrTx, clientId: number, now: number) {
   return { bonusBalance: bonusBalance(db, clientId, now), expiring: expiring ? { amount: expiring.amount, at: toIso(expiring.at) } : null };
 }
 
-/** `GET /public/cabinet`; `phone` is masked by the route. */
+/** `GET /public/cabinet`; `phone` is masked by the route; `birthday` null — the cabinet offers to add it. */
 export function buildCabinet(db: DbOrTx, client: ClientRow, now = Date.now()) {
   return {
-    client: { name: client.name, phone: client.phone },
+    client: { name: client.name, phone: client.phone, birthday: client.birthday },
     loyalty: loyaltyOf(db, client.id, now),
     upcoming: cabinetAppointments(db, upcomingRows(db, client.id, now), now),
     past: cabinetAppointments(db, pastRows(db, client.id, now), now),

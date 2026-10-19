@@ -53,7 +53,7 @@ describe('client cabinet: who is signed in', () => {
     const res = await cab(t, 'GET', '', undefined, miniApp());
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      client: { name: 'Анна', phone: '+7 *** ***-**-01' },
+      client: { name: 'Анна', phone: '+7 *** ***-**-01', birthday: null },
       loyalty: { bonusBalance: 0, expiring: null },
       upcoming: [],
       past: [],
@@ -71,7 +71,7 @@ describe('client cabinet: who is signed in', () => {
     expect(JSON.stringify(stored)).not.toContain(token);
 
     vi.setSystemTime(NOW + 5 * DAY);
-    expect((await cab(t, 'GET', '', undefined, { token })).json().client).toEqual({ name: 'Анна', phone: '+7 *** ***-**-01' });
+    expect((await cab(t, 'GET', '', undefined, { token })).json().client).toEqual({ name: 'Анна', phone: '+7 *** ***-**-01', birthday: null });
     expect(t.ctx.db.select().from(clientAccessTokens).get()!.lastUsedAt).toBe(NOW + 5 * DAY);
 
     // Signing out in the Mini App leaves the website link alone; on the website it ends it.

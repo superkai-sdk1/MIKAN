@@ -14,6 +14,7 @@ import { clientsByIds, serializeAppointments } from '../domain/refs.js';
 import { badges } from '../domain/reports.js';
 import { getBotSettings, getDigestsSent, setDigestsSent, studioTimezone, type DigestsSent } from '../domain/settings.js';
 import { whoWorksText } from '../domain/working-time.js';
+import { isBirthdayOn } from '../lib/birthday.js';
 import { errorMessage } from '../lib/errors.js';
 import type { AppointmentOut, EmployeeRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
@@ -66,10 +67,10 @@ function dayAppointments(db: DbOrTx, start: number, end: number, statuses = OPEN
   return serializeAppointments(db, listAppointments(db, { from: start, to: end, statuses }));
 }
 
-/** Clients of these visits whose birthday is on `date` (`YYYY-MM-DD`). */
+/** Clients of these visits whose birthday is on `date` (`YYYY-MM-DD`; day and month only — 1900 is «year unknown»). */
 function birthdays(db: DbOrTx, rows: AppointmentOut[], date: string): Set<number> {
   const clients = clientsByIds(db, rows.map((a) => a.client.id));
-  return new Set([...clients.values()].filter((c) => c.birthday?.slice(5) === date.slice(5)).map((c) => c.id));
+  return new Set([...clients.values()].filter((c) => c.birthday && isBirthdayOn(c.birthday, date)).map((c) => c.id));
 }
 
 const awaitingDeposit = (a: AppointmentOut) => a.depositStatus === 'waiting' && a.depositRequired > 0;

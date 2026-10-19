@@ -188,8 +188,10 @@ struct ClientDetailView: View {
             if let instagram = current.instagram.nonEmpty {
                 LabeledContent("Instagram", value: "@\(instagram)")
             }
-            if let birthday = current.birthday, let date = CalendarDay.date(from: birthday) {
-                LabeledContent("Дата рождения", value: DateText.fullDate(date))
+            if let birthday = Birthday(current.birthday) {
+                LabeledContent("Дата рождения", value: birthday.text)
+            } else {
+                ClientBirthdayHint { showsEditor = true }
             }
             if let source = current.source.nonEmpty {
                 LabeledContent("Откуда узнал", value: ClientSource.title(for: source))

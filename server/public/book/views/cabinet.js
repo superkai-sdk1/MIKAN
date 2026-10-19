@@ -1,8 +1,12 @@
 // @ts-check
-/** The cabinet screen `/book/me`: greeting, tabs «Записи» / «Бонусы» / «Уход», and the sign-in screen. */
+/**
+ * The cabinet screen `/book/me`: greeting, the birthday card while the card has none, tabs «Записи» / «Бонусы» /
+ * «Уход», and the sign-in screen.
+ */
 import { botSignInLink, bonusesText, expiringText, signInCopy, TABS } from '../lib/cabinet.js';
 import { h } from '../lib/dom.js';
 import { PAGE_BASE } from '../lib/query.js';
+import { birthdayInput } from './birthday-field.js';
 import { bonusRow, certificateCard, memoCard, pastRow, upcomingCard, waitlistCard } from './cabinet-parts.js';
 import { errorPanel, loadingBlock, messagePage, stepHeading, studioContacts } from './common.js';
 
@@ -13,8 +17,10 @@ import { errorPanel, loadingBlock, messagePage, stepHeading, studioContacts } fr
  *   notice: string | null, error: { title: string, message: string } | null, busyId: string | null,
  *   bonuses: { status: 'idle' | 'loading' | 'ready' | 'failed', value: any },
  *   canLogout: boolean,
+ *   birthday: { draft: string, error: string | null, saving: boolean },
  *   onTab: (tab: string) => void, onReschedule: (a: any) => void, onCancel: (a: any) => void,
  *   onLeaveWaitlist: (entry: any) => void, onLogout: () => void, onRetryBonuses: () => void, onDismiss: () => void,
+ *   onBirthdayInput: (value: string) => void, onSaveBirthday: () => void,
  * }} CabinetCtx
  */
 
@@ -88,6 +94,42 @@ function careTab(ctx) {
   return memos.map((memo) => memoCard(memo, ctx.today));
 }
 
+/**
+ * «Добавьте дату рождения — пришлём подарок» while the card has none (`birthday: null`; an older server sends nothing).
+ * @param {CabinetCtx} ctx
+ */
+function birthdayCard(ctx) {
+  if (ctx.data.client?.birthday !== null) return null;
+  const { draft, error, saving } = ctx.birthday;
+  const errorLine = h('p', { class: 'field-error', id: 'cab-birthday-error', hidden: !error }, error ?? '');
+  const input = birthdayInput({
+    id: 'cab-birthday',
+    value: draft,
+    enterKey: 'done',
+    onValue: (value) => {
+      errorLine.hidden = true;
+      input.removeAttribute('aria-invalid');
+      ctx.onBirthdayInput(value);
+    },
+  });
+  input.setAttribute('aria-describedby', 'cab-birthday-hint cab-birthday-error');
+  if (error) input.setAttribute('aria-invalid', 'true');
+  return h('section', { class: 'card cab-birthday', 'aria-labelledby': 'cab-birthday-title' },
+    h('h2', { class: 'cab-what', id: 'cab-birthday-title' }, 'Добавьте дату рождения — пришлём подарок 🎁'),
+    h('p', { class: 'muted small cab-line', id: 'cab-birthday-hint' }, 'Например, 12.04.1995. Год можно не указывать.'),
+    h('form', {
+      class: 'cab-birthday-form', novalidate: true,
+      onSubmit: (event) => {
+        event.preventDefault();
+        ctx.onSaveBirthday();
+      },
+    },
+    h('label', { class: 'sr-only', for: 'cab-birthday' }, 'Дата рождения'),
+    h('div', { class: 'field' }, input),
+    h('button', { type: 'submit', class: 'btn btn-primary', disabled: saving }, saving ? 'Сохраняем…' : 'Сохранить')),
+    errorLine);
+}
+
 /** @param {CabinetCtx} ctx */
 function tabs(ctx) {
   return h('div', { class: 'segmented cab-tabs', role: 'tablist', 'aria-label': 'Разделы кабинета' },
@@ -118,6 +160,7 @@ export function renderCabinet(ctx) {
     stepHeading(client?.name ? `Здравствуйте, ${client.name}` : 'Личный кабинет', client?.phone ?? ''),
     ctx.notice ? h('div', { class: 'panel cab-notice', role: 'status' }, h('p', { class: 'panel-text' }, ctx.notice)) : null,
     ctx.error ? errorPanel(ctx.error, [{ label: 'Закрыть', onClick: ctx.onDismiss }]) : null,
+    birthdayCard(ctx),
     tabs(ctx),
     h('div', { id: 'cab-panel', role: 'tabpanel', 'aria-labelledby': `tab-${ctx.tab}`, class: ctx.motion === 'panel' ? 'cab-panel cab-panel-enter' : 'cab-panel' }, content),
     footer.length ? h('div', { class: 'stack' }, footer) : null,

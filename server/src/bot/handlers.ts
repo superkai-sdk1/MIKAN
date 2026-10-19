@@ -1,6 +1,7 @@
 import type { Bot, Context, Keyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { errorMessage } from '../lib/errors.js';
+import { answerBirthdayQuestion, askBirthday } from './birthday.js';
 import { sendBookingOffer } from './booking-start.js';
 import { isCabinetStart, sendCabinetLink } from './cabinet.js';
 import { handleCallback } from './callbacks.js';
@@ -85,6 +86,7 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
     // `/start me` (the cabinet page's «get a link»): the sign-in buttons instead of the booking offer.
     if (isCabinetStart(payload) && reply.linked && !reply.staff) await sendCabinetLink(ctx, c.chat.id);
     else await sendBookingOffer(ctx, c.chat.id, reply);
+    if (reply.cardLinked) await askBirthday(ctx, c.chat.id);
   });
 
   pm.on('message:contact', async (c) => {
@@ -96,7 +98,16 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
     );
     await c.reply(reply.text, { reply_markup: keyboardFor(reply) });
     // What the person asked before sharing the phone gets its answer now.
-    if (reply.linked || reply.staff) pipeline.answerPending(c.chat.id);
+    const pending = reply.linked || reply.staff ? pipeline.answerPending(c.chat.id) : null;
+    if (!reply.cardLinked) return;
+    // The birthday question comes last (after that answer, not awaited — updates are handled one by one), so a reply to
+    // the AI is never read as the birthday.
+    if (!pending) await askBirthday(ctx, c.chat.id);
+    else {
+      void pending
+        .then(() => askBirthday(ctx, c.chat.id))
+        .catch((err: unknown) => ctx.log.warn({ chatId: c.chat.id, err: errorMessage(err) }, 'birthday question failed'));
+    }
   });
 
   // Until a new chat shares its phone nothing else works: every message is answered with the request for the phone
@@ -184,6 +195,8 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
   });
 
   pm.on('message:text', async (c) => {
+    // The answer to the birthday question (bot/birthday.ts); anything else goes to the AI as usual.
+    if (await answerBirthdayQuestion({ ctx, pipeline }, sender(c), c.message.text)) return;
     pipeline.receive(sender(c), c.message.text);
   });
 }

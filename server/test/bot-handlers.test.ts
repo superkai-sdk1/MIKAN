@@ -110,7 +110,8 @@ describe('grammY handlers (no network)', () => {
     await pipeline.idle();
     expect(replies().map((r) => r.text)).toEqual(['Спасибо, Ольга! Номер сохранён ✅ Чем могу помочь?']);
     expect(keyboardOf(replies()[0]!).flat().map((b) => b.text)).toContain('💎 Украшения');
-    expect(t.gateway.textsTo(USER).at(-1)).toBe('Мочка — 1 600 ₽ 🙂');
+    // The answer (the birthday question follows it, see bot-birthday.test.ts).
+    expect(t.gateway.textsTo(USER)).toContain('Мочка — 1 600 ₽ 🙂');
     // The AI saw the question asked before the phone.
     expect(JSON.stringify(ai.calls[0]!.messages)).toContain('Сколько стоит прокол мочки?');
     const client = (await t.api('GET', '/api/clients?search=79990001122')).json().items[0];

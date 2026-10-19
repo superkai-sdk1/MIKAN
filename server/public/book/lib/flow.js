@@ -3,6 +3,7 @@
  * The booking steps as a pure state machine. Every transition returns a new state; views read it and dispatch
  * actions. The catalog (services by id) is passed in where validity depends on it.
  */
+import { birthdayFromInput } from './birthday.js';
 import { isPhoneComplete } from './phone.js';
 import { plainPriceText } from './format.js';
 
@@ -27,11 +28,14 @@ export const STEP_TITLES = Object.freeze({
  * @typedef {{ serviceId: number, variant: string | null }} Item
  * @typedef {{ startsAt: string, masterIds: number[] }} Slot
  * @typedef {{ step: Step, items: Item[], master: number | 'any' | null, date: string | null, slot: Slot | null,
- *   name: string, phone: string, comment: string, website: string, linked: boolean }} FlowState
+ *   name: string, phone: string, comment: string, website: string, linked: boolean, birthday: string,
+ *   askBirthday: boolean }} FlowState
+ *   `birthday` — as typed («12.04.1995» / «12.04»); `askBirthday` — the optional field is shown (a new client, or a
+ *   linked chat whose card has no birthday — then on the confirmation, as the contacts step is skipped).
  */
 
 /** @returns {FlowState} */
-export function createFlow({ linked = false } = {}) {
+export function createFlow({ linked = false, askBirthday = !linked } = {}) {
   return {
     step: 'services',
     items: [],
@@ -43,6 +47,8 @@ export function createFlow({ linked = false } = {}) {
     comment: '',
     website: '',
     linked,
+    birthday: '',
+    askBirthday,
   };
 }
 
@@ -65,10 +71,16 @@ function itemValid(item, catalog) {
   return variants.some((variant) => variant.name === item.variant);
 }
 
-/** Problems with the contacts, for the form: { name?, phone? } (empty when fine). */
-export function contactErrors(state) {
-  /** @type {{ name?: string, phone?: string }} */
+/**
+ * Problems with the contacts, for the form: { name?, phone?, birthday? } (empty when fine). A linked chat is checked
+ * for the birthday only. `today` (`YYYY-MM-DD`) rules out a birthday in the future.
+ */
+export function contactErrors(state, today = null) {
+  /** @type {{ name?: string, phone?: string, birthday?: string }} */
   const errors = {};
+  const birthday = birthdayFromInput(state.birthday ?? '', today).error;
+  if (birthday) errors.birthday = birthday;
+  if (state.linked) return errors;
   const name = state.name.trim();
   if (name.length === 0) errors.name = 'Напишите, как к вам обращаться';
   else if (name.length > NAME_MAX) errors.name = `Имя — не длиннее ${NAME_MAX} символов`;
@@ -153,7 +165,7 @@ export function reduce(state, action, catalog) {
     case 'setSlot':
       return { ...state, slot: action.slot };
     case 'setField':
-      if (!['name', 'phone', 'comment', 'website'].includes(action.field)) return state;
+      if (!['name', 'phone', 'comment', 'website', 'birthday'].includes(action.field)) return state;
       return { ...state, [action.field]: String(action.value ?? '') };
     case 'setLinked': {
       const linked = Boolean(action.linked);

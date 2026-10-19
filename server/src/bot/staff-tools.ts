@@ -14,6 +14,7 @@ import { REPORTS_MESSAGE, roleOf } from '../domain/permissions.js';
 import { serializeAppointments } from '../domain/refs.js';
 import { badges, reportSummary } from '../domain/reports.js';
 import { studioTimezone } from '../domain/settings.js';
+import { formatBirthday } from '../lib/birthday.js';
 import { clientFullName, type AppointmentOut, type ClientRow, type EmployeeRow, type ProductRow } from '../lib/serialize.js';
 import { formatRub, searchKey } from '../lib/text.js';
 import { DAY_MS, formatShortDate, localDayBounds } from '../lib/time.js';
@@ -200,7 +201,7 @@ function clientCard(db: DbOrTx, c: ClientRow): string {
   return [
     `Клиент [id ${c.id}] ${clientFullName(c)}${c.archived ? ' (в архиве)' : ''}`,
     `Телефон: ${c.phone ?? '—'} · Telegram: ${c.telegramNick ? `@${c.telegramNick}` : c.telegramUsername ? `@${c.telegramUsername}` : '—'}${c.telegramChatId ? ' (бот подключён)' : ''}`,
-    [c.birthday ? `День рождения: ${c.birthday}` : null, c.instagram ? `Instagram: ${c.instagram}` : null, c.source ? `Источник: ${c.source}` : null]
+    [c.birthday ? `День рождения: ${formatBirthday(c.birthday)}` : null, c.instagram ? `Instagram: ${c.instagram}` : null, c.source ? `Источник: ${c.source}` : null]
       .filter(Boolean)
       .join(' · ') || null,
     c.notes?.trim() ? `Заметки: ${c.notes.trim()}` : null,

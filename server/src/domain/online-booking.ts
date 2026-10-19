@@ -9,6 +9,7 @@ import { pluralWord } from '../lib/text.js';
 import { localDate, MINUTE_MS } from '../lib/time.js';
 import type { CreatedQr } from '../payments/qr-provider.js';
 import { createAppointment } from './appointments.js';
+import { auditBirthdayGiven, fillBirthday } from './client-birthday.js';
 import { createClient, findClientByChat, findClientByPhone } from './clients.js';
 import { forbidden } from './permissions.js';
 import { auditOnlineBooked } from './online-booking-audit.js';
@@ -55,6 +56,8 @@ export interface OnlineBookingInput {
   phone?: string | null;
   /** The Mini App chat (the Telegram user id): told about the booking. */
   chatId?: number | null;
+  /** The client's birthday from the page (`YYYY-MM-DD`, 1900 = year unknown): fills a card that has none. */
+  birthday?: string | null;
   now?: number;
 }
 
@@ -63,6 +66,8 @@ export interface OnlineBookingResult {
   /** The prepayment code while the booking waits for the payment. */
   payment: QrPaymentRow | null;
   client: ClientRow;
+  /** The booking filled in the birthday of a card that already existed. */
+  birthdayFilled?: boolean;
 }
 
 /** What a booking would be, validated without writing (also the bot's test mode). */
@@ -183,7 +188,10 @@ function commit(ctx: AppContext, input: OnlineBookingInput, check: BookingCheck,
     if (!option) throw scheduleConflict(SLOT_TAKEN);
     const masterId = input.masterId ?? chooseMaster(tx, input.startsAt, option.masterIds);
     const existing = existingClient(tx, input);
-    const client = existing ?? createClient(tx, { name: input.name!.trim(), phone: input.phone!, source: CLIENT_SOURCES[input.channel] });
+    const birthday = input.birthday ?? null;
+    const client =
+      existing ?? createClient(tx, { name: input.name!.trim(), phone: input.phone!, source: CLIENT_SOURCES[input.channel], birthday });
+    const birthdayFilled = existing !== null && birthday !== null && !existing.birthday && fillBirthday(tx, existing.id, birthday, now) !== null;
     if (unsettledCount(tx, client.id) >= MAX_UNSETTLED_PER_CLIENT) throw conflict(TOO_MANY_UNSETTLED);
     assertClientFree(tx, client.id, input.startsAt, check.endsAt);
     let created: AppointmentRow;
@@ -238,7 +246,7 @@ function commit(ctx: AppContext, input: OnlineBookingInput, check: BookingCheck,
           .returning()
           .get()
       : null;
-    return { appointment, payment, client: getClientRow(tx, client.id) };
+    return { appointment, payment, client: getClientRow(tx, client.id), ...(birthdayFilled ? { birthdayFilled } : {}) };
   });
 }
 
@@ -255,6 +263,7 @@ export async function createOnlineBooking(ctx: AppContext, input: OnlineBookingI
   const code = check.prepayment ? await registerHoldCode(ctx, check.items.depositRequired, holdMinutes) : null;
   const result = commit(ctx, input, check, code, started);
   auditOnlineBooked(ctx, result.appointment);
+  if (result.birthdayFilled) auditBirthdayGiven(ctx, result.client, 'booking');
   await announceBooking(ctx, result.appointment, result.payment, {
     toClient: input.channel !== 'bot',
     chatId: input.channel === 'miniapp' ? input.chatId : null,

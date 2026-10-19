@@ -812,6 +812,10 @@ p {
   gap: 18px;
 }
 
+.confirm-birthday {
+  margin-top: 16px;
+}
+
 .field-label {
   display: block;
   margin-bottom: 6px;

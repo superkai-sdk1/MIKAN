@@ -54,7 +54,9 @@ export type CallbackAction =
   /** «🔔 Снова получать новости» under the opt-out confirmation. */
   | { kind: 'marketingOptIn' }
   /** «📅 Записаться» under a news message while the Mini App is not available: hands the chat to the AI. */
-  | { kind: 'marketingBook' };
+  | { kind: 'marketingBook' }
+  /** «Пропустить» under the bot's birthday question (bot/birthday.ts). */
+  | { kind: 'birthdaySkip' };
 
 const CATEGORY_LETTERS: Record<ServiceCategoryKey, string> = { tattoo: 't', piercing: 'p', other: 'o' };
 const LETTER_CATEGORIES: Record<string, ServiceCategoryKey> = { t: 'tattoo', p: 'piercing', o: 'other' };
@@ -105,6 +107,8 @@ export function encodeCallback(action: CallbackAction): string {
         return 'mi';
       case 'marketingBook':
         return 'mb';
+      case 'birthdaySkip':
+        return 'bs';
     }
   })();
   if (Buffer.byteLength(data) > TELEGRAM_MAX_CALLBACK_DATA) throw new Error(`callback data too long: ${data}`);
@@ -153,6 +157,8 @@ export function decodeCallback(data: string): CallbackAction | null {
       return a === undefined ? { kind: 'marketingOptIn' } : null;
     case 'mb':
       return a === undefined ? { kind: 'marketingBook' } : null;
+    case 'bs':
+      return a === undefined ? { kind: 'birthdaySkip' } : null;
     case 'jo': {
       const list = parseJewelryKey(a);
       return list && b === undefined ? { kind: 'jewelryOpen', list } : null;

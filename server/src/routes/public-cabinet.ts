@@ -5,15 +5,16 @@ import { assertChangeable, cancelFromCabinet, ownAppointment, rescheduleFromCabi
 import { CABINET_SIGN_IN, clientByCabinetToken, revokeCabinetToken } from '../domain/cabinet-access.js';
 import { durationOf, rescheduleDays, rescheduleStarts } from '../domain/cabinet-slots.js';
 import { buildCabinet, cabinetAppointment, cabinetBonuses } from '../domain/cabinet.js';
+import { auditBirthdayGiven, fillBirthday } from '../domain/client-birthday.js';
 import { findClientByChat } from '../domain/clients.js';
 import { assertOnlineEnabled } from '../domain/online-booking.js';
 import { cancelWaitlistEntry } from '../domain/waitlist.js';
-import { badRequest, unauthorized } from '../lib/errors.js';
+import { badRequest, conflict, unauthorized } from '../lib/errors.js';
 import type { AppointmentRow, ClientRow } from '../lib/serialize.js';
 import { validateInitData } from '../lib/telegram-webapp.js';
 import { toIso } from '../lib/time.js';
-import { calendarDate, instant, parse } from '../lib/validation.js';
-import { INIT_DATA_HEADER, maskPhone } from './public-booking.js';
+import { birthdayDate, calendarDate, instant, parse } from '../lib/validation.js';
+import { assertClientBirthday, INIT_DATA_HEADER, maskPhone } from './public-booking.js';
 
 /**
  * The client cabinet API (docs/API.md «Client cabinet»): no staff auth. The client is the card linked to the Mini App
@@ -29,6 +30,8 @@ const idParams = z.object({ id: z.coerce.number().int().positive() });
 const rescheduleBody = z.object({ startsAt: instant });
 const daysQuery = z.object({ from: calendarDate, to: calendarDate });
 const slotsQuery = z.object({ date: calendarDate });
+const birthdayBody = z.object({ birthday: birthdayDate });
+const BIRTHDAY_SET = 'Дата рождения уже указана — изменить её можно через студию';
 
 interface CabinetIdentity {
   client: ClientRow;
@@ -70,7 +73,20 @@ export function publicCabinetRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get('/', READ_LIMIT, async (request) => {
     const { client } = identify(ctx, request);
     const cabinet = buildCabinet(db, client);
-    return { ...cabinet, client: { name: cabinet.client.name, phone: maskPhone(cabinet.client.phone) } };
+    return { ...cabinet, client: { ...cabinet.client, phone: maskPhone(cabinet.client.phone) } };
+  });
+
+  // «Добавьте дату рождения — пришлём подарок»: only while the card has none (staff change it otherwise).
+  app.post('/birthday', WRITE_LIMIT, async (request) => {
+    const { client } = identify(ctx, request);
+    const { birthday } = parse(birthdayBody, request.body);
+    if (!birthday) throw badRequest('«Дата рождения»: обязательное поле');
+    assertClientBirthday(ctx, birthday);
+    if (client.birthday) throw conflict(BIRTHDAY_SET);
+    const saved = fillBirthday(db, client.id, birthday);
+    if (!saved) throw conflict(BIRTHDAY_SET);
+    auditBirthdayGiven(ctx, saved, 'cabinet');
+    return { birthday: saved.birthday };
   });
 
   app.get('/bonuses', READ_LIMIT, async (request) => cabinetBonuses(db, identify(ctx, request).client.id));

@@ -38,6 +38,8 @@ export function createCabinetApi({ api, token = null }) {
     reschedule: (id, startsAt) => send(`${appointment(id)}/reschedule`, { method: 'POST', body: { startsAt } }),
     cancel: (id) => send(`${appointment(id)}/cancel`, { method: 'POST', body: {} }),
     leaveWaitlist: (id) => send(`${CABINET_API}/waitlist/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    /** @param {string} birthday `YYYY-MM-DD` (1900 without the year) */
+    saveBirthday: (birthday) => send(`${CABINET_API}/birthday`, { method: 'POST', body: { birthday } }),
     logout: () => send(`${CABINET_API}/logout`, { method: 'POST', body: {} }),
   };
 }

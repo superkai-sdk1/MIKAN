@@ -5,6 +5,7 @@
  * cancels appointments, leaves the waitlist, signs out on the website.
  */
 import { createCabinetApi } from './lib/cabinet-api.js';
+import { BIRTHDAY_ERROR, birthdayFromInput } from './lib/birthday.js';
 import { appointmentTitle, cancelNotice, describeCabinetError, readToken, saveToken, takeToken } from './lib/cabinet.js';
 import { deviceTimeZone, formatDateTime, todayIn } from './lib/format.js';
 import { confirmDialog, loadingBlock } from './views/common.js';
@@ -38,6 +39,8 @@ export function createCabinet(shell) {
   /** @type {{ status: 'idle' | 'loading' | 'ready' | 'failed', value: any }} */ let bonuses = { status: 'idle', value: null };
   /** The cabinet was shown: a later 401 means stale Telegram data or a revoked link, not a stranger. */
   let signedIn = false;
+  /** The birthday card: what is typed, its error, whether it is being saved. */
+  let birthday = { draft: '', error: /** @type {string | null} */ (null), saving: false };
 
   const timeZone = () => config?.studio?.timezone || deviceTimeZone();
 
@@ -110,7 +113,9 @@ export function createCabinet(shell) {
     const scroll = window.scrollY;
     shell.setView(renderCabinet({
       data, config, timeZone: timeZone(), today: todayIn(timeZone()), now: Date.now() + api.clockOffset(), tab, motion,
-      inTelegram: tg.inTelegram, notice, error, busyId, bonuses, canLogout: !tg.inTelegram && cabinetApi.hasToken(),
+      inTelegram: tg.inTelegram, notice, error, busyId, bonuses, canLogout: !tg.inTelegram && cabinetApi.hasToken(), birthday,
+      onBirthdayInput: (value) => { birthday = { ...birthday, draft: value, error: null }; },
+      onSaveBirthday: saveBirthday,
       onTab: selectTab, onReschedule: openReschedule, onCancel: cancel, onLeaveWaitlist: leaveWaitlist, onLogout: logout,
       onRetryBonuses: () => { bonuses = { status: 'idle', value: null }; showMain({ keepScroll: true }); },
       onDismiss: () => { error = null; showMain({ keepScroll: true }); },
@@ -180,6 +185,46 @@ export function createCabinet(shell) {
   function replaceAppointment(updated) {
     if (!data) return;
     data = { ...data, upcoming: data.upcoming.map((a) => (a.id === updated.id ? updated : a)) };
+  }
+
+  // ---- the birthday ----
+
+  async function saveBirthday() {
+    if (birthday.saving || !data) return;
+    const parsed = birthdayFromInput(birthday.draft, todayIn(timeZone()));
+    if (parsed.error || !parsed.value) {
+      birthday = { ...birthday, error: parsed.error ?? BIRTHDAY_ERROR };
+      tg.haptic('error');
+      showMain({ keepScroll: true });
+      document.getElementById('cab-birthday')?.focus();
+      return;
+    }
+    birthday = { ...birthday, saving: true, error: null };
+    notice = null;
+    error = null;
+    showMain({ keepScroll: true });
+    try {
+      const saved = await cabinetApi.saveBirthday(parsed.value);
+      data = { ...data, client: { ...data.client, birthday: saved.birthday } };
+      birthday = { draft: '', error: null, saving: false };
+      tg.haptic('success');
+      notice = 'Записали! В день рождения пришлём подарок 🎁';
+      shell.announce(notice);
+      showMain({ keepScroll: true });
+    } catch (err) {
+      tg.haptic('error');
+      birthday = { ...birthday, saving: false };
+      const description = describeCabinetError(err);
+      if (description.action === 'signIn') {
+        fail(err, load);
+        return;
+      }
+      // 400 — the date is wrong; 409 — it is set already (the cabinet is loaded again and the card goes away).
+      if (err?.status === 400) birthday = { ...birthday, error: description.message };
+      else error = description;
+      if (err?.status === 409) await load();
+      else showMain({ keepScroll: true });
+    }
   }
 
   // ---- cancelling ----

@@ -157,12 +157,12 @@ function renderStep() {
       });
       break;
     case 'contacts':
-      view = renderContacts({ ...base, onSubmit: goNext });
+      view = renderContacts({ ...base, onSubmit: goNext, today: todayIn(data.timeZone) });
       break;
     default:
       view = renderConfirm({
         state, catalog: data.catalog, masters: data.masters, config: data.config, me: data.me, timeZone: data.timeZone,
-        edit: editStep,
+        today: todayIn(data.timeZone), edit: editStep, dispatch,
       });
   }
   setView(view, { step: state.step, chrome: true });
@@ -176,6 +176,7 @@ function goNext() {
   if (state.step === 'confirm') {
     // A double tap on «Дальше» at the contacts must not book before the client has seen the summary.
     if (Date.now() - app.stepShownAt < CONFIRM_GUARD_MS) return;
+    if (app.view.validate && !app.view.validate(state)) return;
     submit();
     return;
   }
@@ -351,7 +352,8 @@ async function openBooking(token, booking) {
 /** `wait` — the waitlist's freed-time link (`?wait=…&start=…`): the flow opens on that time. */
 function resetFlow(preselect, wait = null) {
   const { catalog, masters, me, timeZone } = /** @type {NonNullable<typeof app.data>} */ (app.data);
-  let state = createFlow({ linked: Boolean(me) });
+  // A linked chat whose card already has a birthday is not asked for it.
+  let state = createFlow({ linked: Boolean(me), askBirthday: !me?.hasBirthday });
   if (!state.linked && app.tg.userFirstName) state = reduce(state, { type: 'setField', field: 'name', value: app.tg.userFirstName }, catalog);
   if (wait) state = applyWaitPreselect(state, wait, catalog, masters, timeZone);
   else if (preselect) state = applyPreselect(state, preselect, catalog, masters);
@@ -367,7 +369,7 @@ async function loadMe() {
   if (!app.api.hasInitData()) return null;
   try {
     const me = await app.api.me();
-    return me?.linked ? { name: me.name ?? '', phone: me.phone ?? '' } : null;
+    return me?.linked ? { name: me.name ?? '', phone: me.phone ?? '', hasBirthday: Boolean(me.hasBirthday) } : null;
   } catch (error) {
     // Stale or invalid init data: book like the website (name and phone) rather than fail.
     if (error?.status === 401) app.api.dropInitData();

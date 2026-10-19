@@ -26,12 +26,13 @@ import {
 import { assertOnlineMaster, availableDays, availableStarts, bookingDates } from '../domain/online-booking-slots.js';
 import { refreshQrPayment } from '../domain/qr-payments.js';
 import { getAppointmentRow } from '../domain/refs.js';
-import { getStudioSettings } from '../domain/settings.js';
+import { getStudioSettings, studioTimezone } from '../domain/settings.js';
+import { isPlausibleBirthday } from '../lib/birthday.js';
 import { AppError, badRequest, errorMessage, notFound } from '../lib/errors.js';
 import { idempotentAsync, PUBLIC_IDEMPOTENCY_SCOPE } from '../lib/idempotency.js';
 import { validateInitData, type TelegramWebAppUser } from '../lib/telegram-webapp.js';
-import { toIso } from '../lib/time.js';
-import { calendarDate, instant, parse, phoneInput } from '../lib/validation.js';
+import { localDate, toIso } from '../lib/time.js';
+import { birthdayDate, calendarDate, instant, parse, phoneInput } from '../lib/validation.js';
 
 /**
  * The public booking API (docs/API.md «Online booking»): no auth, for the booking page and the Telegram Mini App.
@@ -60,9 +61,18 @@ const bookBody = z.object({
   name: z.string().trim().max(100).nullish(),
   phone: phoneInput,
   comment: z.string().trim().max(1000).nullish(),
+  /** Optional: fills a card that has none (`YYYY-MM-DD`, 1900 = year unknown). */
+  birthday: birthdayDate,
   /** The honeypot: people never see it, bots fill it in. */
   website: z.string().max(1000).nullish(),
 });
+
+/** `400` «Дата рождения» unless it is a real birthday a client could have (not in the future, not 120+ years ago). */
+export function assertClientBirthday(ctx: AppContext, birthday: string | null | undefined): void {
+  if (birthday && !isPlausibleBirthday(birthday, localDate(Date.now(), studioTimezone(ctx.db)))) {
+    throw badRequest('«Дата рождения»: проверьте дату — например, 12.04.1995 или только день и месяц');
+  }
+}
 
 /** «+7 *** ***-**-01» — enough for the person to recognise their number. */
 export function maskPhone(phone: string | null): string | null {
@@ -125,7 +135,9 @@ export function publicBookingRoutes(app: FastifyInstance, ctx: AppContext): void
     const user = telegramUser(ctx, request);
     if (!user) throw new AppError('unauthorized', 'Откройте запись из Telegram-бота студии');
     const client = findClientByChat(db, user.id);
-    return client ? { linked: true, name: client.name, phone: maskPhone(client.phone) } : { linked: false, name: null, phone: null };
+    return client
+      ? { linked: true, name: client.name, phone: maskPhone(client.phone), hasBirthday: client.birthday != null }
+      : { linked: false, name: null, phone: null, hasBirthday: false };
   });
 
   app.post('/', WRITE_LIMIT, async (request, reply) => {
@@ -134,6 +146,7 @@ export function publicBookingRoutes(app: FastifyInstance, ctx: AppContext): void
     const linked = user ? findClientByChat(db, user.id) : null;
     if (!linked && !body.name) throw badRequest('«Имя»: обязательное поле');
     if (!linked && !body.phone) throw badRequest('«Телефон»: обязательное поле');
+    assertClientBirthday(ctx, body.birthday);
     const input: OnlineBookingInput = {
       channel: user ? 'miniapp' : 'web',
       items: typeof body.items === 'string' ? parseItemsParam(body.items) : body.items,
@@ -144,6 +157,7 @@ export function publicBookingRoutes(app: FastifyInstance, ctx: AppContext): void
       name: body.name ?? null,
       phone: body.phone ?? null,
       chatId: user?.id ?? null,
+      birthday: body.birthday ?? null,
     };
     // A retry with the same Idempotency-Key gets the booking already made, not a second one.
     return idempotentAsync(db, request, reply, PUBLIC_IDEMPOTENCY_SCOPE, async (): Promise<PublicBooking> => {

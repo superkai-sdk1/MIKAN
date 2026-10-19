@@ -22,6 +22,7 @@ import {
   sizeKeyboard,
   type CurrentMessage,
 } from './catalog.js';
+import { birthdaySkipButton } from './birthday.js';
 import { appointmentWhat, confirmForClient, ownActiveAppointment } from './client-appointments.js';
 import { followUpButton } from './follow-ups.js';
 import type { InlineKeyboard } from './gateway.js';
@@ -29,8 +30,8 @@ import { marketingButton } from './marketing.js';
 import type { BotPipeline, IncomingFrom } from './pipeline.js';
 
 /**
- * Inline buttons: catalog paging and choices, the reminder buttons, the follow-up buttons (bot/follow-ups.ts) and the
- * buttons under news messages (bot/marketing.ts).
+ * Inline buttons: catalog paging and choices, the reminder buttons, the follow-up buttons (bot/follow-ups.ts), the
+ * buttons under news messages (bot/marketing.ts) and «Пропустить» under the birthday question (bot/birthday.ts).
  */
 
 export interface CallbackDeps {
@@ -159,6 +160,9 @@ async function dispatch(deps: CallbackDeps, query: CallbackQueryInput, action: C
     case 'marketingOptIn':
     case 'marketingBook':
       return marketingButton(deps, query, action);
+
+    case 'birthdaySkip':
+      return birthdaySkipButton(deps, query);
   }
 }
 
