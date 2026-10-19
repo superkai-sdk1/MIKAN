@@ -8,6 +8,7 @@ import {
   bookingRequests,
   botChats,
   campaignRecipients,
+  clientAccessTokens,
   clients,
   giftCertificates,
   openReceipts,
@@ -15,6 +16,7 @@ import {
   retentionSends,
   sales,
   scheduledMessages,
+  waitlistEntries,
 } from '../db/schema.js';
 import { badRequest } from '../lib/errors.js';
 import type { ClientRow } from '../lib/serialize.js';
@@ -41,6 +43,8 @@ const MOVED = [
   ref(bookingRequests, bookingRequests.clientId),
   ref(bonusOperations, bonusOperations.clientId),
   ref(giftCertificates, giftCertificates.buyerClientId),
+  ref(waitlistEntries, waitlistEntries.clientId),
+  ref(clientAccessTokens, clientAccessTokens.clientId),
 ];
 
 /**

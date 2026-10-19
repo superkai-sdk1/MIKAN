@@ -8,6 +8,7 @@ import {
   botChats,
   campaignRecipients,
   campaigns,
+  clientAccessTokens,
   clients,
   employees,
   giftCertificates,
@@ -16,6 +17,7 @@ import {
   retentionSends,
   sales,
   scheduledMessages,
+  waitlistEntries,
 } from '../src/db/schema.js';
 import { CLIENT_REFERENCES, mergedClientFields } from '../src/domain/client-merge.js';
 import { createClient, findClientByChat, findClientByLinkToken, issueLinkToken } from '../src/domain/clients.js';
@@ -94,6 +96,11 @@ describe('client merge', () => {
       .run();
     recipient(campaign().id, source.id, 'sent');
     db().insert(retentionSends).values({ clientId: source.id, kind: 'birthday', periodKey: '2026', sentAt: NOW }).run();
+    db()
+      .insert(waitlistEntries)
+      .values({ clientId: source.id, items: '[]', dateFrom: '2026-10-20', dateTo: '2026-10-30', status: 'waiting', channel: 'bot', createdAt: NOW, updatedAt: NOW })
+      .run();
+    db().insert(clientAccessTokens).values({ clientId: source.id, tokenHash: 'h1', createdAt: NOW, expiresAt: NOW + HOUR }).run();
     db().insert(auditLog).values({ at: NOW, source: 'app', action: 'client.update', entity: 'client', entityId: source.id, summary: 'Карточка изменена' }).run();
     db()
       .insert(qrPayments)
