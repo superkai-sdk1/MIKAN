@@ -89,6 +89,10 @@ export const services = sqliteTable('services', {
    * Memos go out only for appointments with at least one such service.
    */
   freshProcedure: bool('fresh_procedure').notNull().default(false),
+  /** Post-visit follow-ups (see domain/follow-ups.ts): «Как заживает?» after this many days (1…60), `null` = never. */
+  healingCheckDays: integer('healing_check_days'),
+  /** A jewelry change suggested this many weeks after the visit (1…52), `null` = never. */
+  jewelryChangeWeeks: integer('jewelry_change_weeks'),
   active: bool('active').notNull().default(true),
   sort: integer('sort').notNull().default(0),
   createdAt: ms('created_at').notNull(),

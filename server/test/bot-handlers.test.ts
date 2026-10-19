@@ -346,7 +346,7 @@ describe('BotController polling lifecycle (#9)', () => {
 });
 
 describe('BotController sending', () => {
-  it('sends a keyboard under the input field with the last chunk; inline buttons win over it', async () => {
+  it('sends a keyboard under the input field with the last chunk; inline buttons (callback or link) win over it', async () => {
     const t = await createTestApp({ env: { BOT_ENABLED: 'true', TELEGRAM_BOT_TOKEN: '123:fake' } });
     const sent: Array<Record<string, unknown>> = [];
     let finish: (() => void) | null = null;
@@ -380,6 +380,11 @@ describe('BotController sending', () => {
       is_persistent: true,
     });
     expect(sent[1]!.reply_markup).toEqual({ inline_keyboard: [[{ text: 'Все', callback_data: 'x' }]] });
+    // Link buttons (review links) open the URL; callback buttons next to them keep their payload.
+    await controller.sendText(USER, 'Отзыв', { keyboard: [[{ text: '⭐ Google', url: 'https://g.page/mikan' }], [{ text: 'Все', data: 'x' }]] });
+    expect(sent[2]!.reply_markup).toEqual({
+      inline_keyboard: [[{ text: '⭐ Google', url: 'https://g.page/mikan' }], [{ text: 'Все', callback_data: 'x' }]],
+    });
 
     await controller.stop();
     await t.close();
