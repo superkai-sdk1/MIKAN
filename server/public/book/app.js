@@ -3,7 +3,9 @@
  * MIKAN STUDIO booking page and Telegram Mini App: loads the catalog, walks the steps (each step is a browser
  * history entry, so «Назад» on the phone works), books, and shows the booking page `/book/b/<token>`.
  */
+import { createCabinet } from './cabinet-app.js';
 import { createApi, describeError } from './lib/api.js';
+import { isCabinetPath } from './lib/cabinet.js';
 import { mount } from './lib/dom.js';
 import {
   STEP_TITLES, applyPreselect, canProceed, createFlow, firstIncompleteStep, reduce, selectedLines, stepPosition,
@@ -60,6 +62,8 @@ const app = {
   attempt: null,
   /** @type {null | ReturnType<typeof createWorks>} Opens the galleries of masters' works. */
   works: null,
+  /** @type {any} The client cabinet `/book/me` (cabinet-app.js) when the page is it. */
+  cabinet: null,
 };
 
 function announce(text) {
@@ -210,6 +214,10 @@ function showStep(step) {
 }
 
 function onPopState(event) {
+  if (app.cabinet) {
+    app.cabinet.onPopState(event);
+    return;
+  }
   const token = bookingTokenFromPath(window.location.pathname);
   if (token) {
     openBooking(token, null);
@@ -413,6 +421,11 @@ async function boot() {
   barButton.addEventListener('click', goNext);
   backButton.addEventListener('click', goBack);
   window.addEventListener('popstate', onPopState);
+  if (isCabinetPath(window.location.pathname)) {
+    app.cabinet = createCabinet({ tg: app.tg, api: app.api, setView: (view) => setView(view), backButton, stepLabel, announce });
+    app.cabinet.start();
+    return;
+  }
   const token = bookingTokenFromPath(window.location.pathname);
   if (token) openBooking(token, null);
   else startFlow();

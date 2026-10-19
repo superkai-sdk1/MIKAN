@@ -57,7 +57,7 @@ describe('bot AI pipeline', () => {
         'create_booking_request', 'handoff_to_staff', 'show_products', 'show_service', 'show_portfolio',
         'show_jewelry_for_service', 'find_jewelry', 'my_appointments', 'free_slots', 'book_appointment', 'join_waitlist',
         'reschedule_appointment',
-        'certificate_balance',
+        'certificate_balance', 'cabinet_link',
       ]);
       const system = params.system as Anthropic.TextBlockParam[];
       expect(system[0]!.cache_control).toEqual({ type: 'ephemeral' });

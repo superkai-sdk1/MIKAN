@@ -41,14 +41,16 @@ export function createApi(options = {}) {
 
   /**
    * @param {string} url
-   * @param {{ method?: string, body?: unknown, telegram?: boolean, timeout?: number, idempotencyKey?: string }} [options]
+   * @param {{ method?: string, body?: unknown, telegram?: boolean, timeout?: number, idempotencyKey?: string,
+   *   headers?: Record<string, string> }} [options]
    */
-  async function request(url, { method = 'GET', body, telegram = false, timeout = timeoutMs, idempotencyKey } = {}) {
+  async function request(url, { method = 'GET', body, telegram = false, timeout = timeoutMs, idempotencyKey, headers: extra } = {}) {
     /** @type {Record<string, string>} */
     const headers = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (telegram && initData) headers[INIT_DATA_HEADER] = initData;
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+    if (extra) Object.assign(headers, extra);
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
     const networkError = () => new ApiError({ status: 0, code: 'network', message: 'Нет связи', network: true });
@@ -85,6 +87,7 @@ export function createApi(options = {}) {
         message: typeof error?.message === 'string' ? error.message : '',
       });
     }
+    if (response.status === 204) return null;
     if (payload === null) throw new ApiError({ status: response.status, code: 'bad_response', message: '' });
     return payload;
   }
@@ -114,6 +117,8 @@ export function createApi(options = {}) {
       initData = null;
     },
     hasInitData: () => initData !== null,
+    /** Any other public call (the client cabinet, lib/cabinet-api.js) with the same errors and timeouts. */
+    request,
     clockOffset: () => clockOffsetMs,
   };
 }

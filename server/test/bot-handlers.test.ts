@@ -91,7 +91,7 @@ describe('grammY handlers (no network)', () => {
     expect(reply!.text).toMatch(/Чтобы начать, нажмите «📱 Поделиться номером» внизу 👇/);
     expect(reply!.reply_markup).toMatchObject({ resize_keyboard: true, is_persistent: true });
     expect(keyboardOf(reply!)).toEqual([[{ text: '📱 Поделиться номером', request_contact: true }]]);
-    expect(mainKeyboard(true).build().flat().map((b) => b.text)).toEqual(['💉 Услуги и цены', '💎 Украшения', '📅 Записаться', '🩹 Уход после процедуры']);
+    expect(mainKeyboard(true).build().flat().map((b) => b.text)).toEqual(['💉 Услуги и цены', '💎 Украшения', '📅 Записаться', '🩹 Уход после процедуры', '👤 Мои записи и бонусы']);
   });
 
   it('nothing works until a new chat shares its phone; then the earlier question gets its answer', async () => {

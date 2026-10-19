@@ -133,7 +133,8 @@ export function bookingPageRoutes(app: FastifyInstance, ctx: AppContext, dir = B
     const origin = ctx.config.publicUrl ?? `${request.protocol}://${request.host}`;
     const html = renderBookingPage(current, origin);
     reply.header('Content-Security-Policy', CONTENT_SECURITY_POLICY);
-    if (request.url.startsWith(`${PREFIX}/b/`)) reply.header('X-Robots-Tag', 'noindex');
+    // A booking's page and the client cabinet are private.
+    if (request.url.startsWith(`${PREFIX}/b/`) || /^\/book\/me(?:[/?]|$)/.test(request.url)) reply.header('X-Robots-Tag', 'noindex');
     return send(request, reply, html, CONTENT_TYPES['.html'] as string, etagOf(html), CACHE_HTML);
   };
 

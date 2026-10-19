@@ -12,6 +12,7 @@ import { truncate } from '../lib/text.js';
 import { bookingRequestPush, clientMessagePush } from '../push/staff-events.js';
 import type { JewelryList } from './callback-data.js';
 import { BOOK_APPOINTMENT_TOOL, buildBookingToolHandler } from './booking-tool.js';
+import { buildCabinetToolHandler, CABINET_LINK_TOOL } from './cabinet.js';
 import { buildClientToolHandlers } from './client-tools.js';
 import { photoMessageText, serviceCaptionTitle, servicePhotoSource } from './media.js';
 import { buildPortfolioToolHandler, SHOW_PORTFOLIO_TOOL, type PortfolioShot } from './portfolio.js';
@@ -165,6 +166,7 @@ export const TOOLS: Anthropic.Tool[] = [
       required: ['code'],
     },
   },
+  CABINET_LINK_TOOL,
 ];
 
 const bookingInput = z.object({
@@ -203,7 +205,7 @@ export interface ToolSink {
   carousels: JewelryList[];
   notes: string[];
   /** Live actions that succeeded (used to confirm them if the model ends without text). */
-  done: Set<'booking' | 'handoff' | 'reschedule' | 'online_booking' | 'waitlist'>;
+  done: Set<'booking' | 'handoff' | 'reschedule' | 'online_booking' | 'waitlist' | 'cabinet'>;
   /** Messages sent after the reply (the payment request of an online booking). */
   after: Array<() => Promise<unknown>>;
 }
@@ -255,6 +257,7 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
     book_appointment: buildBookingToolHandler(ctx, scope, sink),
     join_waitlist: buildWaitlistToolHandler(ctx, scope, sink),
     show_portfolio: buildPortfolioToolHandler(ctx, scope, sink),
+    cabinet_link: buildCabinetToolHandler(ctx, scope, sink),
     create_booking_request: async (raw) => {
       const parsed = bookingInput.safeParse(raw);
       if (!parsed.success) {

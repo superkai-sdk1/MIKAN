@@ -39,6 +39,7 @@ import { onlineBookingRoutes } from './routes/online-bookings.js';
 import { publicBookingRoutes } from './routes/public-booking.js';
 import { publicWaitlistRoutes } from './routes/public-waitlist.js';
 import { publicPortfolioRoutes } from './routes/public-portfolio.js';
+import { publicCabinetRoutes } from './routes/public-cabinet.js';
 import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { receiptRoutes } from './routes/receipts.js';
 import { salesRoutes } from './routes/sales.js';
@@ -185,6 +186,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         },
         { prefix: '/public/booking' },
       );
+      await api.register(async (open) => publicCabinetRoutes(open, ctx), { prefix: '/public/cabinet' });
       await api.register(async (secured) => {
         secured.addHook('onRequest', authenticate(ctx));
         secured.addHook('preHandler', authorize(ctx.db));

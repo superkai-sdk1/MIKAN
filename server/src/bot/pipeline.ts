@@ -35,6 +35,7 @@ export const REPLIES = {
   onlineBooked: 'Готово! Время за вами 🙌 Студия подтвердит запись в ближайшее время.',
   onlineBookedPay: 'Готово! Время за вами 🙌 Осталось внести предоплату — кнопка в следующем сообщении.',
   waitlisted: 'Готово! Вы в листе ожидания ⏳ Как только время освободится, напишу сюда.',
+  cabinet: 'Вот ваш личный кабинет: записи, бонусы и памятки по уходу 👇',
   staffUnavailable: 'ИИ-помощник сейчас недоступен (выключен в настройках бота или исчерпан лимит ответов). Данные можно посмотреть в приложении MIKAN.',
   staffError: 'Не получилось подготовить ответ — попробуйте переформулировать вопрос или посмотрите данные в приложении MIKAN.',
 };
@@ -326,7 +327,7 @@ export class BotPipeline {
     const confirmation = result.outcome !== 'ok' ? '' :
       sink.done.has('online_booking') ? (sink.after.length ? REPLIES.onlineBookedPay : REPLIES.onlineBooked) :
       sink.done.has('booking') ? REPLIES.booked : sink.done.has('handoff') ? REPLIES.handedOff : sink.done.has('reschedule') ? REPLIES.rescheduled :
-      sink.done.has('waitlist') ? REPLIES.waitlisted : '';
+      sink.done.has('waitlist') ? REPLIES.waitlisted : sink.done.has('cabinet') ? REPLIES.cabinet : '';
     const text = result.text || confirmation;
     const pictures = sink.products.length + sink.services.length + sink.portfolio.length + sink.carousels.length;
     if (result.outcome === 'ok' && (text || pictures > 0)) {
