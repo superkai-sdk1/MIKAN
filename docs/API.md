@@ -426,7 +426,8 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
 { "id": 1, "number": 17, "client": { ClientRef } | null, "employee": { EmployeeRef },
   "appointmentId": null, "shiftId": 3,
   "items": [ { "id": 1, "type": "product", "productId": 1, "variantId": 5, "variantName": "8 мм",
-               "serviceId": null, "name": "Лабрет — 8 мм", "quantity": 1, "price": 1500, "total": 1500 } ],
+               "serviceId": null, "certificateId": null, "certificateCode": null, "name": "Лабрет — 8 мм", "quantity": 1,
+               "price": 1500, "total": 1500 } ],
   "subtotal": 1500, "discount": 0, "total": 1500,
   "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 0, "bonus": 0, "certificate": 0 },
   "bonusEarned": 75,
@@ -447,7 +448,8 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   (0 when none; taken back on refund — a refunded sale still shows what it had credited).
 - A gift certificate sold in the sale is a line with `certificateId` set. In responses it has `type: "service"`,
   `serviceId: null`, `name: "Подарочный сертификат MIKAN-7K3Q-9F2D"` (older builds know only `product` | `service`);
-  apps treat any line with `certificateId` as a certificate. Every line has `certificateId` (`null` for the others).
+  apps treat any line with `certificateId` as a certificate; `certificateCode` carries its code (no need to read it
+  from the name). Every line has `certificateId` and `certificateCode` (`null` for the others).
 
 ### OpenReceipt (открытый чек)
 ```json
@@ -455,7 +457,8 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   "items": [ { "type": "product", "productId": 1, "variantId": 5, "variantName": "8 мм", "productKind": "jewelry",
                "serviceId": null, "name": "Лабрет — 8 мм", "quantity": 1, "price": 1500, "total": 1500, "stock": 3 },
              { "type": "service", "productId": null, "variantId": null, "variantName": null, "productKind": null,
-               "serviceId": 3, "name": "Прокол мочки", "quantity": 1, "price": 2500, "total": 2500, "stock": null } ],
+               "serviceId": 3, "name": "Прокол мочки", "quantity": 1, "price": 2500, "total": 2500, "stock": null,
+               "certificate": null } ],
   "subtotal": 4000, "discount": 0, "total": 4000, "itemCount": 2, "note": null,
   "openedBy": { EmployeeRef }, "createdAt": "...", "updatedAt": "..." }
 ```
@@ -466,6 +469,10 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   catalog (the saved name when the product is gone), `variantName` — the size's name (`null` without sizes),
   `productKind` — `jewelry` | `goods`, `stock` — the size's current quantity (`null` when the size is gone).
   Service lines: `name` as saved, `productKind`/`stock` `null`. `price` — the unit price saved for the line.
+  A gift certificate to sell goes out like a sale's certificate line — `type: "service"`, `serviceId: null`,
+  `name: "Подарочный сертификат"` — with `certificate: { "recipientName": "Маше", "note": null }`; every other line
+  has `certificate: null`. Nothing is issued until the sale (no code yet). Older builds see an ordinary service line
+  and would save it back as one.
 - `subtotal = Σ quantity × price`, `total = subtotal − discount`, `itemCount = Σ quantity`.
 - `appointment` — the whole appointment it pays for (status, held prepayment), `null` without one.
 - `openedBy` — the employee who opened it.
@@ -1023,7 +1030,9 @@ the background.
 | PUT | `/receipts/:id` | `{ appointmentId?, clientId?, items, discount?, note? }` | `OpenReceipt` |
 | DELETE | `/receipts/:id` | — | `{ "ok": true }` · `404` when already gone |
 
-- `items`: `[{ type, productId?, variantId?, serviceId?, name?, quantity, price? }]` (≤ 100) — the shape of sale items.
+- `items`: `[{ type, productId?, variantId?, serviceId?, name?, quantity, price?, recipientName?, note? }]` (≤ 100) —
+  the shape of sale items, a certificate to sell included (`{ "type": "certificate", "price": 5000, "recipientName":
+  "Маше" }`: quantity 1, nominal 500…100 000, never discounted — the same `400`s as in a sale).
   Product lines need an existing sellable product (`400` for a consumable or a missing one) and one of its current
   sizes (`variantId`; omitted → its only size; several sizes → `400` «Выберите размер «Лабрет»»). Service lines need
   `name` unless `serviceId` is given. `price` defaults to the catalog price (the size's ?? the product's, the service's).
@@ -1067,8 +1076,8 @@ the background.
   on the certificate): the sale issues it (see «Gift certificates»), the buyer is the sale's client. A sale with a
   certificate item cannot be paid with bonuses or certificates (`400` «Подарочный сертификат нельзя оплатить бонусами
   или другим сертификатом») and earns no bonuses on that item. The discount never applies to a certificate line (its
-  nominal is what the buyer pays): `discount ≤ subtotal − certificate lines` (`400`). An open receipt holds products
-  and services only — the app adds a certificate line when it sends the sale.
+  nominal is what the buyer pays): `discount ≤ subtotal − certificate lines` (`400`). An open receipt keeps a
+  certificate line until checkout; the app sends it in the sale's `items` as `type: "certificate"` like any line.
 - `payments.bonus` needs a client (`clientId`, or the appointment's: `400` «Чтобы оплатить бонусами, выберите
   клиента») and loyalty on (`409` «Бонусная программа выключена — оплатите другим способом»); at most the client's
   balance (`409` «На счёте 1 200 бонусов») and at most `maxPaymentPercent` of `total`, rounded down (`400` «Бонусами
@@ -1476,7 +1485,9 @@ the sale discount).
 
 `BonusOperation`: `{ id, type: "earn"|"spend"|"gift"|"expire"|"adjust"|"reverse", amount, remaining, expiresAt,
 saleId, saleNumber, note, employee: EmployeeRef | null, createdAt }`.
-- `amount` is signed (credits > 0, debits < 0); `remaining` — the unspent rest of a credit (`0` for debits);
+- `amount` is signed — credits > 0 (`earn`, `gift`, a positive `adjust`, the `reverse` giving back bonuses paid in a
+  refunded sale), debits < 0 (`spend`, `expire`, a negative `adjust`, the `reverse` taking back what a refunded sale
+  earned); `remaining` — the unspent rest of a credit (`0` for debits);
   `expiresAt` — when that rest burns (`null` — never; always `null` on debits). `balance` = Σ `remaining` of credits
   that have not burnt: a lot past `expiresAt` leaves the balance at once, its `expire` operation (one per lot, with the
   `saleId` of the sale that earned it) is written by the hourly job.
@@ -1508,15 +1519,19 @@ buyer: ClientRef | null, recipientName, note, saleId, saleNumber, operations: [ 
 createdAt } ], createdAt }`.
 - `status` is as of now: an active certificate past `expiresAt` reads `expired` (and cannot be spent) before the
   hourly job burns its balance.
-- `operations` oldest first, `amount` signed (Σ = `balance`): `issue` | `redeem` (spent in sale `saleId`) | `refund`
-  (that sale was refunded) | `cancel` (by the owner, or the sale that sold it was refunded — then with its `saleId`) |
-  `expire` (the rest burnt).
+- `operations` oldest first. `amount` is signed — credits > 0, debits < 0 — and Σ `amount` = `balance`:
+  - `issue` (+ the nominal; `saleId` — the sale that sold it);
+  - `redeem` (− spent in sale `saleId`);
+  - `refund` (+ given back: sale `saleId` was refunded);
+  - `cancel` (− the rest burnt by the owner, or because the sale that sold it was refunded — then with that `saleId`);
+  - `expire` (− the rest burnt at `expiresAt`).
 - Codes are matched without case, dashes, spaces and the `MIKAN` prefix (Cyrillic look-alike letters are read as
   Latin), everywhere a code is accepted.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/certificates?status=&q=&limit=&offset=` | — | `{ items: [GiftCertificate], total }` newest first; `q` — code or recipient |
+| GET | `/certificates/:id` | — | `GiftCertificate` · `404` «Сертификат не найден» |
 | GET | `/certificates/code/:code` | — | `GiftCertificate` (code case- and dash-insensitive) · `404` «Сертификат не найден» |
 | PATCH | `/certificates/:id` | `{ recipientName?, note?, expiresAt? }` | `GiftCertificate` · `expiresAt` owner only (`403`; resent unchanged it counts as untouched), in the future (`400`) or `null` (never expires), not for an expired or cancelled one (`409`) |
 | POST | `/certificates/:id/cancel` | `{ reason }` | `GiftCertificate` · owner · active only (`409`) · the balance burns; «Аннулирован: <reason>» is added to `note` |

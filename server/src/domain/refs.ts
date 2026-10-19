@@ -1,6 +1,18 @@
 import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, appointmentServices, clients, employees, openReceipts, products, productVariants, saleItems, sales, services } from '../db/schema.js';
+import {
+  appointments,
+  appointmentServices,
+  clients,
+  employees,
+  giftCertificates,
+  openReceipts,
+  products,
+  productVariants,
+  saleItems,
+  sales,
+  services,
+} from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
 import { earnedBySales } from './bonuses.js';
 import { appointmentCancellation } from './cancellation.js';
@@ -184,6 +196,10 @@ export function serializeSales(db: DbOrTx, rows: SaleRow[]): SaleOut[] {
     db,
     rows.map((r) => r.id),
   );
+  const codes = certificateCodes(
+    db,
+    items.map((i) => i.certificateId),
+  );
   return rows.map((sale) => {
     const client = sale.clientId != null ? cl.get(sale.clientId) : undefined;
     const employee = em.get(sale.employeeId);
@@ -193,8 +209,23 @@ export function serializeSales(db: DbOrTx, rows: SaleRow[]): SaleOut[] {
       client ? clientRef(client) : null,
       employee ? employeeRef(employee) : missingEmployee(sale.employeeId),
       earned.get(sale.id) ?? 0,
+      codes,
     );
   });
+}
+
+/** Codes of the given gift certificates, by id. */
+function certificateCodes(db: DbOrTx, ids: Array<number | null | undefined>): Map<number, string> {
+  const list = unique(ids);
+  if (list.length === 0) return new Map();
+  return new Map(
+    db
+      .select({ id: giftCertificates.id, code: giftCertificates.code })
+      .from(giftCertificates)
+      .where(inArray(giftCertificates.id, list))
+      .all()
+      .map((r) => [r.id, r.code]),
+  );
 }
 
 export function getSaleRow(db: DbOrTx, id: number): SaleRow {

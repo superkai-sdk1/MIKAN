@@ -9,8 +9,8 @@ import { idempotent, REPLAYED_HEADER } from '../lib/idempotency.js';
 import { idParams, money, nonNull, nullableText, pagination, parse, queryId, queryInstant, requiredText } from '../lib/validation.js';
 
 const id = z.number().int().positive();
-/** A line of an open receipt or a sale: a product or a service. */
-export const saleItem = z.object({
+/** A product or a service line. */
+const saleItem = z.object({
   type: z.enum(['product', 'service']),
   productId: id.nullish(),
   variantId: id.nullish(),
@@ -19,8 +19,8 @@ export const saleItem = z.object({
   quantity: nonNull(z.number().int().min(1).max(10_000)),
   price: money.nullish(),
 });
-/** A sale also sells gift certificates (`type: certificate`, see «Gift certificates»). */
-const saleLine = saleItem.extend({
+/** A line of a sale or an open receipt; both also sell gift certificates (`type: certificate`, «Gift certificates»). */
+export const saleLine = saleItem.extend({
   type: z.enum(['product', 'service', 'certificate']),
   recipientName: nullableText(100),
   note: nullableText(500),

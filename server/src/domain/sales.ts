@@ -9,10 +9,10 @@ import { assertBonusPayment, earnBonuses, reverseSaleBonuses, spendBonuses } fro
 import { getOpenShift } from './cash.js';
 import {
   assertCertificatesRefundable,
+  assertDiscountSparesCertificates,
   CERTIFICATE_LINE_NAME,
-  CERTIFICATE_MAX_AMOUNT,
-  CERTIFICATE_MIN_AMOUNT,
   certificateLineName,
+  certificateNominal,
   issueCertificate,
   redeemCertificates,
   resolveRedemptions,
@@ -90,12 +90,7 @@ interface ResolvedItem {
 const NO_CERTIFICATE = { recipientName: null, note: null };
 
 function resolveCertificate(item: SaleItemInput, label: string): ResolvedItem {
-  if (item.quantity !== 1) throw badRequest(`${label}: сертификат продаётся по одному — укажите количество 1`);
-  const price = item.price;
-  if (price == null) throw badRequest(`${label}: укажите номинал сертификата`);
-  if (price < CERTIFICATE_MIN_AMOUNT || price > CERTIFICATE_MAX_AMOUNT) {
-    throw badRequest(`Номинал сертификата — от ${formatRub(CERTIFICATE_MIN_AMOUNT)} до ${formatRub(CERTIFICATE_MAX_AMOUNT)}`);
-  }
+  const price = certificateNominal(item, label);
   return {
     type: CERTIFICATE_LINE,
     productId: null,
@@ -208,9 +203,7 @@ function assertDepositCovers(db: DbOrTx, appointmentId: number, deposit: number 
  */
 function assertCertificateSale(certificateTotal: number, subtotal: number, input: SaleInput): void {
   if (certificateTotal === 0) return;
-  if (input.discount > subtotal - certificateTotal) {
-    throw badRequest('Скидка не распространяется на подарочный сертификат: она не может быть больше суммы остальных позиций');
-  }
+  assertDiscountSparesCertificates(input.discount, subtotal, certificateTotal);
   if ((input.payments.bonus ?? 0) > 0 || (input.payments.certificates ?? []).length > 0) {
     throw badRequest('Подарочный сертификат нельзя оплатить бонусами или другим сертификатом');
   }

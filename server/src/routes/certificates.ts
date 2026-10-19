@@ -30,6 +30,11 @@ export function certificateRoutes(app: FastifyInstance, ctx: AppContext): void {
     return listCertificates(db, q);
   });
 
+  app.get('/certificates/:id', async (request) => {
+    const { id } = parse(idParams, request.params);
+    return serializeCertificate(db, getCertificateRow(db, id));
+  });
+
   app.get('/certificates/code/:code', async (request) => {
     const { code } = parse(codeParams, request.params);
     const row = findCertificateByCode(db, code);

@@ -351,9 +351,9 @@ function onlineOut(a: AppointmentRow): { onlineState: string | null; holdUntil: 
 
 /**
  * A sale line on the wire. A gift certificate line is stored as `certificate` and sent as `service` with
- * `certificateId` (older builds know only `product` | `service`).
+ * `certificateId` and `certificateCode` (older builds know only `product` | `service`).
  */
-export const saleItemOut = (i: SaleItemRow) => ({
+export const saleItemOut = (i: SaleItemRow, certificateCode: string | null = null) => ({
   id: i.id,
   type: i.type === 'certificate' ? 'service' : i.type,
   productId: i.productId,
@@ -361,6 +361,7 @@ export const saleItemOut = (i: SaleItemRow) => ({
   variantName: i.variantName,
   serviceId: i.serviceId,
   certificateId: i.certificateId,
+  certificateCode,
   name: i.name,
   quantity: i.quantity,
   price: i.price,
@@ -374,6 +375,8 @@ export const saleOut = (
   employee: EmployeeRef,
   /** Bonuses credited for the sale (0 when none). */
   bonusEarned = 0,
+  /** Codes of the certificates its lines sold, by certificate id. */
+  certificateCodes: ReadonlyMap<number, string> = new Map(),
 ) => ({
   id: sale.id,
   number: sale.number,
@@ -381,7 +384,7 @@ export const saleOut = (
   employee,
   appointmentId: sale.appointmentId,
   shiftId: sale.shiftId,
-  items: items.map(saleItemOut),
+  items: items.map((i) => saleItemOut(i, i.certificateId != null ? (certificateCodes.get(i.certificateId) ?? null) : null)),
   subtotal: sale.subtotal,
   discount: sale.discount,
   total: sale.total,

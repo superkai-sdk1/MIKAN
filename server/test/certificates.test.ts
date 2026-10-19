@@ -56,8 +56,7 @@ describe('gift certificates', () => {
   };
   const sellCertificate = async (price = 5000) => {
     const sale = await ok({ items: [certificateLine(price)], payments: { cash: price } });
-    const code = sale.items[0].name.replace('Подарочный сертификат ', '');
-    return { sale, code, id: sale.items[0].certificateId as number };
+    return { sale, code: sale.items[0].certificateCode as string, id: sale.items[0].certificateId as number };
   };
   const byCode = async (code: string) => (await api('GET', `/api/certificates/code/${encodeURIComponent(code)}`)).json();
   const payService = (certificates: Array<{ code: string; amount: number }>, cash: number) =>
@@ -86,7 +85,7 @@ describe('gift certificates', () => {
     expect(sale.items).toEqual([
       {
         id: expect.any(Number), type: 'service', productId: null, variantId: null, variantName: null, serviceId: null,
-        certificateId: id, name: `Подарочный сертификат ${code}`, quantity: 1, price: 5000, total: 5000,
+        certificateId: id, certificateCode: code, name: `Подарочный сертификат ${code}`, quantity: 1, price: 5000, total: 5000,
       },
     ]);
     expect(sale.bonusEarned).toBe(0);
@@ -140,9 +139,56 @@ describe('gift certificates', () => {
       expect(res.json().error.message).toBe(message);
     }
     expect((await t.api('GET', '/api/certificates')).json().total).toBe(0);
-    // An open receipt keeps products and services only.
-    const receipt = await t.api('POST', '/api/receipts', { items: [certificateLine()] });
-    expect(receipt.statusCode).toBe(400);
+  });
+
+  it('reads a certificate by id', async () => {
+    const { id, code } = await sellCertificate(1000);
+    expect((await api('GET', `/api/certificates/${id}`)).json()).toMatchObject({ id, code, amount: 1000, status: 'active' });
+    const missing = await api('GET', '/api/certificates/9999');
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.message).toBe('Сертификат не найден');
+  });
+
+  it('an open receipt holds a certificate to sell, shown as a service line, and the sale issues it', async () => {
+    const created = await api('POST', '/api/receipts', {
+      clientId: buyer.id,
+      items: [certificateLine(3000), { type: 'service', serviceId: service.id, quantity: 1 }],
+      discount: 500,
+    });
+    expect(created.statusCode).toBe(200);
+    const receipt = created.json();
+    expect(receipt).toMatchObject({ subtotal: 6000, discount: 500, total: 5500, itemCount: 2 });
+    expect(receipt.items[0]).toEqual({
+      type: 'service', productId: null, variantId: null, variantName: null, productKind: null, serviceId: null,
+      name: 'Подарочный сертификат', quantity: 1, price: 3000, total: 3000, stock: null,
+      certificate: { recipientName: 'Маше', note: null },
+    });
+    expect(receipt.items[1]).toMatchObject({ type: 'service', serviceId: service.id, certificate: null });
+
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ items: [certificateLine(3000, { quantity: 2 })] }, 'Позиция №1: сертификат продаётся по одному — укажите количество 1'],
+      [{ items: [certificateLine(100)] }, 'Номинал сертификата — от 500 ₽ до 100 000 ₽'],
+      [
+        { items: [certificateLine(3000), { type: 'service', serviceId: service.id, quantity: 1 }], discount: 3001 },
+        'Скидка не распространяется на подарочный сертификат: она не может быть больше суммы остальных позиций',
+      ],
+    ];
+    for (const [body, message] of cases) {
+      const res = await api('PUT', `/api/receipts/${receipt.id}`, { clientId: buyer.id, ...body });
+      expect(res.statusCode, message).toBe(400);
+      expect(res.json().error.message).toBe(message);
+    }
+
+    // The app pays the receipt with its lines; the sale issues the certificate and closes the receipt.
+    const sale = await ok({
+      receiptId: receipt.id,
+      items: [certificateLine(3000), { type: 'service', serviceId: service.id, quantity: 1 }],
+      discount: 500,
+      payments: { cash: 5500 },
+    });
+    expect(sale.items[0]).toMatchObject({ type: 'service', certificateId: expect.any(Number), certificateCode: expect.stringMatching(CODE) });
+    expect((await api('GET', `/api/receipts/${receipt.id}`)).statusCode).toBe(404);
+    expect(await byCode(sale.items[0].certificateCode)).toMatchObject({ amount: 3000, recipientName: 'Маше', buyer: { id: buyer.id } });
   });
 
   it('is spent in parts until used, and refuses what it does not cover', async () => {

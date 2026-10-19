@@ -27,6 +27,25 @@ const CODE_PREFIX = 'MIKAN';
 const CODE_BODY_LENGTH = 8;
 const CODE_ATTEMPTS = 20;
 
+/**
+ * A certificate line of a sale or an open receipt: one at a time, a nominal of 500…100 000 ₽. Returns the nominal.
+ */
+export function certificateNominal(line: { quantity: number; price?: number | null }, label: string): number {
+  if (line.quantity !== 1) throw badRequest(`${label}: сертификат продаётся по одному — укажите количество 1`);
+  if (line.price == null) throw badRequest(`${label}: укажите номинал сертификата`);
+  if (line.price < CERTIFICATE_MIN_AMOUNT || line.price > CERTIFICATE_MAX_AMOUNT) {
+    throw badRequest(`Номинал сертификата — от ${formatRub(CERTIFICATE_MIN_AMOUNT)} до ${formatRub(CERTIFICATE_MAX_AMOUNT)}`);
+  }
+  return line.price;
+}
+
+/** The discount never applies to a certificate line: at most the sum of the other lines. */
+export function assertDiscountSparesCertificates(discount: number, subtotal: number, certificateTotal: number): void {
+  if (certificateTotal > 0 && discount > subtotal - certificateTotal) {
+    throw badRequest('Скидка не распространяется на подарочный сертификат: она не может быть больше суммы остальных позиций');
+  }
+}
+
 /** The name of a certificate line in a sale: «Подарочный сертификат MIKAN-7K3Q-9F2D». */
 export const certificateLineName = (code: string): string => `Подарочный сертификат ${code}`;
 /** Before the code is issued (validation, the QR cart). */
