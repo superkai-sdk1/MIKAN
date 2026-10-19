@@ -1156,9 +1156,9 @@ sale refunded).
 ```
 Revenue excludes refunded sales, bonus payments and gift certificates sold, like analytics (a sale's revenue is
 `total − payments.bonus − its certificate lines`; item revenue is split as in analytics and certificate lines are left
-out of the tops); `payments` keeps its older keys. `byDay` uses the studio timezone and lists every day in range
-(zeros included).
-`payments` splits `revenue` by how it was paid (`deposit` — covered by prepayments received earlier).
+out of the tops). `byDay` uses the studio timezone and lists every day in range (zeros included).
+`payments` splits the money of those sales by how it was paid (`deposit` — covered by prepayments received earlier);
+it keeps its older keys, so the bonus and certificate parts are not listed (they are in analytics).
 `deposits` — prepayment operations in the period: `received` (+ by method), `applied` (counted in sales, net of
 sale refunds), `refunded`, `retained` (kept after cancellations / no-shows; not part of `revenue`); `held` — the total
 held for appointments at the end of the period. `held(start) + received − applied − refunded − retained = held(end)`.
