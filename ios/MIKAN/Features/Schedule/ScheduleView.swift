@@ -228,6 +228,7 @@ struct ScheduleView: View {
             .buttonStyle(.plain)
             .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
             .accessibilityLabel("Новая запись")
+            .needsConnection()
         }
         .padding(.trailing, 20)
         .padding(.bottom, 20)

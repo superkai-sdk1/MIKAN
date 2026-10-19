@@ -115,6 +115,7 @@ struct InventoryView: View {
             await appState.refreshBadges()
         }
         .task(id: model.section) { await model.load(api: api) }
+        .onReconnect { await model.load(api: api) }
         .remoteErrorAlert(model.remote)
     }
 

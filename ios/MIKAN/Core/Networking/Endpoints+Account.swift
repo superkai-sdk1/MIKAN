@@ -24,12 +24,15 @@ extension APIClient {
         try await request(.get, "dashboard")
     }
 
+    /// Kept on the phone for offline use.
     func employees(includeInactive: Bool = false) async throws -> [Employee] {
-        let response: ItemsResponse<Employee> = try await request(
-            .get, "employees",
-            query: queryItems(["includeInactive": includeInactive ? "true" : nil])
-        )
-        return response.items
+        try await cachedGet(.employees(includeInactive: includeInactive)) {
+            let response: ItemsResponse<Employee> = try await request(
+                .get, "employees",
+                query: queryItems(["includeInactive": includeInactive ? "true" : nil])
+            )
+            return response.items
+        }
     }
 
     func createEmployee(_ body: EmployeeBody) async throws -> Employee {
@@ -40,16 +43,18 @@ extension APIClient {
         try await request(.patch, "employees/\(id)", body: body)
     }
 
+    /// Kept on the phone for offline use.
     func studioSettings() async throws -> StudioSettings {
-        try await request(.get, "settings/studio")
+        try await cachedGet(.studioSettings) { try await request(.get, "settings/studio") }
     }
 
     func saveStudioSettings(_ settings: StudioSettings) async throws -> StudioSettings {
         try await request(.put, "settings/studio", body: settings)
     }
 
+    /// Kept on the phone for offline use.
     func botSettings() async throws -> BotSettings {
-        try await request(.get, "settings/bot")
+        try await cachedGet(.botSettings) { try await request(.get, "settings/bot") }
     }
 
     func saveBotSettings(_ settings: BotSettings) async throws -> BotSettings {

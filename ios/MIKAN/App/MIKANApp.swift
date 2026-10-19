@@ -32,6 +32,7 @@ extension View {
             .environment(state.reference)
             .environment(state.workSchedules)
             .environment(state.lock)
+            .environment(state.connectivity)
             .environment(\.locale, .app)
             .environment(\.calendar, .app)
     }

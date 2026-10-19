@@ -17,6 +17,11 @@ final class ClientsListModel {
     func load(api: APIClient) async {
         let search = search
         let archived = showsArchived
+        // The saved list shows at once while the server is asked.
+        if remote.value == nil, search.isEmpty, !archived, let saved = await api.savedClients() {
+            remote.set(saved.items)
+            total = saved.total
+        }
         await remote.load {
             let page = try await api.clients(search: search, archived: archived, limit: Self.pageSize)
             total = page.total ?? page.items.count
@@ -111,6 +116,7 @@ struct ClientsListView: View {
                 await model.load(api: api)
             }
             .remoteErrorAlert(model.remote)
+            .onReconnect { await model.load(api: api) }
             .navigationTitle(model.showsArchived ? "Архив клиентов" : "Клиенты")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -122,6 +128,7 @@ struct ClientsListView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Новый клиент", systemImage: "plus") { showsEditor = true }
+                        .needsConnection()
                 }
             }
             .sheet(isPresented: $showsEditor) {
