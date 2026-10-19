@@ -18,6 +18,7 @@ import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
 import { studioTimezone } from './domain/settings.js';
 import { errorMessage } from './lib/errors.js';
 import { createQrProvider } from './payments/tochka.js';
+import { createHttp2Transport } from './push/apns.js';
 
 const BACKUP_CHECK_MS = 10 * 60_000;
 const AUDIT_PRUNE_MS = 24 * 60 * 60_000;
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
   const { db, sqlite } = openDatabase(path.join(config.dataDir, 'mikan.db'));
   seedDatabase(db, config);
 
+  const apns = config.apns ? createHttp2Transport() : undefined;
   const ctx = {
     db,
     sqlite,
@@ -39,6 +41,7 @@ async function main(): Promise<void> {
     log,
     ai: createAiClient(config.ai),
     qr: createQrProvider(config.tochka),
+    apns,
     onBotSettingsChanged: () => controller.refresh(),
   } as Omit<AppContext, 'gateway'> as AppContext;
   const controller = new BotController(ctx);
@@ -53,9 +56,11 @@ async function main(): Promise<void> {
       ai: ctx.ai ? { model: config.ai.model, gateway: config.ai.baseUrl ?? 'anthropic' } : 'disabled',
       telegram: config.telegram.enabled ? config.telegram.apiRoot : 'disabled',
       qrPayments: ctx.qr ? ctx.qr.name : 'disabled',
+      push: config.apns ? 'apns' : 'disabled',
     },
     'MIKAN server started',
   );
+  if (config.apnsProblem) log.warn({ problem: config.apnsProblem }, 'APNs is not fully configured: staff push notifications are off');
   if (config.tochka.jwt && !ctx.qr) {
     log.warn('TOCHKA_JWT is set but TOCHKA_MERCHANT_ID / TOCHKA_ACCOUNT_ID are not: run dist/scripts/tochka-setup.js');
   }
@@ -164,6 +169,7 @@ async function main(): Promise<void> {
     force.unref();
     try {
       await controller.stop();
+      apns?.close();
       await app.close();
       sqlite.close();
     } catch (err) {

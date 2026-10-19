@@ -18,6 +18,7 @@ import { silentLogger, type AiClient, type AppContext, type ImageGenerator } fro
 import { openDatabase } from '../src/db/client.js';
 import { seedDatabase } from '../src/db/seed.js';
 import type { CreatedQr, QrBankStatus, QrProvider } from '../src/payments/qr-provider.js';
+import type { ApnsTransport } from '../src/push/apns.js';
 
 export const ADMIN = { login: 'admin', password: 'secret123', name: 'Админ' };
 
@@ -186,6 +187,7 @@ export async function createTestApp(
     env?: Record<string, string>;
     gateway?: FakeGateway;
     generateImage?: ImageGenerator;
+    apns?: ApnsTransport;
   } = {},
 ): Promise<TestApp> {
   const config = testConfig(opts.env);
@@ -201,6 +203,7 @@ export async function createTestApp(
     ai: opts.ai ?? null,
     generateImage: opts.generateImage ?? noImageGenerator,
     qr: opts.qr ?? null,
+    ...(opts.apns ? { apns: opts.apns } : {}),
     onBotSettingsChanged: () => undefined,
   };
   const app = await buildApp(ctx);

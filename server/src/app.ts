@@ -24,6 +24,7 @@ import { categoryRoutes } from './routes/categories.js';
 import { clientRoutes } from './routes/clients.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { depositRoutes } from './routes/deposits.js';
+import { deviceRoutes } from './routes/devices.js';
 import { employeeRoutes } from './routes/employees.js';
 import { historyRoutes } from './routes/history.js';
 import { payrollRoutes } from './routes/payroll.js';
@@ -181,6 +182,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         settingsRoutes(secured, ctx);
         auditRoutes(secured, ctx);
         payrollRoutes(secured, ctx);
+        deviceRoutes(secured, ctx);
       });
     },
     { prefix: '/api' },

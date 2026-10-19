@@ -2,6 +2,9 @@ import path from 'node:path';
 import type { S3Config } from './lib/s3.js';
 import { z } from 'zod';
 import { SERVICE_IMAGE_MODEL } from './lib/service-images.js';
+import { apnsConfigOf, type ApnsConfig } from './push/apns-config.js';
+
+export type { ApnsConfig } from './push/apns-config.js';
 
 /** Treat empty env strings as "not set". */
 const optionalString = z.preprocess(
@@ -73,6 +76,10 @@ const envSchema = z.object({
     (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined),
     z.string().regex(/^\d{20}\/\d{9}$/, 'ожидается «счёт/БИК», например 40702810123456789012/044525104').optional(),
   ),
+  APNS_KEY_ID: optionalString,
+  APNS_TEAM_ID: optionalString,
+  APNS_PRIVATE_KEY: optionalString,
+  APNS_BUNDLE_ID: optionalString,
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
@@ -109,6 +116,10 @@ export interface Config {
   offsiteBackup: OffsiteBackupConfig | null;
   /** Why the off-site copies are off although some of their settings are given (a half-done setup), else null. */
   offsiteBackupProblem: string | null;
+  /** Staff push notifications (APNs); `null` when not configured. */
+  apns: ApnsConfig | null;
+  /** Why pushes are off although some APNS_* settings are given (partial or invalid), else null. */
+  apnsProblem: string | null;
   logLevel: string;
 }
 
@@ -177,6 +188,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const e = parseEnv(envSchema, env);
   const baseUrl = e.AI_BASE_URL ?? null;
   const offsite = offsiteOf(e);
+  const apns = apnsConfigOf(e);
   return {
     port: e.PORT,
     host: e.HOST,
@@ -200,6 +212,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     tochka: tochkaOf(e),
     offsiteBackup: offsite.config,
     offsiteBackupProblem: offsite.problem,
+    apns: apns.config,
+    apnsProblem: apns.problem,
     logLevel: e.LOG_LEVEL,
   };
 }

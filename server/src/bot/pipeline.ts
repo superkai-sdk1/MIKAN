@@ -8,6 +8,7 @@ import { AppError, conflict, errorMessage } from '../lib/errors.js';
 import type { BotChatRow, BotMessageRow, ProductRow, ServiceRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
 import { HOUR_MS, localDayBounds } from '../lib/time.js';
+import { clientMessagePush } from '../push/staff-events.js';
 import { runAi, type AiRunInput, type AiRunResult } from './ai.js';
 import { jewelryPage, sendPage } from './catalog.js';
 import type { PhotoSource } from './gateway.js';
@@ -364,12 +365,13 @@ export class BotPipeline {
   private async escalate(chatId: number, reason: string, last?: BotMessageRow): Promise<void> {
     const chat = findChat(this.ctx.db, chatId);
     if (!chat || chatEmployee(this.ctx.db, chat)) return; // staff chats are not handed to staff
-    updateChatFlags(this.ctx.db, chatId, { needsAttention: true });
+    const flagged = updateChatFlags(this.ctx.db, chatId, { needsAttention: true });
     await notifyStaff(
       this.ctx,
       `⚠️ Бот не ответил клиенту ${clientLabel(chat.telegramName, chat.username)}: ${reason}.\n` +
         (last ? `Последнее сообщение: «${truncate(last.text, 500)}»\n` : '') +
         'Ответьте в приложении MIKAN.',
+      () => clientMessagePush(this.ctx.db, flagged, last?.text ?? reason),
     );
   }
 
