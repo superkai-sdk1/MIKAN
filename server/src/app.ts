@@ -17,6 +17,7 @@ import { appointmentRoutes } from './routes/appointments.js';
 import { auditRoutes } from './routes/audit.js';
 import { registerAuditCapture } from './routes/audit-capture.js';
 import { authRoutes, publicAuthRoutes } from './routes/auth.js';
+import { bookingPageRoutes } from './routes/booking-page.js';
 import { botRoutes } from './routes/bot.js';
 import { cashRoutes } from './routes/cash.js';
 import { catalogRoutes } from './routes/catalog.js';
@@ -153,6 +154,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
     maxAge: '30d',
     immutable: true,
   });
+  bookingPageRoutes(app, ctx);
 
   await app.register(
     async (api) => {
