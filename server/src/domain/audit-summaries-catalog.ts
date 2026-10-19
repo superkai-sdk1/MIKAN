@@ -12,6 +12,7 @@ import {
   personName,
   quote,
   rubChange,
+  textOf,
   type ChangeDetail,
 } from './audit-text.js';
 import type { CategoryOut } from './categories.js';
@@ -82,6 +83,25 @@ function clientTelegramLink(c: SummaryContext): AuditDraft {
   const id = client?.id ?? Number(c.params.id);
   const who = client ? quote(personName(client)) : `№${id}`;
   return draft('client', 'telegram_link', id, `Для карточки клиента ${who} создана ссылка привязки Telegram`);
+}
+
+/** «Карточка «Анна» (+79991234567) объединена с «Анна Иванова»»: the source (deleted) named by its snapshot. */
+function clientMerge(c: SummaryContext): AuditDraft {
+  const kept = entityOf<NamedEntity>(c.result);
+  const source = maybeEntity<NamedEntity & { phone?: unknown }>(c.before);
+  const sourceId = source?.id ?? Number(c.params.id);
+  const phone = textOf(source?.phone);
+  const who = source ? `${quote(personName(source))}${phone ? ` (${phone})` : ''}` : `№${sourceId}`;
+  const summary = `Карточка ${who} объединена с ${quote(personName(kept))}`;
+  return draft('client', 'merge', kept.id, summary, { clientId: { from: sourceId, to: kept.id } });
+}
+
+/** «Карточки №12 и №34 отмечены как разные люди». */
+function clientDismissDuplicates(c: SummaryContext): AuditDraft {
+  const ids = Array.isArray(c.body.clientIds) ? c.body.clientIds.filter((id): id is number => typeof id === 'number') : [];
+  const refs = ids.map((id) => `№${id}`);
+  const list = refs.length > 1 ? `${refs.slice(0, -1).join(', ')} и ${refs.at(-1)}` : refs.join('');
+  return draft('client', 'dismiss_duplicates', null, `Карточки ${list} отмечены как разные люди`);
 }
 
 // ---------- services and aftercare memos ----------
@@ -304,6 +324,8 @@ export const catalogSummaries: Record<string, SummaryBuilder> = {
   'POST /clients': clientCreate,
   'PATCH /clients/:id': clientUpdate,
   'POST /clients/:id/telegram-link': clientTelegramLink,
+  'POST /clients/:id/merge': clientMerge,
+  'POST /clients/duplicates/dismiss': clientDismissDuplicates,
   'POST /services': serviceCreate,
   'PATCH /services/:id': serviceUpdate,
   'POST /services/:id/image/generate': serviceImage,

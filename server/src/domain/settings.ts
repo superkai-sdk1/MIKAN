@@ -147,6 +147,7 @@ const KEY_BOT_USERNAME = 'botUsername';
 const KEY_DIGESTS_SENT = 'digestsSent';
 const KEY_ALERTS = 'alerts';
 const KEY_RETENTION = 'retention';
+const KEY_DISMISSED_DUPLICATES = 'clientDuplicatesDismissed';
 
 function readKey<T>(db: DbOrTx, key: string): T | null {
   const row = db.select().from(settings).where(eq(settings.key, key)).get();
@@ -307,4 +308,14 @@ export function readRetentionStored(db: DbOrTx): unknown {
 
 export function writeRetentionStored(db: DbOrTx, value: unknown): void {
   writeKey(db, KEY_RETENTION, value);
+}
+
+/** Client pairs the staff marked as different people (domain/client-duplicates.ts): `"12:34"`, smaller id first. */
+export function getDismissedDuplicatePairs(db: DbOrTx): string[] {
+  const value = readKey<unknown>(db, KEY_DISMISSED_DUPLICATES);
+  return Array.isArray(value) ? value.filter((pair): pair is string => typeof pair === 'string') : [];
+}
+
+export function setDismissedDuplicatePairs(db: DbOrTx, pairs: readonly string[]): void {
+  writeKey(db, KEY_DISMISSED_DUPLICATES, pairs);
 }
