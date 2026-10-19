@@ -45,6 +45,7 @@ nonisolated extension AuditSource {
 nonisolated enum AuditSection: String, CaseIterable, Identifiable, Hashable, Sendable {
     case appointment, deposit, sale, receipt, cash, client, service, product, stock
     case category, aftercare, knowledge, employee, schedule, payroll, settings, bot
+    case campaign, certificate, waitlist, portfolio
 
     var id: String { rawValue }
 
@@ -67,6 +68,10 @@ nonisolated enum AuditSection: String, CaseIterable, Identifiable, Hashable, Sen
         case .payroll: "Зарплата"
         case .settings: "Настройки"
         case .bot: "Бот"
+        case .campaign: "Рассылки"
+        case .certificate: "Сертификаты"
+        case .waitlist: "Лист ожидания"
+        case .portfolio: "Портфолио"
         }
     }
 
@@ -89,6 +94,10 @@ nonisolated enum AuditSection: String, CaseIterable, Identifiable, Hashable, Sen
         case .payroll: "creditcard"
         case .settings: "gearshape"
         case .bot: "bubble.left.and.bubble.right"
+        case .campaign: "megaphone"
+        case .certificate: "gift"
+        case .waitlist: "hourglass"
+        case .portfolio: "photo.on.rectangle.angled"
         }
     }
 }

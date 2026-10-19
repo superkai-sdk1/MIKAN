@@ -94,8 +94,12 @@ struct AuditLogTests {
 
     @Test("Section titles follow docs/API.md; an unknown entity shows as is")
     func sectionTitles() {
-        let documented = "appointment,deposit,sale,receipt,cash,client,service,product,stock,category,aftercare,knowledge,employee,schedule,payroll,settings,bot"
+        let documented = "appointment,deposit,sale,receipt,cash,client,service,product,stock,category,aftercare,knowledge,employee,schedule,payroll,settings,bot,campaign,certificate,waitlist,portfolio"
         #expect(AuditSection.allCases.map(\.rawValue).joined(separator: ",") == documented)
+        #expect(AuditLogText.sectionTitle("waitlist") == "Лист ожидания")
+        #expect(AuditLogText.sectionTitle("portfolio") == "Портфолио")
+        #expect(AuditLogText.sectionTitle("certificate") == "Сертификаты")
+        #expect(AuditLogText.sectionTitle("campaign") == "Рассылки")
         #expect(AuditLogText.sectionTitle("appointment") == "Записи")
         #expect(AuditLogText.sectionTitle("deposit") == "Предоплаты")
         #expect(AuditLogText.sectionTitle("receipt") == "Открытые чеки")

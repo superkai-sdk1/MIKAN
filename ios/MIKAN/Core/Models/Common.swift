@@ -17,6 +17,10 @@ nonisolated struct Badges: Codable, Hashable, Sendable {
     var waitlist = 0
 
     static let zero = Badges(unreadChats: 0, needsAttention: 0, newBookingRequests: 0, lowStock: 0)
+
+    /// The «Ещё» tab: the sum of its rows' badges — unread chats, new booking requests, online bookings to confirm and
+    /// the open waitlist (low stock is on «Склад»).
+    var moreTab: Int { unreadChats + newBookingRequests + onlineAwaiting + waitlist }
 }
 
 nonisolated extension Badges {
