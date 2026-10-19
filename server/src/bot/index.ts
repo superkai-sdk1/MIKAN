@@ -1,6 +1,7 @@
 import { Bot, GrammyError, InputFile } from 'grammy';
-import type { InlineKeyboardMarkup, Message, ReplyKeyboardMarkup } from 'grammy/types';
+import type { InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup } from 'grammy/types';
 import type { AppContext } from '../context.js';
+import { BOOKING_MENU_TEXT, bookingWebAppUrl } from '../domain/online-booking-links.js';
 import { getBotSettings, getCachedBotUsername, setCachedBotUsername } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
 import { toPlainText, toTelegramHtml } from '../lib/telegram-format.js';
@@ -9,6 +10,7 @@ import {
   BotSendError,
   BotUnavailableError,
   type BotGateway,
+  type InlineButton,
   type InlineKeyboard,
   type PhotoSource,
   type SendOptions,
@@ -25,13 +27,15 @@ const API_TIMEOUT_SECONDS = 75; // > long-polling timeout (30 s)
 /** Uploaded pictures remembered by Telegram file_id, so carousel paging does not upload them again. */
 const MAX_CACHED_FILE_IDS = 500;
 
+function inlineButton(b: InlineButton): InlineKeyboardButton {
+  if (b.url !== undefined) return { text: b.text, url: b.url };
+  if (b.webApp !== undefined) return { text: b.text, web_app: { url: b.webApp } };
+  return { text: b.text, callback_data: b.data };
+}
+
 function markup(keyboard: InlineKeyboard | null | undefined): InlineKeyboardMarkup | undefined {
   if (keyboard === undefined) return undefined;
-  return {
-    inline_keyboard: (keyboard ?? []).map((row) =>
-      row.map((b) => (b.url !== undefined ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data })),
-    ),
-  };
+  return { inline_keyboard: (keyboard ?? []).map((row) => row.map(inlineButton)) };
 }
 
 /** Inline buttons win over a keyboard under the input field (a message carries one `reply_markup`). */
@@ -202,6 +206,7 @@ export class BotController implements BotGateway {
             this.polling = true;
             backoff = MIN_BACKOFF_MS;
             this.ctx.log.info({ username: info.username }, 'Telegram bot polling started');
+            void this.setBookingMenuButton(bot);
           },
         });
         if (generation === this.generation) this.polling = false;
@@ -229,6 +234,20 @@ export class BotController implements BotGateway {
       backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
     }
     if (generation === this.generation) this.polling = false;
+  }
+
+  /**
+   * The chat menu button opens the booking Mini App («📅 Записаться», docs/API.md «Online booking»); without an
+   * `https://` PUBLIC_URL the default menu stays. A failure is only logged.
+   */
+  private async setBookingMenuButton(bot: Bot): Promise<void> {
+    const url = bookingWebAppUrl(this.ctx.config);
+    if (!url) return;
+    try {
+      await bot.api.setChatMenuButton({ menu_button: { type: 'web_app', text: BOOKING_MENU_TEXT, web_app: { url } } });
+    } catch (err) {
+      this.ctx.log.warn({ err: errorMessage(err) }, 'bot menu button not set');
+    }
   }
 
   private requireBot(): Bot {

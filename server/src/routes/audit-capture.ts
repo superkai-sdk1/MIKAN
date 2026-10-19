@@ -132,6 +132,8 @@ const adjustment: SnapshotLoader = (ctx, p) => {
 const SNAPSHOTS: Record<string, SnapshotLoader> = {
   'PATCH /appointments/:id': appointment,
   'POST /appointments/:id/complete': appointment,
+  'POST /appointments/:id/online/confirm': appointment,
+  'POST /appointments/:id/online/reject': appointment,
   'PATCH /clients/:id': client,
   'POST /clients/:id/telegram-link': client,
   'PATCH /services/:id': service,

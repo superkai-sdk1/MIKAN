@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, gt, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, botChats, bookingRequests, clients, depositOperations, products, saleItems, sales } from '../db/schema.js';
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
@@ -236,5 +236,18 @@ export function badges(db: DbOrTx) {
     needsAttention: n(db.select({ n: count() }).from(botChats).where(eq(botChats.needsAttention, true)).get()),
     newBookingRequests: n(db.select({ n: count() }).from(bookingRequests).where(eq(bookingRequests.status, 'new')).get()),
     lowStock: n(db.select({ n: count() }).from(products).where(and(eq(products.active, true), hasLowStock)).get()),
+    onlineAwaiting: n(
+      db
+        .select({ n: count() })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.onlineState, 'awaiting_confirmation'),
+            inArray(appointments.status, ['scheduled', 'confirmed']),
+            gt(appointments.startsAt, Date.now()),
+          ),
+        )
+        .get(),
+    ),
   };
 }

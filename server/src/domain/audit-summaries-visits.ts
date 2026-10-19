@@ -43,6 +43,8 @@ export const APPOINTMENT_IGNORE = [
   'receiptId',
   'saleId',
   'completedAt',
+  'channel',
+  'holdUntil',
 ];
 
 /** «№1846 (Анна Иванова)» */
@@ -114,6 +116,23 @@ function appointmentComplete(c: SummaryContext): AuditDraft {
   const used = Array.isArray(result?.consumption?.used) ? result.consumption.used.length : 0;
   const summary = `${titleOf(a)} завершена${used ? `, списано расходников: ${used}` : ''}`;
   return appointmentDraft(a, 'appointment.complete', summary, diffChanges(c.before, a, APPOINTMENT_IGNORE));
+}
+
+/** Staff settle an online booking: `…/online/confirm`, `…/online/reject` (docs/API.md «Online booking»). */
+function onlineConfirm(c: SummaryContext): AuditDraft {
+  const a = entityOf<AppointmentOut>(c.result);
+  const summary = `Онлайн-запись ${appointmentRef(a.id, a.client)} на ${formatWhen(a.startsAt, c.tz, c.now)} подтверждена`;
+  return appointmentDraft(a, 'appointment.online_confirm', summary, { onlineState: { from: 'awaiting_confirmation', to: null } });
+}
+
+function onlineReject(c: SummaryContext): AuditDraft {
+  const a = entityOf<AppointmentOut>(c.result);
+  const before = maybeEntity<AppointmentOut>(c.before);
+  const reason = textOf(c.body.reason);
+  const summary =
+    `Онлайн-запись ${appointmentRef(a.id, a.client)} на ${formatWhen(a.startsAt, c.tz, c.now)} отклонена` +
+    (reason ? `. Причина: ${reason}` : '');
+  return appointmentDraft(a, 'appointment.online_reject', summary, before ? { status: { from: before.status, to: a.status } } : null);
 }
 
 // ---------- prepayments (entity `deposit`, id of the appointment) ----------
@@ -300,6 +319,8 @@ export const visitSummaries: Record<string, SummaryBuilder> = {
   'POST /appointments': appointmentCreate,
   'PATCH /appointments/:id': appointmentPatch,
   'POST /appointments/:id/complete': appointmentComplete,
+  'POST /appointments/:id/online/confirm': onlineConfirm,
+  'POST /appointments/:id/online/reject': onlineReject,
   'POST /appointments/:id/deposit': depositOperation('receive', 'принята'),
   'POST /appointments/:id/deposit/refund': depositOperation('refund', 'возвращена'),
   'POST /appointments/:id/deposit/retain': depositOperation('retain', 'удержана'),

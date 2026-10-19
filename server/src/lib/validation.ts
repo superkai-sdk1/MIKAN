@@ -130,6 +130,14 @@ const FIELD_LABELS: Record<string, string> = {
   presenceStatus: 'Наличие',
   counts: 'Пересчёт',
   presence: 'Наличие',
+  onlineBooking: 'Онлайн-запись',
+  enabled: 'Включено',
+  leadMinutes: 'Запись не раньше чем через, мин',
+  horizonDays: 'Запись вперёд, дней',
+  holdMinutes: 'Время на оплату предоплаты, мин',
+  stepMinutes: 'Шаг времени записи, мин',
+  variant: 'Вариант',
+  comment: 'Комментарий',
 };
 
 function fieldLabel(path: PropertyKey[]): string | null {

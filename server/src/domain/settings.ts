@@ -20,6 +20,23 @@ export interface StudioSettings {
   cancellation: CancellationRules;
   /** Where clients leave a review: `https://…` or "" (none). */
   reviewLinks: ReviewLinks;
+  /** Client-facing booking through the bot, the Mini App and the booking page (see domain/online-booking.ts). */
+  onlineBooking: OnlineBookingSettings;
+}
+
+export interface OnlineBookingSettings {
+  /** `false` — the booking page is closed and the bot falls back to booking requests. */
+  enabled: boolean;
+  /** The earliest start offered: at least this many minutes from now (0…2880). */
+  leadMinutes: number;
+  /** How far ahead starts are offered, in days (1…180). */
+  horizonDays: number;
+  /** How long an unpaid booking holds its time while the client pays the prepayment (5…60 minutes). */
+  holdMinutes: number;
+  /** The grid of offered starts from the beginning of the master's working day: 15 | 30 | 60 minutes. */
+  stepMinutes: number;
+  /** Shown to clients on the booking page (≤ 500 characters). */
+  note: string;
 }
 
 export interface CancellationRules {
@@ -42,6 +59,13 @@ export interface ReviewLinks {
 /** `freeHours` limit: two weeks. */
 export const FREE_CANCELLATION_HOURS_MAX = 14 * 24;
 export const REVIEW_LINK_MAX = 500;
+/** Limits of `StudioSettings.onlineBooking`. */
+export const ONLINE_LEAD_MAX = 2 * 24 * 60;
+export const ONLINE_HORIZON_MAX = 180;
+export const ONLINE_HOLD_MIN = 5;
+export const ONLINE_HOLD_MAX = 60;
+export const ONLINE_STEPS = [15, 30, 60] as const;
+export const ONLINE_NOTE_MAX = 500;
 
 export interface BotSettingsStored {
   enabled: boolean;
@@ -98,6 +122,7 @@ export const DEFAULT_STUDIO: StudioSettings = {
   workdayEnd: '21:00',
   cancellation: { freeHours: 24, lateRetainPercent: 100, noShowRetainPercent: 100, autoRetain: false },
   reviewLinks: { yandex: '', twogis: '', google: '' },
+  onlineBooking: { enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '' },
 };
 
 export const DEFAULT_BOT: BotSettingsStored = {
@@ -162,19 +187,21 @@ export function workdayFromText(text: string): Pick<StudioSettings, 'workdayStar
   return { workdayStart: formatTimeOfDay(start), workdayEnd: formatTimeOfDay(end) };
 }
 
-type StoredStudioValue = Partial<Omit<StudioSettings, 'cancellation' | 'reviewLinks'>> & {
+type StoredStudioValue = Partial<Omit<StudioSettings, 'cancellation' | 'reviewLinks' | 'onlineBooking'>> & {
   cancellation?: Partial<CancellationRules>;
   reviewLinks?: Partial<ReviewLinks>;
+  onlineBooking?: Partial<OnlineBookingSettings>;
 };
 
 export function getStudioSettings(db: DbOrTx): StudioSettings {
   const stored = readKey<StoredStudioValue>(db, KEY_STUDIO) ?? {};
-  // Settings saved before the cancellation rules / review links existed take the defaults.
+  // Settings saved before the cancellation rules / review links / online booking existed take the defaults.
   const merged = {
     ...DEFAULT_STUDIO,
     ...stored,
     cancellation: { ...DEFAULT_STUDIO.cancellation, ...stored.cancellation },
     reviewLinks: { ...DEFAULT_STUDIO.reviewLinks, ...stored.reviewLinks },
+    onlineBooking: { ...DEFAULT_STUDIO.onlineBooking, ...stored.onlineBooking },
   };
   if (stored.workdayStart !== undefined && stored.workdayEnd !== undefined) return merged;
   return { ...merged, ...workdayFromText(merged.workingHours) };
