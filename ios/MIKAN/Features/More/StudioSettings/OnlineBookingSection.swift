@@ -1,10 +1,18 @@
 import SwiftUI
 
-/// «Онлайн-запись»: how clients book themselves on the booking page, in the Mini App and through the bot.
+/// «Онлайн-запись»: how clients book themselves on the booking page, in the Mini App and through the bot, and — on a
+/// server that knows it — when a booking nobody confirmed is rejected by itself.
 struct OnlineBookingSection: View {
     @Binding var settings: OnlineBookingSettings
 
     var body: some View {
+        rulesSection
+        if let autoReject = Binding($settings.autoReject) {
+            autoRejectSection(autoReject)
+        }
+    }
+
+    private var rulesSection: some View {
         Section {
             Toggle("Онлайн-запись", isOn: $settings.enabled)
             Group {
@@ -49,6 +57,20 @@ struct OnlineBookingSection: View {
         }
         .monospacedDigit()
     }
+
+    /// Applies to bookings already waiting too, so it stays on while online booking is off.
+    private func autoRejectSection(_ autoReject: Binding<OnlineAutoReject>) -> some View {
+        Section {
+            Picker("Автоотмена неподтверждённых онлайн-записей", selection: autoReject) {
+                ForEach(OnlineBookingOptions.autoRejects(including: autoReject.wrappedValue), id: \.self) { value in
+                    Text(OnlineBookingOptions.autoRejectTitle(value)).tag(value)
+                }
+            }
+        } footer: {
+            Text(OnlineBookingOptions.autoRejectFooter(autoReject.wrappedValue))
+        }
+        .monospacedDigit()
+    }
 }
 
 /// «Ссылка для записи» under the online booking settings: open to every role, even where the settings are read-only.
@@ -78,7 +100,7 @@ struct BookingLinkSection: View {
 
 #if DEBUG
 #Preview {
-    @Previewable @State var settings = OnlineBookingSettings()
+    @Previewable @State var settings = OnlineBookingSettings(autoReject: .standard)
     NavigationStack {
         Form {
             OnlineBookingSection(settings: $settings)
