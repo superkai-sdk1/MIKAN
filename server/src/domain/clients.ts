@@ -23,6 +23,8 @@ export interface ClientInput {
   notes?: string | null;
   source?: string | null;
   botEnabled?: boolean;
+  /** The client asked for no news and offers (campaigns, birthday, win-back). */
+  marketingOptOut?: boolean;
   archived?: boolean;
 }
 
@@ -81,6 +83,7 @@ export function createClient(db: DbOrTx, input: ClientInput & { name: string }, 
       notes: input.notes ?? null,
       source: input.source ?? null,
       botEnabled: input.botEnabled ?? true,
+      marketingOptOut: input.marketingOptOut ?? false,
       archived: false,
       telegramChatId: extra.telegramChatId ?? null,
       createdAt: now,
@@ -121,6 +124,7 @@ export function updateClient(db: DbOrTx, id: number, input: ClientInput): Client
       notes: input.notes === undefined ? current.notes : input.notes,
       source: input.source === undefined ? current.source : input.source,
       botEnabled: input.botEnabled ?? current.botEnabled,
+      marketingOptOut: input.marketingOptOut ?? current.marketingOptOut,
       archived: input.archived ?? current.archived,
       updatedAt: Date.now(),
     })

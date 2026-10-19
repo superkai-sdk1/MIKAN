@@ -60,6 +60,9 @@ const RESTRICTED_ROUTES: ReadonlyMap<string, readonly Role[]> = new Map([
   ['POST /products/:id/movements/batch', MANAGERS],
   ['POST /products/:id/purchases', MANAGERS],
   ['POST /stock/revisions', MANAGERS],
+  // Loyalty: paying with bonuses and selling or redeeming certificates are till actions (every role).
+  ['POST /clients/:id/bonuses', MANAGERS],
+  ['POST /certificates/:id/cancel', OWNER],
   // Reports and analytics.
   ['GET /reports/summary', MANAGERS],
   ['GET /reports/analytics', MANAGERS],

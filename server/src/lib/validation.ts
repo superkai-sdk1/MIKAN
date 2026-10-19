@@ -138,6 +138,12 @@ const FIELD_LABELS: Record<string, string> = {
   stepMinutes: 'Шаг времени записи, мин',
   variant: 'Вариант',
   comment: 'Комментарий',
+  bonus: 'Бонусы',
+  certificates: 'Сертификаты',
+  code: 'Код сертификата',
+  recipientName: 'Кому',
+  expiresAt: 'Действует до',
+  marketingOptOut: 'Не присылать новости',
 };
 
 function fieldLabel(path: PropertyKey[]): string | null {

@@ -13,6 +13,7 @@ import { DIGEST_CHECK_INTERVAL_MS, sendDueDigests } from './bot/digest.js';
 import { checkDiskSpace, DISK_CHECK_INTERVAL_MS, raiseAlert, resolveAlerts } from './domain/alerts.js';
 import { pruneAuditLog } from './domain/audit.js';
 import { runBackupIfDue } from './domain/backup.js';
+import { expireLoyalty, LOYALTY_EXPIRY_INTERVAL_MS } from './domain/loyalty.js';
 import { HOLD_CHECK_INTERVAL_MS, releaseUnpaidHolds } from './domain/online-booking-lifecycle.js';
 import { uploadBackupOffsite } from './domain/offsite-backup.js';
 import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
@@ -168,6 +169,18 @@ async function main(): Promise<void> {
   const auditPruneTimer = setInterval(auditPruneTick, AUDIT_PRUNE_MS);
   auditPruneTick();
 
+  // Bonus lots and gift certificates burn at their expiresAt (docs/API.md «Loyalty bonuses», «Gift certificates»).
+  const loyaltyTick = () => {
+    try {
+      const burnt = expireLoyalty(db);
+      if (burnt.bonuses.lots || burnt.certificates.certificates) log.info(burnt, 'expired bonuses and certificates recorded');
+    } catch (err) {
+      log.error({ err: errorMessage(err) }, 'loyalty expiry failed');
+    }
+  };
+  const loyaltyTimer = setInterval(loyaltyTick, LOYALTY_EXPIRY_INTERVAL_MS);
+  loyaltyTick();
+
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
@@ -180,6 +193,7 @@ async function main(): Promise<void> {
     clearInterval(backupTimer);
     clearInterval(diskTimer);
     clearInterval(auditPruneTimer);
+    clearInterval(loyaltyTimer);
     const force = setTimeout(() => process.exit(1), 15_000);
     force.unref();
     try {

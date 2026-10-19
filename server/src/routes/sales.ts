@@ -1,13 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
+import { announceBonusEarned } from '../domain/loyalty.js';
 import { getSaleRow, serializeSale } from '../domain/refs.js';
 import { createSale, listSales, refundSale, type SaleInput } from '../domain/sales.js';
 import { badRequest } from '../lib/errors.js';
-import { idempotent } from '../lib/idempotency.js';
+import { idempotent, REPLAYED_HEADER } from '../lib/idempotency.js';
 import { idParams, money, nonNull, nullableText, pagination, parse, queryId, queryInstant, requiredText } from '../lib/validation.js';
 
 const id = z.number().int().positive();
+/** A line of an open receipt or a sale: a product or a service. */
 export const saleItem = z.object({
   type: z.enum(['product', 'service']),
   productId: id.nullish(),
@@ -17,10 +19,17 @@ export const saleItem = z.object({
   quantity: nonNull(z.number().int().min(1).max(10_000)),
   price: money.nullish(),
 });
+/** A sale also sells gift certificates (`type: certificate`, see «Gift certificates»). */
+const saleLine = saleItem.extend({
+  type: z.enum(['product', 'service', 'certificate']),
+  recipientName: nullableText(100),
+  note: nullableText(500),
+});
+const certificatePayment = z.object({ code: requiredText(40), amount: z.number().int().min(1).max(100_000_000) });
 export const saleBody = z.object({
   clientId: id.nullish(),
   appointmentId: id.nullish(),
-  items: z.array(saleItem).min(1).max(100),
+  items: z.array(saleLine).min(1).max(100),
   discount: nonNull(money),
   payments: z.object({
     cash: nonNull(money),
@@ -28,6 +37,8 @@ export const saleBody = z.object({
     transfer: nonNull(money),
     qr: nonNull(money),
     deposit: nonNull(money),
+    bonus: nonNull(money),
+    certificates: z.array(certificatePayment).max(10).nullish(),
   }),
   note: nullableText(1000),
   receiptId: id.nullish(),
@@ -48,6 +59,8 @@ export function saleInputOf(input: SaleBody): SaleInput {
       qr: input.payments.qr ?? 0,
       // Absent (not 0) for clients that predate prepayments: see `SalePayments.deposit`.
       deposit: input.payments.deposit,
+      bonus: input.payments.bonus ?? 0,
+      certificates: input.payments.certificates ?? [],
     },
     note: input.note,
     receiptId: input.receiptId,
@@ -74,7 +87,10 @@ export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
     const input = saleInputOf(parse(saleBody, request.body));
     // QR money is only counted once the bank confirms it: such a sale is created by POST /qr-payments.
     if (input.payments.qr > 0) throw badRequest('Оплату по QR-коду проводите через «Показать QR-код»');
-    return idempotent(db, request, reply, (tx) => serializeSale(tx, createSale(tx, input, request.employee.id)));
+    const sale = idempotent(db, request, reply, (tx) => serializeSale(tx, createSale(tx, input, request.employee.id)));
+    // The client hears about the credited bonuses once (not on a replay); the reply does not wait for Telegram.
+    if (reply.getHeader(REPLAYED_HEADER) === undefined) void announceBonusEarned(ctx, sale.id);
+    return sale;
   });
 
   app.post('/sales/:id/refund', async (request, reply) => {

@@ -72,6 +72,9 @@ Three roles; the server checks every request (the app only hides what a role can
 | Appointments (create, edit, move, cancel) & prepayments | ✓ | ✓ | own only |
 | Completing a visit (`POST /appointments/:id/complete`, e.g. at checkout) | ✓ | ✓ | ✓ |
 | POS, sales, refunds, cash, QR, dashboard | ✓ | ✓ | ✓ |
+| Loyalty at the till: paying with bonuses, selling and redeeming gift certificates, reading bonuses and certificates, editing a certificate's recipient and note, sending it | ✓ | ✓ | ✓ |
+| Bonus adjustments (`POST /clients/:id/bonuses`) | ✓ | ✓ | — |
+| Certificates: cancel, change the expiry (`expiresAt` in `PATCH /certificates/:id`) | ✓ | — | — |
 | Clients, history | ✓ | ✓ | ✓ |
 | Services, products, categories, aftercare templates, stock movements, purchases, revisions, image generation: write | ✓ | ✓ | — |
 | Reports and analytics (`/reports/*`) | ✓ | ✓ | — |
@@ -440,10 +443,10 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   already counted when received, so it is not cash in the drawer now).
 - `payments.bonus` — paid with the client's loyalty bonuses; `payments.certificate` — paid with gift certificates.
   `cash + card + transfer + qr + deposit + bonus + certificate = total`. `bonusEarned` — bonuses credited for this sale
-  (0 when none; taken back on refund).
+  (0 when none; taken back on refund — a refunded sale still shows what it had credited).
 - A gift certificate sold in the sale is a line with `certificateId` set. In responses it has `type: "service"`,
   `serviceId: null`, `name: "Подарочный сертификат MIKAN-7K3Q-9F2D"` (older builds know only `product` | `service`);
-  apps treat any line with `certificateId` as a certificate.
+  apps treat any line with `certificateId` as a certificate. Every line has `certificateId` (`null` for the others).
 
 ### OpenReceipt (открытый чек)
 ```json
@@ -710,7 +713,10 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   next to it): «Запись №1846 (Анна Иванова) перенесена с … на …», «Продажа №1580 возвращена: 3 500 ₽»,
   «Цена «Мочка»: 1 600 → 1 800 ₽», «Фатиме назначена роль «Мастер»». Entities: `appointment`, `deposit`, `sale`, `receipt`, `cash`, `client`,
   `service`, `product`, `stock`, `category`, `aftercare`, `knowledge`, `employee`, `schedule`, `payroll`,
-  `settings`, `bot`. `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
+  `settings`, `bot`, `certificate`. A manual bonus adjustment is `client.bonus_adjust` on the client («Начислено 500
+  бонусов клиенту «Анна Иванова»: Компенсация»); certificates log `certificate.update` / `certificate.cancel` /
+  `certificate.send`; a sale paid with bonuses or certificates says so («… Оплачено бонусами 300 ₽, сертификатом
+  1 000 ₽»). `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
 - `entityId` is the id of what the entry is about: `deposit` — the appointment; `stock` — the product (`null` for a
   stock count); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
   the booking request or the scheduled message; `sale` — the sale (`null` for a QR code not yet paid); `settings` and
@@ -724,8 +730,8 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/clients?search=&archived=false&limit=&offset=` | — | `{ items: [Client], total }` — search matches the full name (first and last name), phone digits, instagram, Telegram nick and bot username; sorted by full name |
-| GET | `/clients/:id` | — | `Client` with `stats` |
-| POST | `/clients` | `{ name, phone, lastName?, birthday?, telegramNick?, instagram?, notes?, source?, botEnabled? }` | `Client` · `400` without `phone` («Телефон»: обязательное поле) · `409 conflict` if phone already belongs to another client (message names that client) |
+| GET | `/clients/:id` | — | `Client` with `stats` and `loyalty` (so do `POST` / `PATCH`) |
+| POST | `/clients` | `{ name, phone, lastName?, birthday?, telegramNick?, instagram?, notes?, source?, botEnabled?, marketingOptOut? }` | `Client` · `400` without `phone` («Телефон»: обязательное поле) · `409 conflict` if phone already belongs to another client (message names that client) |
 | PATCH | `/clients/:id` | any of the same fields + `archived` | `Client` · `400` when clearing a phone the client has |
 
 - PATCH: omitted fields are kept, `null` / `""` clears an optional field. A phone, once set, can be changed but not
@@ -1054,12 +1060,20 @@ the background.
   "receiptId": 7 }
 ```
 - A certificate is sold as an item `{ "type": "certificate", "price": 5000, "recipientName": "Маше", "note": null }`
-  (quantity 1, any nominal 500…100 000): the sale issues it (see «Gift certificates»). A sale with a certificate item
-  cannot be paid with bonuses or certificates (`400`) and earns no bonuses on that item.
-- `payments.bonus` needs `clientId` and loyalty on; at most the client's balance (`409` «На счёте 1 200 бонусов») and
-  at most `maxPaymentPercent` of `total` (`400` «Бонусами можно оплатить не больше 30% чека — 1 500 ₽»).
-- `payments.certificates` — codes and amounts spent: each code active and not expired (`409` «Сертификат … не
-  действует»), amount ≤ its balance (`409` «На сертификате … осталось 800 ₽»); the sum is `payments.certificate`.
+  (quantity 1 — `400` otherwise, any nominal 500…100 000; `recipientName` ≤ 100 and `note` ≤ 500 characters are kept
+  on the certificate): the sale issues it (see «Gift certificates»), the buyer is the sale's client. A sale with a
+  certificate item cannot be paid with bonuses or certificates (`400` «Подарочный сертификат нельзя оплатить бонусами
+  или другим сертификатом») and earns no bonuses on that item. The discount never applies to a certificate line (its
+  nominal is what the buyer pays): `discount ≤ subtotal − certificate lines` (`400`). An open receipt holds products
+  and services only — the app adds a certificate line when it sends the sale.
+- `payments.bonus` needs a client (`clientId`, or the appointment's: `400` «Чтобы оплатить бонусами, выберите
+  клиента») and loyalty on (`409` «Бонусная программа выключена — оплатите другим способом»); at most the client's
+  balance (`409` «На счёте 1 200 бонусов») and at most `maxPaymentPercent` of `total`, rounded down (`400` «Бонусами
+  можно оплатить не больше 30% чека — 1 500 ₽»).
+- `payments.certificates` (≤ 10) — codes (case, dashes and the `MIKAN` prefix optional) and amounts spent: each code
+  known (`400` «Сертификат … не найден»), listed once (`400`), active and not expired (`409` «Сертификат … не
+  действует: срок действия истёк» / «…: он уже использован» / «…: он аннулирован»), amount ≤ its balance (`409` «На
+  сертификате … осталось 800 ₽»); the sum is `payments.certificate`.
 - `receiptId` — the open receipt being paid (optional): deleted together with the sale (see «Open receipts»).
 - `price` per item is the unit price actually charged (defaults to the catalog price if omitted: for a product, the
   size's price ?? the product's).
@@ -1080,6 +1094,9 @@ the background.
   before the check; insufficient stock → `409 insufficient_stock` ("Недостаточно на складе: Лабрет — 8 мм (осталось 0)",
   or "Лабрет (осталось 0)" for a product without sizes). Whole sale is one transaction.
 - With `appointmentId`, the appointment gets `saleId` (and is marked `completed` if not already, without aftercare).
+- Refund: gives back the bonuses and certificate amounts the sale was paid with and takes back the bonuses it earned
+  (see «Loyalty bonuses», «Gift certificates»); a sale that sold a certificate already spent in part → `409`
+  «Сертификат … уже частично оплачен покупками — чек вернуть нельзя».
 - Refund: marks `refunded`, returns product stock to the sold size (`return` movements; an archived size comes back to
   the list — unless the product now has a current size with the same name, which then gets the stock) when `restock`;
   a cash refund is attributed
@@ -1097,7 +1114,8 @@ the background.
 `GET /qr-payments/:id` and `POST /qr-payments/:id/cancel` work for prepayment codes too (`kind: "deposit"`, see
 Prepayments); `POST /qr-payments` creates `sale` codes only.
 
-Flow: the app sends the cart; the server validates it like a sale (nothing is written, stock of every size is checked),
+Flow: the app sends the cart; the server validates it like a sale (nothing is written, stock of every size, the bonus
+balance and the certificates are checked — nothing is reserved),
 registers a one-off SBP QR for `payments.qr` (valid 10 min) and stores the cart with its sizes and prices fixed. The app shows `payload` as
 a QR and polls `GET /qr-payments/:id` every ~2 s. When the bank reports the money, the server creates the sale from the
 stored cart in one transaction (with the cash/card/transfer parts as sent) and returns it in `sale`; one paid code
@@ -1431,30 +1449,52 @@ the sale discount).
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/clients/:id/bonuses?limit=&offset=` | — | `{ balance, items: [BonusOperation], total }` newest first |
-| POST | `/clients/:id/bonuses` | `{ amount (≠ 0), note, expiresAt? }` | `BonusOperation` (`adjust`) · owner, admin · the balance never goes below 0 (`409`) |
+| POST | `/clients/:id/bonuses` | `{ amount (≠ 0), note, expiresAt? }` | `BonusOperation` (`adjust`) · owner, admin · the balance never goes below 0 (`409` «На счёте только 300 бонусов») |
 
 `BonusOperation`: `{ id, type: "earn"|"spend"|"gift"|"expire"|"adjust"|"reverse", amount, remaining, expiresAt,
 saleId, saleNumber, note, employee: EmployeeRef | null, createdAt }`.
+- `amount` is signed (credits > 0, debits < 0); `remaining` — the unspent rest of a credit (`0` for debits);
+  `expiresAt` — when that rest burns (`null` — never; always `null` on debits). `balance` = Σ `remaining` of credits
+  that have not burnt: a lot past `expiresAt` leaves the balance at once, its `expire` operation (one per lot) is
+  written by the hourly job.
+- `earn` — the cashback of a sale (burns after `loyalty.expiryDays`, never when `null`); `spend` — paid in a sale;
+  `gift` — birthday and win-back gifts; `adjust` — by staff: `note` is required, a credit burns at `expiresAt` when
+  given (in the future, else `400` «Срок сгорания должен быть в будущем»), a debit takes from the oldest lots.
+- Refund of a sale (`reverse`, with the sale and a note): the bonuses paid in it come back first, as a new lot that
+  burns like newly earned ones; then the bonuses it earned are taken back — from its own lot first, then the oldest,
+  never below 0. Refunds work with loyalty off too.
+- After a paid sale that earned bonuses (`POST /sales`, a confirmed QR code) the bot tells the client in the
+  **linked** Telegram chat, when `loyalty.notifyClient`, the client's `botEnabled` and the card is not archived:
+  «Спасибо за покупку! 🎁 +75 бонусов, на счёте 1 275» (+ « — начисленные сгорят 14 ноября» when they burn). An
+  idempotent replay sends nothing.
 
 ### Gift certificates
 Sold at the till as a sale item (see «Sales»): the sale issues a certificate with a code «MIKAN-XXXX-XXXX» (letters
-and digits without look-alikes), `amount` = `balance` = the price, `expiresAt` = now + `validityMonths`. It is spent
-in parts at checkout (`payments.certificates`) until the balance is 0 (`used`); after `expiresAt` it is `expired`
-(checked hourly). Selling counts as money received but not as revenue (analytics `certificatesSold`); spending
-counts as revenue of the sale it pays. Refunds: a sale paid with a certificate gives the amount back to it; a sale that
-sold an unspent certificate cancels it (`409` when it was already spent in part).
+and digits without look-alikes: no 0/O, 1/I/L), `amount` = `balance` = the price, `expiresAt` = now + `validityMonths`
+(studio calendar; `null` when `validityMonths` is `null`). It is spent in parts at checkout (`payments.certificates`)
+until the balance is 0 (`used`); after `expiresAt` it is `expired` (checked hourly). Selling counts as money received
+but not as revenue (analytics `certificatesSold`); spending counts as revenue of the sale it pays. Refunds: a sale paid
+with a certificate gives the amount back to it (`used` → `active`; a certificate that has expired or been cancelled
+since burns it at once); a sale that sold an unspent certificate cancels it (`409` when it was already spent in part).
 
 `GiftCertificate`: `{ id, code, amount, balance, status: "active"|"used"|"expired"|"cancelled", expiresAt,
 buyer: ClientRef | null, recipientName, note, saleId, saleNumber, operations: [ { type, amount, saleId, saleNumber,
 createdAt } ], createdAt }`.
+- `status` is as of now: an active certificate past `expiresAt` reads `expired` (and cannot be spent) before the
+  hourly job burns its balance.
+- `operations` oldest first, `amount` signed (Σ = `balance`): `issue` | `redeem` (spent in sale `saleId`) | `refund`
+  (that sale was refunded) | `cancel` (by the owner, or the sale that sold it was refunded — then with its `saleId`) |
+  `expire` (the rest burnt).
+- Codes are matched without case, dashes, spaces and the `MIKAN` prefix (Cyrillic look-alike letters are read as
+  Latin), everywhere a code is accepted.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/certificates?status=&q=&limit=&offset=` | — | `{ items: [GiftCertificate], total }` newest first; `q` — code or recipient |
 | GET | `/certificates/code/:code` | — | `GiftCertificate` (code case- and dash-insensitive) · `404` «Сертификат не найден» |
-| PATCH | `/certificates/:id` | `{ recipientName?, note?, expiresAt? }` | `GiftCertificate` · `expiresAt` owner only |
-| POST | `/certificates/:id/cancel` | `{ reason }` | `GiftCertificate` · owner · the balance burns |
-| POST | `/certificates/:id/send` | `{ chatId? }` | `{ sent: true }` — the bot sends the certificate card to the buyer's linked chat (or `chatId`): «🎁 Подарочный сертификат MIKAN STUDIO на 5 000 ₽ · код MIKAN-7K3Q-9F2D · действует до 19 октября 2027» |
+| PATCH | `/certificates/:id` | `{ recipientName?, note?, expiresAt? }` | `GiftCertificate` · `expiresAt` owner only (`403`; resent unchanged it counts as untouched), in the future (`400`) or `null` (never expires), not for an expired or cancelled one (`409`) |
+| POST | `/certificates/:id/cancel` | `{ reason }` | `GiftCertificate` · owner · active only (`409`) · the balance burns; «Аннулирован: <reason>» is added to `note` |
+| POST | `/certificates/:id/send` | `{ chatId? }` | `{ sent: true }` — the bot sends the certificate card to the buyer's chat (or `chatId`, a chat that wrote to the bot: `400` otherwise): «🎁 Подарочный сертификат MIKAN STUDIO на 5 000 ₽ · код MIKAN-7K3Q-9F2D · действует до 19 октября 2027» (+ «Осталось 3 000 ₽», «Кому: Маше» lines) · `409` when it is not active, the buyer never wrote to the bot, the bot is off or Telegram refused |
 
 The app renders a certificate card (studio name, amount, code, valid until, recipient) to share or print. The bot
 answers a client who asks about a certificate by code (`certificate_balance { code }`: balance and validity, never

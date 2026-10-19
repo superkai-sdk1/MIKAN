@@ -2,6 +2,7 @@ import { silentLogger, type Logger } from '../context.js';
 import { errorMessage } from '../lib/errors.js';
 import { diffChanges, type AuditDraft } from './audit.js';
 import { catalogSummaries } from './audit-summaries-catalog.js';
+import { loyaltySummaries } from './audit-summaries-loyalty.js';
 import { teamSummaries } from './audit-summaries-team.js';
 import { visitSummaries } from './audit-summaries-visits.js';
 
@@ -33,6 +34,7 @@ export const SUMMARY_BUILDERS: Record<string, SummaryBuilder> = {
   ...visitSummaries,
   ...catalogSummaries,
   ...teamSummaries,
+  ...loyaltySummaries,
 };
 
 /** First path segment → entity, for routes without a specific summary. */
@@ -46,6 +48,7 @@ const PATH_ENTITIES: Record<string, string> = {
   catalog: 'category',
   sales: 'sale',
   'qr-payments': 'sale',
+  certificates: 'certificate',
   receipts: 'receipt',
   cash: 'cash',
   employees: 'employee',

@@ -17,10 +17,12 @@ import { appointmentRoutes } from './routes/appointments.js';
 import { auditRoutes } from './routes/audit.js';
 import { registerAuditCapture } from './routes/audit-capture.js';
 import { authRoutes, publicAuthRoutes } from './routes/auth.js';
+import { bonusRoutes } from './routes/bonuses.js';
 import { bookingPageRoutes } from './routes/booking-page.js';
 import { botRoutes } from './routes/bot.js';
 import { cashRoutes } from './routes/cash.js';
 import { catalogRoutes } from './routes/catalog.js';
+import { certificateRoutes } from './routes/certificates.js';
 import { categoryRoutes } from './routes/categories.js';
 import { clientRoutes } from './routes/clients.js';
 import { dashboardRoutes } from './routes/dashboard.js';
@@ -174,6 +176,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         employeeRoutes(secured, ctx);
         scheduleRoutes(secured, ctx);
         clientRoutes(secured, ctx);
+        bonusRoutes(secured, ctx);
         catalogRoutes(secured, ctx);
         categoryRoutes(secured, ctx);
         productRoutes(secured, ctx);
@@ -184,6 +187,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         depositRoutes(secured, ctx);
         receiptRoutes(secured, ctx);
         salesRoutes(secured, ctx);
+        certificateRoutes(secured, ctx);
         qrPaymentRoutes(secured, ctx);
         cashRoutes(secured, ctx);
         botRoutes(secured, ctx);

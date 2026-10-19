@@ -209,6 +209,15 @@ function itemsText(names: string[]): string {
   return ` — ${names.length > 3 ? `${shown} и ещё ${names.length - 3}` : shown}`;
 }
 
+/** «. Бонусами 300 ₽, сертификатом 1 000 ₽» — the loyalty parts of a sale's payment, when any. */
+function loyaltyPaid(s: Pick<SaleOut, 'payments'>): string {
+  const parts = [
+    (s.payments.bonus ?? 0) > 0 ? `бонусами ${formatRub(s.payments.bonus)}` : null,
+    (s.payments.certificate ?? 0) > 0 ? `сертификатом ${formatRub(s.payments.certificate)}` : null,
+  ].filter(Boolean);
+  return parts.length ? `. Оплачено ${parts.join(', ')}` : '';
+}
+
 function saleCreate(c: SummaryContext): AuditDraft {
   const s = entityOf<SaleOut>(c.result);
   const client = s.client ? ` (${personName(s.client)})` : '';
@@ -216,7 +225,7 @@ function saleCreate(c: SummaryContext): AuditDraft {
     action: 'sale.create',
     entity: 'sale',
     entityId: s.id,
-    summary: `Продажа №${s.number}${client} проведена: ${formatRub(s.total)}${itemsText(s.items.map((i) => i.name))}`,
+    summary: `Продажа №${s.number}${client} проведена: ${formatRub(s.total)}${itemsText(s.items.map((i) => i.name))}${loyaltyPaid(s)}`,
     changes: null,
   };
 }

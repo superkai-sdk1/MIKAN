@@ -2,6 +2,7 @@ import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, appointmentServices, clients, employees, openReceipts, products, productVariants, saleItems, sales, services } from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
+import { earnedBySales } from './bonuses.js';
 import { appointmentCancellation } from './cancellation.js';
 import { depositLedgerByAppointment, depositStatusOf, heldAmount, latestDepositCodes } from './deposit-ledger.js';
 import { getStudioSettings } from './settings.js';
@@ -179,6 +180,10 @@ export function serializeSales(db: DbOrTx, rows: SaleRow[]): SaleOut[] {
     db,
     rows.map((r) => r.employeeId),
   );
+  const earned = earnedBySales(
+    db,
+    rows.map((r) => r.id),
+  );
   return rows.map((sale) => {
     const client = sale.clientId != null ? cl.get(sale.clientId) : undefined;
     const employee = em.get(sale.employeeId);
@@ -187,6 +192,7 @@ export function serializeSales(db: DbOrTx, rows: SaleRow[]): SaleOut[] {
       (bySale.get(sale.id) ?? []).sort((a, b) => a.id - b.id),
       client ? clientRef(client) : null,
       employee ? employeeRef(employee) : missingEmployee(sale.employeeId),
+      earned.get(sale.id) ?? 0,
     );
   });
 }
