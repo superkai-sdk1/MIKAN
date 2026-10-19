@@ -205,6 +205,8 @@ online hold released). `employee` is `null` for `bot` and `system`.
 ```
 - The client card: `name` (first name, required), `lastName`, `birthday`, `phone` (required), `telegramNick`; the
   other fields are optional extras.
+- `birthday` with the year 1900 (`"1900-04-12"`, also `"1900-02-29"`) means «year unknown»: apps and the bot show only
+  the day and the month and never compute an age from it (see «Collecting birthdays»).
 - Full name = `name` + `" "` + `lastName` (blank parts skipped): apps show it in lists, appointments, checkout and
   history; the bot and staff notifications use it too. Cards created before last names existed may hold the whole
   name in `name` with `lastName: null`.
@@ -743,7 +745,7 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   `POST /campaigns/preview` and idempotent replays; online bookings from the booking page and the Mini App and client
   cancellations on the booking page and moves / cancellations in the client cabinet as `online`; client actions in the bot (online booking, booking request,
   reschedule, confirm «Приду», «🔕 Не присылать новости» / «Снова получать новости» — `client.marketing_opt_out` /
-  `client.marketing_opt_in`) as `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed
+  `client.marketing_opt_in`, the birthday — `client.birthday`) as `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed
   QR payments, an online hold confirmed by its prepayment and an unpaid hold released as `system`. Staff confirming / rejecting an online booking
   in the app is `appointment.online_confirm` / `appointment.online_reject`. Signing out is `employee.logout`
   («Выход из приложения на устройстве «iPhone 16 Pro · MIKAN 13»»), ending a session from the list
@@ -1968,15 +1970,28 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
 Most cards have no birthday, so greetings rarely go out. The birthday is collected gently, never required:
 - **Bot:** right after a chat shares its phone (or links a card) and the card has no birthday and was never asked
   (`birthdayAskedAt` is null), the bot asks once: «Подскажите дату рождения — в этот день пришлём подарок 🎁» with
-  «Пропустить». A reply like «12.04.1995», «12 апреля», «12/04», «12 апреля 1995» is saved (`YYYY-MM-DD`; a year-less
-  date is stored with year 1900 and shown without the year); anything else gets one gentle retry, then the bot moves
-  on. `birthdayAskedAt` is set when it asks, so it never asks again.
+  «Пропустить» (never in a staff chat). A reply like «12.04.1995», «12 апреля», «12/04/95», «12 апреля 1995»,
+  «1995-04-12» — also inside «мой день рождения 12 апреля» — is saved (`YYYY-MM-DD`; a year-less date is stored with
+  year 1900 and shown without the year; two-digit years: this century up to the current year, else the last one) and
+  answered «Записал! В этот день будет подарок 🎁». A date-like reply that is not a real past date (31.02, a future
+  date, «1204») gets one gentle retry («Не получилось разобрать дату 🙈 …», with «Пропустить»), a second miss ends it
+  («Ничего страшного 🙂 Дату рождения можно добавить позже в «👤 Мои записи и бонусы».»); «Пропустить» or «не хочу» —
+  «Хорошо! …». `birthdayAskedAt` is set when it asks, so it never asks again.
+  The client's next text message is read as the answer only while the question is open: it (or the retry) is the newest
+  message in the chat — nothing from the client or staff since — and at most 3 days old. A message that is clearly not
+  a date (other words around a date, a question mark: «На 12.04 есть время?», «Сколько стоит прокол?») goes to the AI
+  as usual and closes the question, as any other client message, button or photo does. A card that got a birthday
+  meanwhile is never overwritten. Saved birthdays are logged as `client.birthday` («Клиент «Анна» указал(а) дату
+  рождения в боте: 12 апреля»).
 - **Booking page / Mini App:** an optional «Дата рождения» on the contacts step for a new client (`birthday` in
   `POST /public/booking`); the engine fills it in when the card has none.
 - **Cabinet:** «Добавьте дату рождения — пришлём подарок» while it is empty, `POST /public/cabinet/birthday
   { birthday }` (only when empty; `409` otherwise).
 - **App:** the client card shows a hint while the birthday is empty.
-- Birthday greetings and the birthday discount ignore the year 1900 placeholder correctly (only day and month count).
+- The year 1900 is «year unknown» everywhere: birthday greetings, the birthday discount window, the morning digest's
+  birthdays, the campaign `birthdayMonth`, the staff bot («День рождения: 12 апреля») and the app use only the day and
+  the month (29 February counts on 28 February in other years); no age is computed from it. Staff may save it too
+  (`PATCH /clients/:id` accepts `"1900-02-29"`).
 
 ### Birthday and win-back
 - **Birthday** (`birthday.enabled`): at `sendAt` studio time on the client's birthday (by `birthday`; 29 February

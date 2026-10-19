@@ -20,7 +20,7 @@ import { getClientRow, serializeAppointments, serializeSales } from '../domain/r
 import { conflict } from '../lib/errors.js';
 import { clientOut, type ClientRow } from '../lib/serialize.js';
 import {
-  calendarDate,
+  birthdayDate,
   idParams,
   nonNull,
   nullableText,
@@ -48,7 +48,7 @@ const fields = {
   phone: phoneInput,
   instagram: nullableText(100),
   telegramNick,
-  birthday: calendarDate,
+  birthday: birthdayDate,
   notes: nullableText(CLIENT_NOTES_MAX),
   source: nullableText(100),
 };

@@ -41,6 +41,8 @@ export interface OnboardingReply {
   linked: boolean;
   /** The chat belongs to a recognised employee: the staff keyboard is shown. */
   staff?: boolean;
+  /** The shared phone or `/start c<token>` linked the chat to a card just now (the bot may ask for the birthday). */
+  cardLinked?: boolean;
 }
 
 /** An active employee whose phone (normalized) is `phone`. */
@@ -75,6 +77,7 @@ export function handleStart(ctx: AppContext, from: IncomingFrom, payload: string
   const greeting = getBotSettings(db).greeting;
   upsertChat(db, from.chatId, { telegramName: from.telegramName, username: from.username });
   let text = greeting;
+  let cardLinked = false;
   const token = payload.trim();
   const bookingLink = token.startsWith(BOOKING_START_PREFIX) && token.length > BOOKING_START_PREFIX.length;
   const waitlistLink = token.startsWith(WAITLIST_START_PREFIX) && token.length > WAITLIST_START_PREFIX.length;
@@ -88,6 +91,7 @@ export function handleStart(ctx: AppContext, from: IncomingFrom, payload: string
     const client = findClientByLinkToken(db, token.slice(1));
     if (client) {
       linkTelegram(db, client.id, from.chatId, from.username);
+      cardLinked = true;
       text =
         `${client.name}, ваш Telegram подключён к ${getStudioSettings(db).name} ✅\n` +
         'Сюда будут приходить напоминания о записях и рекомендации по уходу после процедур. ' +
@@ -104,7 +108,7 @@ export function handleStart(ctx: AppContext, from: IncomingFrom, payload: string
   // Telegram never tells a bot the user's phone: ask for it, or employees go on chatting unrecognised, as clients.
   if (!linked && !employee) text = `${text}\n\n${SHARE_PHONE_HINT}`;
   storeMessage(db, from.chatId, 'system', text);
-  return { text, linked, ...(employee ? { staff: true } : {}) };
+  return { text, linked, ...(employee ? { staff: true } : {}), ...(cardLinked ? { cardLinked: true } : {}) };
 }
 
 /**
@@ -170,7 +174,7 @@ export async function handleContact(
     text = `Спасибо, ${name}! Номер сохранён ✅ Чем могу помочь?`;
   }
   storeMessage(db, from.chatId, 'system', text);
-  return { text, linked: true };
+  return { text, linked: true, cardLinked: true };
 }
 
 /**

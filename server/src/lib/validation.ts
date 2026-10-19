@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { badRequest } from './errors.js';
+import { isStoredBirthday } from './birthday.js';
 import { normalizePhone, isPlausiblePhone } from './phone.js';
 import { isValidCalendarDate, parseInstant } from './time.js';
 
@@ -258,6 +259,14 @@ export const calendarDate = z
   .string()
   .trim()
   .refine((v) => v === '' || isValidCalendarDate(v), { message: 'дата должна быть в формате ГГГГ-ММ-ДД' })
+  .nullish()
+  .transform((v) => (v === '' ? null : v));
+
+/** A birthday `YYYY-MM-DD`: a real date, or day and month with the year 1900 («year unknown», 29 February too). */
+export const birthdayDate = z
+  .string()
+  .trim()
+  .refine((v) => v === '' || isStoredBirthday(v), { message: 'дата должна быть в формате ГГГГ-ММ-ДД' })
   .nullish()
   .transform((v) => (v === '' ? null : v));
 
