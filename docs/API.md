@@ -1203,16 +1203,35 @@ sale refunded).
              "top10PercentShare": 38.5 },
   "sources": [ { "source": "instagram", "newClients": 6, "revenue": 42000 } ] }
 ```
-- `funnel.online` — online bookings created in the period by channel and what became of them; `appointments` — all
-  appointments created in the period by `channel`.
-- `load` — every active master: working time from their work schedule (studio hours when none) in the period,
-  booked = non-cancelled, non-no-show appointments inside it, `loadPercent = booked / working`.
-- `retention` — `newClients` had their first completed visit in the period; `returnedWithin90Days` came back within
-  90 days of it (counted up to now); `cohorts` — the 12 months up to `to`, by the month of the first completed visit.
-- `value` — over all time up to `to`: revenue per client with at least one completed visit or sale, visits per client,
-  the share of revenue from the top 10 % of clients.
-- `sources` — new clients of the period by the card's `source` (empty → «не указан») and the revenue they brought in
-  the period.
+Same limits and `400` messages as the analytics. A **visit** is a completed appointment (dated by `startsAt`); days
+between visits are studio-local calendar days.
+- `funnel.bookingRequests` — booking requests created in the period by status (`open` = still `new`).
+- `funnel.online` — online bookings (`channel` ≠ `app`) created in the period: `byChannel` (every channel listed,
+  zeros included) and what became of them, so `created = confirmed + rejected + expired + cancelledByClient +
+  awaiting`: `awaiting` — still unsettled (`onlineState` set, not closed); `rejected` — staff rejected it, or cancelled
+  it while it still waited; `expired` — the prepayment hold ran out; `cancelledByClient` — cancelled on the booking
+  page (before or after confirmation); `confirmed` — the rest (confirmed or paid, whatever happened to the visit
+  later). `completed` — those whose visit is completed (part of `confirmed`).
+- `funnel.appointments` — all appointments created in the period: `byChannel` (`app`, `bot`, `miniapp`, `web`, zeros
+  included) and their current `completed` / `cancelled` / `noShow` counts.
+- `load` — every active master (`isMaster`): `workingMinutes` — working time in the period from their work schedule
+  (the studio hours when none; minus breaks and days off); `bookedMinutes` — time inside the period covered by their
+  non-cancelled, non-no-show appointments (overlapping ones count once; time outside the schedule counts too, so the
+  load may exceed 100 %); `completedMinutes` — the same for completed ones; `loadPercent = round(booked / working ×
+  100)`, `null` when the master had no working time. `byWeekday` — always 7 entries (1 = Monday … 7 = Sunday,
+  studio-local; appointments crossing midnight are split). Sorted by `loadPercent` (`null` last).
+- `retention` — `newClients` had their first visit in the period; `returnedWithin90Days` — those with another visit on
+  a later day within 90 days of the first (counted up to now); `repeatRatePercent` = their share (one decimal, `null`
+  without new clients); `averageDaysBetweenVisits` — mean gap between each visit of the period and the same client's
+  previous visit day (rounded, `null` when none); `cohorts` — always the 12 studio months up to `to` (the month of its
+  last instant), oldest first: `clients` whose first visit fell in that month and how many came back within 30 / 90 /
+  180 days of it (counted up to now, so recent cohorts are still filling up).
+- `value` — over all time up to `to`: clients with at least one visit or a kept (not refunded) sale;
+  `averageRevenuePerClient` — Σ revenue of their kept sales (analytics revenue: without bonuses and certificates sold)
+  / clients, rounded; `averageVisitsPerClient` — visits / clients (one decimal); `top10PercentShare` — the share of that
+  revenue from the top `ceil(clients / 10)` clients by revenue (one decimal, `null` without revenue).
+- `sources` — the same new clients as `retention.newClients`, by the card's `source` (trimmed, lower-cased; empty →
+  «не указан»), with the revenue of their kept sales made in the period; sorted by `newClients`, then `revenue`.
 The app shows it in Analytics → «Рост» (owner, admin).
 
 `GET /reports/summary?from=&to=` (instants; the app sends studio-local day boundaries)
