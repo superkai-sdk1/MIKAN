@@ -25,9 +25,13 @@ import {
 import { appointmentWhat, confirmForClient, ownActiveAppointment } from './client-appointments.js';
 import { followUpButton } from './follow-ups.js';
 import type { InlineKeyboard } from './gateway.js';
+import { marketingButton } from './marketing.js';
 import type { BotPipeline, IncomingFrom } from './pipeline.js';
 
-/** Inline buttons: catalog paging and choices, the reminder buttons and the follow-up buttons (bot/follow-ups.ts). */
+/**
+ * Inline buttons: catalog paging and choices, the reminder buttons, the follow-up buttons (bot/follow-ups.ts) and the
+ * buttons under news messages (bot/marketing.ts).
+ */
 
 export interface CallbackDeps {
   ctx: AppContext;
@@ -150,6 +154,11 @@ async function dispatch(deps: CallbackDeps, query: CallbackQueryInput, action: C
     case 'jewelryChangeBook':
     case 'jewelryChangeLater':
       return followUpButton(deps, query, action);
+
+    case 'marketingOptOut':
+    case 'marketingOptIn':
+    case 'marketingBook':
+      return marketingButton(deps, query, action);
   }
 }
 

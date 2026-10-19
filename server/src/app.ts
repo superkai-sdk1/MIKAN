@@ -21,6 +21,7 @@ import { bookingPageRoutes } from './routes/booking-page.js';
 import { botRoutes } from './routes/bot.js';
 import { cashRoutes } from './routes/cash.js';
 import { catalogRoutes } from './routes/catalog.js';
+import { campaignRoutes } from './routes/campaigns.js';
 import { categoryRoutes } from './routes/categories.js';
 import { clientRoutes } from './routes/clients.js';
 import { dashboardRoutes } from './routes/dashboard.js';
@@ -189,6 +190,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         botRoutes(secured, ctx);
         settingsRoutes(secured, ctx);
         retentionSettingsRoutes(secured, ctx);
+        campaignRoutes(secured, ctx);
         auditRoutes(secured, ctx);
         payrollRoutes(secured, ctx);
         deviceRoutes(secured, ctx);

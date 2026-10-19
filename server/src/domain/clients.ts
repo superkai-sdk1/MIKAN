@@ -23,6 +23,8 @@ export interface ClientInput {
   notes?: string | null;
   source?: string | null;
   botEnabled?: boolean;
+  /** No news and offers (campaigns, birthday, win-back); service messages still go. */
+  marketingOptOut?: boolean;
   archived?: boolean;
 }
 
@@ -121,6 +123,7 @@ export function updateClient(db: DbOrTx, id: number, input: ClientInput): Client
       notes: input.notes === undefined ? current.notes : input.notes,
       source: input.source === undefined ? current.source : input.source,
       botEnabled: input.botEnabled ?? current.botEnabled,
+      marketingOptOut: input.marketingOptOut ?? current.marketingOptOut,
       archived: input.archived ?? current.archived,
       updatedAt: Date.now(),
     })
