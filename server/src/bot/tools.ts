@@ -14,6 +14,7 @@ import type { JewelryList } from './callback-data.js';
 import { BOOK_APPOINTMENT_TOOL, buildBookingToolHandler } from './booking-tool.js';
 import { buildClientToolHandlers } from './client-tools.js';
 import { photoMessageText, serviceCaptionTitle, servicePhotoSource } from './media.js';
+import { buildPortfolioToolHandler, SHOW_PORTFOLIO_TOOL, type PortfolioShot } from './portfolio.js';
 import { HISTORY_LIMIT } from './prompt.js';
 import { clientLabel, notifyStaff } from './staff.js';
 
@@ -81,6 +82,7 @@ export const TOOLS: Anthropic.Tool[] = [
       required: ['serviceId'],
     },
   },
+  SHOW_PORTFOLIO_TOOL,
   {
     name: 'show_jewelry_for_service',
     description:
@@ -193,6 +195,8 @@ export interface ToolScope {
 export interface ToolSink {
   products: ProductRow[];
   services: ServiceRow[];
+  /** Photos of masters' work to send after the reply (`show_portfolio`). */
+  portfolio: PortfolioShot[];
   /** Jewelry carousels to send after the reply. */
   carousels: JewelryList[];
   notes: string[];
@@ -202,7 +206,15 @@ export interface ToolSink {
   after: Array<() => Promise<unknown>>;
 }
 
-export const emptySink = (): ToolSink => ({ products: [], services: [], carousels: [], notes: [], done: new Set(), after: [] });
+export const emptySink = (): ToolSink => ({
+  products: [],
+  services: [],
+  portfolio: [],
+  carousels: [],
+  notes: [],
+  done: new Set(),
+  after: [],
+});
 
 const invalid = (what: string): ToolResult => ({ content: `Некорректные данные: ${what}. Уточни у клиента и попробуй снова.`, isError: true });
 
@@ -239,6 +251,7 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
   return {
     ...buildClientToolHandlers(ctx, scope, sink),
     book_appointment: buildBookingToolHandler(ctx, scope, sink),
+    show_portfolio: buildPortfolioToolHandler(ctx, scope, sink),
     create_booking_request: async (raw) => {
       const parsed = bookingInput.safeParse(raw);
       if (!parsed.success) {

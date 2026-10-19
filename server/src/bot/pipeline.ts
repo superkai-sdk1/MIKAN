@@ -326,7 +326,8 @@ export class BotPipeline {
       sink.done.has('online_booking') ? (sink.after.length ? REPLIES.onlineBookedPay : REPLIES.onlineBooked) :
       sink.done.has('booking') ? REPLIES.booked : sink.done.has('handoff') ? REPLIES.handedOff : sink.done.has('reschedule') ? REPLIES.rescheduled : '';
     const text = result.text || confirmation;
-    if (result.outcome === 'ok' && (text || sink.products.length || sink.services.length || sink.carousels.length)) {
+    const pictures = sink.products.length + sink.services.length + sink.portfolio.length + sink.carousels.length;
+    if (result.outcome === 'ok' && (text || pictures > 0)) {
       if (text && !(await this.deliver(chatId, text))) {
         if (!employee) await this.escalate(chatId, 'не удалось доставить ответ бота в Telegram', last);
         return;
@@ -334,6 +335,7 @@ export class BotPipeline {
       for (const send of sink.after) await send();
       for (const service of sink.services) await this.sendService(chatId, service);
       for (const product of sink.products) await this.sendProduct(chatId, product);
+      for (const shot of sink.portfolio) await this.sendPicture(chatId, shot.source, shot.caption, { portfolioPhotoId: shot.id });
       for (const list of sink.carousels) {
         const page = jewelryPage(ctx.db, ctx.config.dataDir, list, 0);
         if (page) await sendPage(ctx, chatId, page);

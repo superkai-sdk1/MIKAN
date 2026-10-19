@@ -13,6 +13,7 @@ import {
   employees,
   giftCertificates,
   knowledgeEntries,
+  portfolioPhotos,
   services,
 } from '../db/schema.js';
 import { seedDatabase } from '../db/seed.js';
@@ -154,6 +155,18 @@ function addMaster(db: DbOrTx, name: string): number {
     .get().id;
 }
 
+/** Катя's portfolio: two mini tattoos (files in `dataDir/uploads`, so the bot can send them). */
+function addPortfolio(db: DbOrTx, dataDir: string, masterId: number, serviceIds: Map<string, number>): void {
+  const now = Date.now();
+  const serviceId = serviceIds.get('tattoo-mini') ?? null;
+  const works = ['Минимализм, линии', 'Цветочная веточка'].map((caption, sort) => {
+    const imageUrl = `/uploads/eval-portfolio-${sort + 1}.jpg`;
+    fs.writeFileSync(path.join(dataDir, 'uploads', path.basename(imageUrl)), 'eval');
+    return { employeeId: masterId, serviceId, imageUrl, caption, sort, createdAt: now };
+  });
+  db.insert(portfolioPhotos).values(works).run();
+}
+
 /** Анна: identified (her chat is linked), 1 400 bonuses, a mini tattoo booked in a few days and awaiting prepayment. */
 function addClient(db: DbOrTx, serviceIds: Map<string, number>, ownerId: number, masterId: number): ClientRow {
   const now = Date.now();
@@ -249,6 +262,7 @@ export function buildEvalStudio(opts: { ai: AiClient | null; aiConfig: Config['a
       const serviceIds = addServices(tx, dataDir);
       addJewelry(tx, dataDir, serviceIds, ownerId);
       const masterId = addMaster(tx, SECOND_MASTER);
+      addPortfolio(tx, dataDir, masterId, serviceIds);
       addCertificate(tx, ownerId);
       return addClient(tx, serviceIds, ownerId, masterId);
     });
