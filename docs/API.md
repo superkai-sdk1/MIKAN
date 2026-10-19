@@ -1701,9 +1701,10 @@ a date range of at most 30 days. At most 3 open (`waiting` / `notified`) entries
 
 `WaitlistEntry`: `{ id, client: ClientRef, items: [ { serviceId, variant?, name } ], master: EmployeeRef | null,
 dateFrom, dateTo, status: "waiting"|"notified"|"booked"|"cancelled"|"expired", channel, notifiedAt, appointmentId,
-note, createdAt }`; `WaitlistEntryPublic` — the same without `client`. `items[].name` — the service's name (`variant`
-— the variant's name or `null`); `channel` — `app` | `bot` | `miniapp` | `web`; `dateFrom` / `dateTo` — studio-local
-`"YYYY-MM-DD"`, inclusive; `notifiedAt` — the last freed-time message (instant or `null`).
+note, createdAt }`; `WaitlistEntryPublic` (the booking page, the cabinet) — the same without `client`, and `note` is
+`null` on entries staff added in the app (`channel: app`). `items[].name` — the service's name (`variant` — the
+variant's name or `null`; pages show «Соски — Два»); `channel` — `app` | `bot` | `miniapp` | `web`; `dateFrom` /
+`dateTo` — studio-local `"YYYY-MM-DD"`, inclusive; `notifiedAt` — the last freed-time message (instant or `null`).
 
 | Method | Path | Body | Response |
 |---|---|---|---|

@@ -276,7 +276,7 @@ describe('client cabinet: what the client sees', () => {
     expect(list[0]).toEqual({
       id: waiting.id,
       items: [
-        { serviceId: w.nipple.id, variant: 'Два', name: 'Соски — Два' },
+        { serviceId: w.nipple.id, variant: 'Два', name: 'Соски' },
         { serviceId: w.lobe.id, variant: null, name: 'Мочка' },
       ],
       master: { id: w.fatima.id, name: 'Фатима', color: w.fatima.color },

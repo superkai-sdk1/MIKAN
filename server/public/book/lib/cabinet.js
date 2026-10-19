@@ -240,7 +240,8 @@ export function memoSteps(memo, todayDate) {
 
 /** Title and details of a waitlist entry: «Соски — Два, Мочка» · «20–25 октября · мастер Фатима». */
 export function waitlistSummary(entry) {
-  const title = (entry.items ?? []).map((item) => item.name).filter(Boolean).join(', ') || 'Запись';
+  const named = (entry.items ?? []).filter((item) => item.name);
+  const title = named.map((item) => (item.variant ? `${item.name} — ${item.variant}` : item.name)).join(', ') || 'Запись';
   const master = entry.master?.name ? `мастер ${entry.master.name}` : 'любой мастер';
   const notice = entry.status === 'notified' ? 'Освободилось время — мы написали вам в Telegram' : null;
   return { title, details: `${dateRange(entry.dateFrom, entry.dateTo)} · ${master}`, notice };
