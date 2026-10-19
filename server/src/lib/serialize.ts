@@ -67,6 +67,7 @@ export const employeeOut = (e: EmployeeRow) => ({
   phone: e.phone,
   color: e.color,
   isMaster: e.isMaster,
+  role: e.role,
   active: e.active,
   createdAt: toIso(e.createdAt),
 });
