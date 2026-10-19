@@ -20,6 +20,7 @@ import { buildClientContext, buildHistory, buildStablePrompt, buildSystem, type 
 import { clientLabel, notifyStaff } from './staff.js';
 import { buildStaffContext, buildStaffStablePrompt } from './staff-prompt.js';
 import { buildStaffToolHandlers, STAFF_TOOLS } from './staff-tools.js';
+import { runClientAiTest } from './test-mode.js';
 import { buildToolHandlers, emptySink, TOOLS } from './tools.js';
 
 export const REPLIES = {
@@ -79,18 +80,12 @@ export function aiLimitReached(ctx: AppContext, chatId: number | null, now = Dat
 export async function runTest(ctx: AppContext, text: string): Promise<string> {
   if (!ctx.ai) throw conflict('ИИ не настроен: укажите AI_API_KEY в настройках сервера');
   if (aiLimitReached(ctx, null)) throw conflict('Дневной лимит ИИ-ответов исчерпан — попробуйте завтра');
-  const sink = emptySink();
-  const scope = { mode: 'test' as const, chatId: null, clientId: null, telegramName: null, username: null, lastUserText: text };
-  const result = await runAi(
-    ctx.ai,
-    {
-      system: buildSystem(buildStablePrompt(ctx.db), `${buildClientContext(ctx.db, Date.now(), null, null)}\nТестовый запуск из приложения студии.`),
-      messages: [{ role: 'user', content: text }],
-      tools: TOOLS,
-      handlers: buildToolHandlers(ctx, scope, sink),
-    },
-    ctx.log,
-  );
+  const { result, sink } = await runClientAiTest(ctx, ctx.ai, {
+    messages: [{ role: 'user', content: text }],
+    client: null,
+    chatId: null,
+    note: 'Тестовый запуск из приложения студии.',
+  });
   recordUsage(ctx, null, result);
   if (result.outcome === 'error') throw new AppError('internal', 'Не удалось получить ответ ИИ — подробности в логах сервера');
   let reply = result.outcome === 'ok' && result.text ? result.text : result.outcome === 'refusal' ? REPLIES.refusal : REPLIES.error;

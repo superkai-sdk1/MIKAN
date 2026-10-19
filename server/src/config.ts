@@ -184,9 +184,41 @@ export function loadTochkaConfig(env: NodeJS.ProcessEnv = process.env): Config['
   return tochkaOf(parseEnv(tochkaSchema, env));
 }
 
+const aiSchema = envSchema.pick({
+  AI_BASE_URL: true,
+  AI_API_KEY: true,
+  AI_AUTH: true,
+  AI_MODEL: true,
+  AI_IMAGE_MODEL: true,
+  AI_HTTPS_PROXY: true,
+  AI_MAX_TOKENS: true,
+  AI_DAILY_LIMIT: true,
+  AI_CHAT_HOURLY_LIMIT: true,
+});
+
+function aiOf(e: z.infer<typeof aiSchema>): Config['ai'] {
+  const baseUrl = e.AI_BASE_URL ?? null;
+  return {
+    baseUrl,
+    apiKey: e.AI_API_KEY ?? null,
+    // A custom gateway (e.g. Polza) usually expects a Bearer token; Anthropic direct uses x-api-key.
+    auth: e.AI_AUTH ?? (baseUrl ? 'bearer' : 'x-api-key'),
+    model: e.AI_MODEL,
+    imageModel: e.AI_IMAGE_MODEL,
+    maxTokens: e.AI_MAX_TOKENS,
+    httpsProxy: e.AI_HTTPS_PROXY ?? null,
+    dailyLimit: e.AI_DAILY_LIMIT,
+    chatHourlyLimit: e.AI_CHAT_HOURLY_LIMIT,
+  };
+}
+
+/** Only the AI settings: the AI quality check (`npm run eval:ai`) runs without the rest of the server configuration. */
+export function loadAiConfig(env: NodeJS.ProcessEnv = process.env): Config['ai'] {
+  return aiOf(parseEnv(aiSchema, env));
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const e = parseEnv(envSchema, env);
-  const baseUrl = e.AI_BASE_URL ?? null;
   const offsite = offsiteOf(e);
   const apns = apnsConfigOf(e);
   return {
@@ -197,18 +229,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jwtSecret: e.JWT_SECRET,
     admin: { login: e.ADMIN_LOGIN, password: e.ADMIN_PASSWORD, name: e.ADMIN_NAME },
     telegram: { token: e.TELEGRAM_BOT_TOKEN ?? null, enabled: e.BOT_ENABLED, apiRoot: e.TELEGRAM_API_ROOT },
-    ai: {
-      baseUrl,
-      apiKey: e.AI_API_KEY ?? null,
-      // A custom gateway (e.g. Polza) usually expects a Bearer token; Anthropic direct uses x-api-key.
-      auth: e.AI_AUTH ?? (baseUrl ? 'bearer' : 'x-api-key'),
-      model: e.AI_MODEL,
-      imageModel: e.AI_IMAGE_MODEL,
-      maxTokens: e.AI_MAX_TOKENS,
-      httpsProxy: e.AI_HTTPS_PROXY ?? null,
-      dailyLimit: e.AI_DAILY_LIMIT,
-      chatHourlyLimit: e.AI_CHAT_HOURLY_LIMIT,
-    },
+    ai: aiOf(e),
     tochka: tochkaOf(e),
     offsiteBackup: offsite.config,
     offsiteBackupProblem: offsite.problem,
