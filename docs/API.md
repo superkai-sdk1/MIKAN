@@ -89,7 +89,7 @@ If the implementation must deviate, update this file in the same change.
   "variants": [ { "name": "Один", "price": 2500, "durationMin": null },
                 { "name": "Два", "price": 4000, "durationMin": 60 } ],
   "depositAmount": 0,
-  "aftercareTemplateId": 2, "freshProcedure": true,
+  "aftercareTemplateId": 2, "freshProcedure": true, "healingCheckDays": 7, "jewelryChangeWeeks": 6,
   "jewelryIds": [1, 7], "consumables": [ { "productId": 12, "quantity": 1 }, { "productId": 15, "quantity": 2 } ],
   "active": true, "sort": 0 }
 ```
@@ -102,6 +102,10 @@ If the implementation must deviate, update this file in the same change.
   памятка по уходу» (other). Aftercare memos are sent only for appointments with at least one such service (see
   `complete`); a jewelry change, cleaning or consultation keeps it `false`. On create it defaults to whether
   `aftercareTemplateId` is set (older builds do not send it); PATCH without it keeps the value.
+- `healingCheckDays` (1…60 or `null`) — the bot asks the client «Как заживает?» that many days after the visit (see
+  «Follow-ups» in the Bot section). Migrated services with `freshProcedure` get `7`, others `null`.
+- `jewelryChangeWeeks` (1…52 or `null`) — the bot suggests booking a jewelry change (a shorter bar once the swelling is
+  gone) that many weeks after the visit. `null` = never (the default).
 - `depositAmount`: prepayment required to book this service (whole rubles); `0` — no prepayment. An appointment's
   `depositRequired` defaults to the sum over its lines' catalog services (a service booked twice counts twice).
 - `category`: `tattoo` | `piercing` | `other` (drives the default aftercare template and icons).
@@ -234,8 +238,13 @@ or `null` for a mixed count.
   "status": "scheduled", "price": 8000, "notes": "...",
   "deposit": 2000, "depositRequired": 2000, "depositStatus": "paid",
   "depositOperations": [ DepositOperation ], "depositLink": QrPayment | null,
-  "saleId": null, "receiptId": null, "completedAt": null, "createdAt": "...", "updatedAt": "..." }
+  "saleId": null, "receiptId": null, "completedAt": null, "createdAt": "...", "updatedAt": "...",
+  "cancellation": { "freeUntil": "...", "lateRetain": 2000, "noShowRetain": 2000 } }
 ```
+`cancellation` — what the studio's rules (`StudioSettings.cancellation`) mean for this appointment while it has a
+prepayment (held, else required); `null` when neither. `freeUntil` — the last moment a free cancellation is possible
+(`null` when `freeHours` is 0); `lateRetain` / `noShowRetain` — rubles kept after a later cancellation / a no-show,
+from the held prepayment (or the required one while nothing is held yet).
 `status`: `scheduled` | `confirmed` | `completed` | `cancelled` | `no_show`. `saleId` — the sale that paid for it.
 `receiptId` — its open receipt in the POS (`OpenReceipt`, the visit has started), `null` when none.
 Visits carried over from YCLIENTS were paid in cash at the studio: the server maintenance script
@@ -390,7 +399,7 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   "kind": "aftercare", "sendAt": "...", "text": "...",
   "status": "pending", "sentAt": null, "error": null }
 ```
-`kind`: `aftercare` | `reminder`. `status`: `pending` | `sent` | `failed` | `cancelled`.
+`kind`: `aftercare` | `reminder` | `healing_check` | `jewelry_change`. `status`: `pending` | `sent` | `failed` | `cancelled`.
 An appointment has one `reminder` per `BotSettings.reminderOffsets` entry whose moment is still in the future. A
 reminder sent on the day of the visit is headed «⏰ Сегодня ждём вас…», an earlier one «🗓 Напоминаем о записи…»; both
 carry the inline buttons «✅ Приду» and «🔁 Перенести» (see «Reminder buttons» in the Bot section).
@@ -412,8 +421,21 @@ carry the inline buttons «✅ Приду» and «🔁 Перенести» (see
 ```json
 { "name": "MIKAN STUDIO", "address": "", "phone": "", "workingHours": "Ежедневно 11:00–21:00",
   "instagram": "", "website": "", "about": "", "timezone": "Europe/Moscow",
-  "workdayStart": "10:00", "workdayEnd": "21:00" }
+  "workdayStart": "10:00", "workdayEnd": "21:00",
+  "cancellation": { "freeHours": 24, "lateRetainPercent": 100, "noShowRetainPercent": 100, "autoRetain": false },
+  "reviewLinks": { "yandex": "https://yandex.ru/maps/org/…", "twogis": "", "google": "" } }
 ```
+- `cancellation` — the studio's prepayment rules, told to clients and applied when a visit that holds a prepayment is
+  cancelled or missed:
+  - `freeHours` (0…336) — a cancellation at least this many hours before the start is free (the whole prepayment can
+    be refunded); `0` = never free. `lateRetainPercent` / `noShowRetainPercent` (0…100) — the share of the held
+    prepayment the studio keeps after a later cancellation / a no-show. Defaults 24 / 100 / 100.
+  - `autoRetain` (default `false`) — when the appointment becomes `cancelled` late or `no_show`, the server itself
+    records the `retain` of that share (reason «Поздняя отмена — меньше 24 ч до записи» / «Неявка»); any remainder
+    stays held for staff to refund. With `false` nothing happens by itself and the app proposes the amount.
+  - On PUT omitted = unchanged (older builds never send it); each field is validated, an invalid one → `400`.
+- `reviewLinks` — where clients leave a review (`https://…`, ≤ 500 characters each; `""` = none): the bot offers them
+  after a healing check-in. On PUT omitted = unchanged.
 - `workdayStart` / `workdayEnd` — working hours «с» / «до», `"HH:MM"` in the studio `timezone` (`"24:00"` = midnight;
   the end must be later than the start). The app's calendar (day / 3 days / week) starts and ends at these hours.
   They are **not** a booking limit: staff may book or move appointments to any time, the server accepts them, and
@@ -485,7 +507,7 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/services?includeInactive=true` | — | `{ items: [Service] }` sorted by `sort`, then name |
-| POST | `/services` | `{ name, category, group?, price, priceMax?, priceFrom?, durationMin, description?, imageUrl?, imagePrompt?, photos?, variants?, depositAmount?, aftercareTemplateId?, freshProcedure?, jewelryIds?, consumables?, active?, sort? }` | `Service` |
+| POST | `/services` | `{ name, category, group?, price, priceMax?, priceFrom?, durationMin, description?, imageUrl?, imagePrompt?, photos?, variants?, depositAmount?, aftercareTemplateId?, freshProcedure?, healingCheckDays?, jewelryChangeWeeks?, jewelryIds?, consumables?, active?, sort? }` | `Service` |
 | PATCH | `/services/:id` | any of the above | `Service` |
 | GET | `/services/:id/history?limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who got this service and when, newest first |
 
@@ -1057,6 +1079,36 @@ removed: «Эта запись уже неактуальна»). A button under 
   the bot's reply (no AI call).
 - «🔁 Перенести» — stored as the client's message «[Кнопка] 🔁 Хочу перенести запись №…: <when> — <services>»; the AI
   continues with `my_appointments` / `free_slots` / `reschedule_appointment`.
+
+#### Cancellation rules in the bot
+The client AI knows `StudioSettings.cancellation` and tells it when a booking with a prepayment is made or asked about
+(«Бесплатно отменить или перенести запись можно не позднее чем за 24 часа; при более поздней отмене предоплата не
+возвращается, при неявке — тоже»; percents below 100 are named as a share). A reminder of an appointment that holds a
+prepayment while a free cancellation is still possible adds «Бесплатно отменить можно до <day>, <time>». Rescheduling
+through the bot is not limited by these rules.
+
+#### Follow-ups
+When a visit is completed (`complete`, or a sale that completes it) and its client has Telegram linked and the bot
+allowed, the server schedules one of each, at `BotSettings.aftercareHour` studio time on that day:
+- `healing_check` — after the largest `healingCheckDays` among the visit's catalog services (none set → none):
+  «Здравствуйте, Анна! Прошла неделя после процедуры «Хеликс». Как заживает? 🙂» with the buttons «👍 Всё хорошо» and
+  «🤔 Есть вопрос».
+  - «👍 Всё хорошо» → stored «[Кнопка] 👍 Всё хорошо»; the bot thanks and, when `StudioSettings.reviewLinks` has any,
+    asks for a review with a URL button per link («⭐ Яндекс Карты», «⭐ 2ГИС», «⭐ Google»).
+  - «🤔 Есть вопрос» → stored «[Кнопка] 🤔 Есть вопрос по заживлению»; the bot asks to describe it and send a photo, the
+    chat gets `needsAttention`, the staff chat is notified («🩹 Анна: вопрос по заживлению после «Хеликс», запись №…»).
+- `jewelry_change` — after the smallest `jewelryChangeWeeks` among the visit's catalog services (none set → none):
+  «Анна, прошло 6 недель после прокола «Хеликс» — самое время заменить украшение на подходящее по размеру. Записаться?»
+  with «📅 Записаться» (stored «[Кнопка] 📅 Хочу записаться на замену украшения после «Хеликс»», the AI continues the
+  booking) and «Позже» (a short reply, no AI).
+Only the appointment's client, in the chat linked to their card, can use these buttons. Completing a visit again
+schedules nothing new; a follow-up is cancelled if the client unlinks Telegram or turns the bot off for themselves.
+
+#### Alerts
+The staff chat (bound with `/staff`; else every staff chat) is told when something needs a person: the AI provider
+refuses for lack of balance («⚠️ Закончился баланс ИИ (Polza) — бот отвечает заглушкой»), the AI fails several times
+in a row, a daily backup or its off-site copy fails, free disk space runs low. Each kind at most once every 6 hours,
+and once more when it recovers.
 
 #### Formatting
 Bot messages may use light Markdown that the server renders for Telegram (HTML parse mode): `**bold**`, a heading
