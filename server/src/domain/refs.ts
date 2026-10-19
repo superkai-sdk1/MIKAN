@@ -2,7 +2,9 @@ import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, appointmentServices, clients, employees, openReceipts, products, productVariants, saleItems, sales, services } from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
+import { appointmentCancellation } from './cancellation.js';
 import { depositLedgerByAppointment, depositStatusOf, heldAmount, latestDepositCodes } from './deposit-ledger.js';
+import { getStudioSettings } from './settings.js';
 import {
   appointmentOut,
   appointmentServiceOut,
@@ -112,11 +114,13 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
     ...rows.map((r) => r.serviceId),
     ...[...lines.values()].flat().map((l) => l.serviceId),
   ]);
+  const rules = getStudioSettings(db).cancellation;
   return rows.map((a) => {
     const client = cl.get(a.clientId);
     const master = em.get(a.masterId);
     const service = a.serviceId != null ? sv.get(a.serviceId) : undefined;
     const ledger = ledgers.get(a.id) ?? [];
+    const held = heldAmount(ledger);
     const link = links.get(a.id);
     return appointmentOut(
       a,
@@ -127,12 +131,13 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
         appointmentServiceOut(l, l.serviceId != null ? (sv.get(l.serviceId)?.category ?? null) : null),
       ),
       {
-        held: heldAmount(ledger),
+        held,
         status: depositStatusOf(ledger, a.depositRequired, a.status),
         operations: ledger.map((op) => depositOperationOut(op, employeeRefOrMissing(em, op.employeeId))),
         link: link ? qrPaymentOut(link, null) : null,
       },
       receipts.get(a.id) ?? null,
+      appointmentCancellation(a, held, rules),
     );
   });
 }

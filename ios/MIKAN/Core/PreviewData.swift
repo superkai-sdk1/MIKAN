@@ -74,7 +74,8 @@ enum PreviewData {
             id: 1, client: ivanRef, master: anna.ref, service: tattoo.ref, title: "Предплечье, эскиз согласован",
             startsAt: at(hour: 11), endsAt: at(hour: 13), status: .confirmed, price: 8000, deposit: 2000,
             depositRequired: 2000, depositStatus: .paid, depositOperations: [depositReceived],
-            notes: "Принести эскиз в цвете", saleId: nil, completedAt: nil, createdAt: now, updatedAt: now
+            notes: "Принести эскиз в цвете", saleId: nil, completedAt: nil, createdAt: now, updatedAt: now,
+            cancellation: AppointmentCancellation(freeUntil: at(hour: 11).addingTimeInterval(-86_400), lateRetain: 2000, noShowRetain: 2000)
         ),
         Appointment(
             id: 2, client: mariaRef, master: oleg.ref, service: lobe.ref, title: nil,
@@ -303,7 +304,9 @@ enum PreviewData {
     static let studioSettings = StudioSettings(
         name: "MIKAN STUDIO", address: "ул. Ленина, 1", phone: "+79990000000",
         workingHours: "Ежедневно 11:00–21:00", instagram: "mikan.studio", website: "",
-        about: "Тату и пирсинг", timezone: "Europe/Moscow", workdayStart: "11:00", workdayEnd: "21:00"
+        about: "Тату и пирсинг", timezone: "Europe/Moscow", workdayStart: "11:00", workdayEnd: "21:00",
+        cancellation: CancellationRules(freeHours: 24, lateRetainPercent: 100, noShowRetainPercent: 100, autoRetain: false),
+        reviewLinks: ReviewLinks(yandex: "https://yandex.ru/maps/org/mikan/", twogis: "", google: "")
     )
 
     /// A started visit with a labret added, a receipt for a client, and an empty one.

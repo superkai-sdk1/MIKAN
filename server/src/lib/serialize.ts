@@ -1,4 +1,5 @@
 import type * as s from '../db/schema.js';
+import type { AppointmentCancellationOut } from '../domain/cancellation.js';
 import { toIso } from './time.js';
 
 type Row<T extends { $inferSelect: unknown }> = T['$inferSelect'];
@@ -294,6 +295,8 @@ export const appointmentOut = (
   deposit: AppointmentDepositOut,
   /** Its open receipt in the POS (the visit has started). */
   receiptId: number | null,
+  /** What the studio's cancellation rules mean for it (see domain/cancellation.ts). */
+  cancellation: AppointmentCancellationOut | null,
 ) => ({
   id: a.id,
   client,
@@ -316,6 +319,7 @@ export const appointmentOut = (
   completedAt: toIso(a.completedAt),
   createdAt: toIso(a.createdAt),
   updatedAt: toIso(a.updatedAt),
+  cancellation,
 });
 export type AppointmentOut = ReturnType<typeof appointmentOut>;
 

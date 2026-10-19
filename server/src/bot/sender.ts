@@ -2,6 +2,7 @@ import { and, asc, eq, lte } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { appointments, clients, scheduledMessages } from '../db/schema.js';
 import { storeMessage, upsertChat } from '../domain/bot-chats.js';
+import { reminderAsSent } from '../domain/cancellation.js';
 import { ACTIVE_APPOINTMENT_STATUSES } from '../domain/scheduling.js';
 import { errorMessage } from '../lib/errors.js';
 import type { ScheduledRow } from '../lib/serialize.js';
@@ -51,7 +52,9 @@ export async function processDueMessages(ctx: AppContext, now = Date.now()): Pro
     .limit(BATCH)
     .all();
 
-  for (const msg of due) {
+  for (const row of due) {
+    // A reminder's free-cancellation line depends on the prepayment held when it is sent.
+    const msg = row.kind === 'reminder' ? { ...row, text: reminderAsSent(ctx.db, row, now) } : row;
     const reason = skipReason(ctx, msg, now);
     if (reason) {
       mark(ctx, msg.id, { status: 'cancelled', error: reason });
@@ -63,7 +66,7 @@ export async function processDueMessages(ctx: AppContext, now = Date.now()): Pro
     try {
       const keyboard = msg.kind === 'reminder' && msg.appointmentId != null ? reminderKeyboard(msg.appointmentId) : undefined;
       await ctx.gateway.sendText(chatId, msg.text, keyboard ? { keyboard } : {});
-      mark(ctx, msg.id, { status: 'sent', sentAt: Date.now(), error: null, chatId });
+      mark(ctx, msg.id, { status: 'sent', sentAt: Date.now(), error: null, chatId, text: msg.text });
       upsertChat(ctx.db, chatId, { clientId: msg.clientId });
       storeMessage(ctx.db, chatId, 'system', msg.text);
       stats.sent += 1;

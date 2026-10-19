@@ -12,9 +12,10 @@ import {
 } from '../db/schema.js';
 import { REVIEW_MARKER } from '../db/seed-content.js';
 import { hasSizeInStock } from '../domain/products.js';
+import { cancellationPolicyText, freeUntilText } from '../domain/cancellation.js';
 import { depositLedgerByAppointment, heldAmount, latestDepositCodes } from '../domain/deposit-ledger.js';
 import { serviceLinesByAppointment } from '../domain/refs.js';
-import { getBotSettings, getStudioSettings } from '../domain/settings.js';
+import { getBotSettings, getStudioSettings, type StudioSettings } from '../domain/settings.js';
 import { clientFullName, parsePhotos, parseSteps, parseVariants, type AppointmentRow, type ClientRow, type ServiceRow } from '../lib/serialize.js';
 import { formatRub, formatServicePrice } from '../lib/text.js';
 import { jewelryLines } from './jewelry.js';
@@ -142,6 +143,17 @@ export function servicesSection(rows: ServiceRow[]): string {
   return `## Услуги и цены\n${rows.length ? servicesPriceList(rows) : 'Прайс пока не заполнен — цены уточняет администратор.'}`;
 }
 
+/** «## Отмена и предоплата»: the studio's rules in plain words and when to tell them. */
+export function cancellationSection(studio: StudioSettings): string {
+  return (
+    `## Отмена и предоплата\nПравило студии для записей с предоплатой: «${cancellationPolicyText(studio.cancellation)}»\n` +
+    'Расскажи его простыми словами, коротко и по-доброму, когда клиент записывается на услугу с предоплатой и когда ' +
+    'спрашивает про отмену, перенос или возврат предоплаты. До какого времени бесплатно отменить конкретную запись — ' +
+    'смотри в данных о клиенте. Не обещай вернуть больше, чем по правилу, — исключения решает администратор. ' +
+    'Переносить запись по просьбе клиента (reschedule_appointment) это правило не мешает.'
+  );
+}
+
 /** «Сейчас в студии: суббота, 17 октября в 14:00 (Europe/Moscow), сегодня 2026-10-17.» */
 export function nowLine(now: number, tz: string): string {
   return `Сейчас в студии: ${formatHumanDateTime(now, tz)} (${tz}), сегодня ${localDate(now, tz)}.`;
@@ -157,6 +169,7 @@ export function buildStablePrompt(db: DbOrTx): string {
   sections.push(`# Данные студии\n\n${studioAboutSection(db)}`);
   const serviceRows = activeServices(db);
   sections.push(servicesSection(serviceRows));
+  sections.push(cancellationSection(studio));
 
   const jewelry = db
     .select()
@@ -253,17 +266,29 @@ export function buildClientContext(
   return parts.join('\n');
 }
 
-/** «предоплата 2 000 ₽ внесена» / «ждём предоплату 2 000 ₽, ссылка на оплату отправлена» per upcoming appointment. */
+/** «, бесплатно отменить можно до 16 октября, 14:00» for a booking that holds a prepayment. */
+function freeCancellationNote(studio: StudioSettings, startsAt: number, now: number): string {
+  const until = freeUntilText(startsAt, now, studio.cancellation, studio.timezone);
+  if (until) return `, бесплатно отменить можно до ${until}`;
+  return studio.cancellation.freeHours > 0 ? ', срок бесплатной отмены уже прошёл' : '';
+}
+
+/**
+ * «предоплата 2 000 ₽ внесена, бесплатно отменить можно до …» / «ждём предоплату 2 000 ₽, ссылка на оплату
+ * отправлена» per upcoming appointment.
+ */
 function upcomingPrepayments(db: DbOrTx, upcoming: AppointmentRow[], now: number): Map<number, string> {
   const ids = upcoming.map((a) => a.id);
   const ledgers = depositLedgerByAppointment(db, ids);
   const links = latestDepositCodes(db, ids);
+  const studio = getStudioSettings(db);
   const result = new Map<number, string>();
   for (const a of upcoming) {
     const held = heldAmount(ledgers.get(a.id) ?? []);
     if (held > 0) {
       const partial = held < a.depositRequired;
-      result.set(a.id, partial ? `внесено ${formatRub(held)} из ${formatRub(a.depositRequired)} предоплаты` : `предоплата ${formatRub(held)} внесена`);
+      const paid = partial ? `внесено ${formatRub(held)} из ${formatRub(a.depositRequired)} предоплаты` : `предоплата ${formatRub(held)} внесена`;
+      result.set(a.id, `${paid}${freeCancellationNote(studio, a.startsAt, now)}`);
     } else if (a.depositRequired > 0) {
       const link = links.get(a.id);
       const sent = link?.status === 'pending' && link.sentAt != null && link.expiresAt > now;

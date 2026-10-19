@@ -37,6 +37,8 @@ nonisolated struct Appointment: Codable, Hashable, Identifiable, Sendable {
     var completedAt: Date?
     let createdAt: Date
     var updatedAt: Date
+    /// What the studio's cancellation rules mean for it; `nil` without a prepayment or from an older server.
+    var cancellation: AppointmentCancellation? = nil
 
     /// Service names, falling back to the free-form title.
     var displayTitle: String { serviceNames ?? service?.name ?? title.nonEmpty ?? "Запись" }
@@ -65,11 +67,11 @@ nonisolated extension Appointment {
     private enum CodingKeys: String, CodingKey {
         case id, client, master, service, services, title, startsAt, endsAt, status, price, deposit, notes
         case depositRequired, depositStatus, depositOperations, depositLink
-        case saleId, receiptId, completedAt, createdAt, updatedAt
+        case saleId, receiptId, completedAt, createdAt, updatedAt, cancellation
     }
 
-    /// Tolerates servers that predate multi-service appointments (no `services`), prepayments (no `deposit…`)
-    /// and open receipts (no `receiptId`).
+    /// Tolerates servers that predate multi-service appointments (no `services`), prepayments (no `deposit…`),
+    /// open receipts (no `receiptId`) and cancellation rules (no `cancellation`).
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
@@ -93,7 +95,18 @@ nonisolated extension Appointment {
         completedAt = try c.decodeIfPresent(Date.self, forKey: .completedAt)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        cancellation = try c.decodeIfPresent(AppointmentCancellation.self, forKey: .cancellation)
     }
+}
+
+/// `Appointment.cancellation`, counted from the held prepayment (the required one while nothing is held).
+nonisolated struct AppointmentCancellation: Codable, Hashable, Sendable {
+    /// The last moment a free cancellation is possible; `nil` when the studio never makes it free.
+    let freeUntil: Date?
+    /// Rubles kept after a later cancellation.
+    let lateRetain: Int
+    /// Rubles kept after a no-show.
+    let noShowRetain: Int
 }
 
 /// One booked service of an appointment. `serviceId` is `nil` for a custom line.

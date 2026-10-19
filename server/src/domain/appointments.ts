@@ -11,7 +11,7 @@ import {
 import { badRequest, conflict, scheduleConflict } from '../lib/errors.js';
 import { clientFullName, parseSteps, type AppointmentRow, type AppointmentServiceRow, type ServiceRow } from '../lib/serialize.js';
 import { formatShortDate, formatTime, MINUTE_MS } from '../lib/time.js';
-import { cancelPendingDepositCodes } from './deposits.js';
+import { autoRetainDeposit, cancelPendingDepositCodes } from './deposits.js';
 import { deleteReceiptOfAppointment } from './receipts.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
@@ -256,7 +256,8 @@ function repricedSingleLine(
   return { id: only.id, price: input.price };
 }
 
-export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInput): AppointmentRow {
+/** `actorId` — the employee making the change (recorded on a prepayment the rules retain by themselves). */
+export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInput, actorId: number | null = null): AppointmentRow {
   return db.transaction((tx) => {
     const current = getAppointmentRow(tx, id);
     if (input.clientId !== undefined) clientMustExist(tx, input.clientId);
@@ -307,7 +308,9 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
     const reminderRelevant =
       timingChanged || next.status !== current.status || next.clientId !== current.clientId || replaced !== undefined;
     if (reminderRelevant) syncReminder(tx, row, now);
-    return row;
+    const closedWithoutVisit =
+      INACTIVE_FOR_OVERLAP.includes(next.status) && !INACTIVE_FOR_OVERLAP.includes(current.status);
+    return (closedWithoutVisit ? autoRetainDeposit(tx, row, now, actorId) : null) ?? row;
   });
 }
 
