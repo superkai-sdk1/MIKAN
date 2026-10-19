@@ -40,6 +40,40 @@ nonisolated enum OnlineBookingOptions {
         return "Клиенты записываются сами — на сайте, в Mini App и через бота: \(earliest), на \(horizonTitle(settings.horizonDays)) вперёд, начало каждые \(minutesTitle(settings.stepMinutes)) по графику мастера. Если услуга с предоплатой, на оплату по QR даётся \(minutesTitle(settings.holdMinutes)) — потом время освободится. Без предоплаты запись ждёт вашего подтверждения."
     }
 
+    // MARK: Auto-reject of unconfirmed bookings (`confirmationHours`)
+
+    static let autoRejectHourChoices = [1, 2, 3, 6, 12, 24, 48, 72, 168]
+
+    /// «Выключена», then the hour choices plus a value set elsewhere.
+    static func autoRejects(including current: OnlineAutoReject) -> [OnlineAutoReject] {
+        let hours = current.hours.map { merged(autoRejectHourChoices, $0) } ?? autoRejectHourChoices
+        return [.never] + hours.map { .after(hours: $0) }
+    }
+
+    /// «Выключена», «Через 6 ч», «Через 1 день».
+    static func autoRejectTitle(_ value: OnlineAutoReject) -> String {
+        switch value {
+        case .never: "Выключена"
+        case .after(let hours): "Через \(hoursTitle(hours))"
+        }
+    }
+
+    /// «6 ч», «1 день», «7 дней».
+    static func hoursTitle(_ hours: Int) -> String {
+        hours > 0 && hours % 24 == 0 ? Plural.days(hours / 24) : "\(hours) ч"
+    }
+
+    /// What happens to a booking nobody confirms, under the picker.
+    static func autoRejectFooter(_ value: OnlineAutoReject) -> String {
+        switch value {
+        case .never:
+            return "Онлайн-записи без предоплаты ждут, пока вы их подтвердите или отклоните, сколько бы времени ни прошло."
+        case .after(let hours):
+            let before = Plural.count(OnlineAutoReject.hoursBeforeStart, one: "час", few: "часа", many: "часов")
+            return "Онлайн-запись, которую никто не подтвердил за \(hoursTitle(hours)), отменится сама — или за \(before) до начала, если это раньше. Клиенту придёт ссылка, чтобы выбрать другое время, а в чат студии — уведомление."
+        }
+    }
+
     private static func merged(_ choices: [Int], _ current: Int) -> [Int] {
         choices.contains(current) ? choices : (choices + [current]).sorted()
     }
@@ -64,6 +98,9 @@ nonisolated enum OnlineBookingRules {
         // The server counts UTF-16 code units (an emoji takes two).
         if settings.note.utf16.count > OnlineBookingSettings.maxNoteLength {
             return "Заметка для клиентов — не длиннее \(OnlineBookingSettings.maxNoteLength) символов."
+        }
+        if case .after(let hours)? = settings.autoReject, !OnlineAutoReject.hoursRange.contains(hours) {
+            return "Автоотмена — от 1 часа до 7 дней."
         }
         return nil
     }

@@ -47,6 +47,9 @@ nonisolated struct OnlineBookingSettings: Codable, Hashable, Sendable {
     var stepMinutes = 30
     /// Shown to clients on the booking page (≤ 500 characters).
     var note = ""
+    /// `confirmationHours`: when an unconfirmed online booking is rejected by itself; `nil` — the server predates it
+    /// (then never sent back).
+    var autoReject: OnlineAutoReject? = nil
 
     static let leadRange = 0...2880
     static let horizonRange = 1...180
@@ -55,12 +58,39 @@ nonisolated struct OnlineBookingSettings: Codable, Hashable, Sendable {
     static let maxNoteLength = 500
 }
 
-nonisolated extension OnlineBookingSettings {
-    private enum CodingKeys: String, CodingKey {
-        case enabled, leadMinutes, horizonDays, holdMinutes, stepMinutes, note
+/// `onlineBooking.confirmationHours`: an online booking still waiting for confirmation that long after it was made —
+/// or 2 hours before its start, if that comes first — is rejected by itself (docs/API.md «StudioSettings»).
+nonisolated enum OnlineAutoReject: Hashable, Sendable {
+    /// `null`: it waits for staff however long it takes.
+    case never
+    /// 1…168 hours after the booking was made.
+    case after(hours: Int)
+
+    static let hoursRange = 1...168
+    static let standard = OnlineAutoReject.after(hours: 24)
+    /// Whatever the hours, a booking is rejected this long before its start.
+    static let hoursBeforeStart = 2
+
+    /// The JSON value: hours, or `nil` for `null`.
+    var hours: Int? {
+        switch self {
+        case .never: nil
+        case .after(let hours): hours
+        }
     }
 
-    /// A missing or `null` field takes the documented default.
+    init(hours: Int?) {
+        self = hours.map { .after(hours: $0) } ?? .never
+    }
+}
+
+nonisolated extension OnlineBookingSettings {
+    private enum CodingKeys: String, CodingKey {
+        case enabled, leadMinutes, horizonDays, holdMinutes, stepMinutes, note, confirmationHours
+    }
+
+    /// A missing or `null` field takes the documented default; `confirmationHours: null` means «never», while a
+    /// server without the key leaves `autoReject` unknown.
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = OnlineBookingSettings()
@@ -70,6 +100,23 @@ nonisolated extension OnlineBookingSettings {
         holdMinutes = try c.decodeIfPresent(Int.self, forKey: .holdMinutes) ?? defaults.holdMinutes
         stepMinutes = try c.decodeIfPresent(Int.self, forKey: .stepMinutes) ?? defaults.stepMinutes
         note = try c.decodeIfPresent(String.self, forKey: .note) ?? defaults.note
+        if c.contains(.confirmationHours) {
+            autoReject = OnlineAutoReject(hours: try c.decodeIfPresent(Int.self, forKey: .confirmationHours))
+        }
+    }
+
+    /// The PUT body: `confirmationHours` only to a server that sent it, `null` for «never».
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(leadMinutes, forKey: .leadMinutes)
+        try c.encode(horizonDays, forKey: .horizonDays)
+        try c.encode(holdMinutes, forKey: .holdMinutes)
+        try c.encode(stepMinutes, forKey: .stepMinutes)
+        try c.encode(note, forKey: .note)
+        if let autoReject {
+            try c.encode(Nullable(autoReject.hours), forKey: .confirmationHours)
+        }
     }
 }
 

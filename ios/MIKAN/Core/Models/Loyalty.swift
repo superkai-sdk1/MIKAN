@@ -108,4 +108,8 @@ nonisolated extension Permissions {
     var adjustsBonuses: Bool { role != .master }
     /// Cancel a gift certificate (its balance burns).
     var cancelsCertificates: Bool { role == .owner }
+    /// Fix a certificate's recipient and note: a till action, open to every role (docs/API.md «Roles»).
+    var editsCertificateDetails: Bool { true }
+    /// Change until when a certificate is valid, or make it never expire.
+    var changesCertificateExpiry: Bool { role == .owner }
 }

@@ -270,7 +270,12 @@ enum PreviewData {
             top: [AnalyticsTopClient(client: ivanRef, revenue: 25_000, salesCount: 3, visits: 3),
                   AnalyticsTopClient(client: mariaRef, revenue: 12_000, salesCount: 2, visits: 1)]
         ),
-        appointments: AnalyticsAppointments(total: 45, open: 5, completed: 35, cancelled: 3, noShow: 2, noShowLoss: 8000, cancelledValue: 9000)
+        appointments: AnalyticsAppointments(total: 45, open: 5, completed: 35, cancelled: 3, noShow: 2, noShowLoss: 8000, cancelledValue: 9000),
+        loyalty: AnalyticsLoyalty(
+            bonusEarned: 3540, bonusSpent: 1200, bonusExpired: 300, bonusOutstanding: 18_400,
+            certificatesSold: 15_000, certificatesRedeemed: 7000, certificatesExpired: 0, certificatesCancelled: 0,
+            certificatesOutstanding: 23_000
+        )
     )
 
     static let messages = [

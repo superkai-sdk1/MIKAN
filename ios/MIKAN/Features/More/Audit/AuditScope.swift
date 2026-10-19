@@ -9,6 +9,7 @@ nonisolated enum AuditScope: Hashable, Sendable {
     case sale(id: Int)
     /// The product and its stock movements.
     case product(id: Int)
+    case certificate(id: Int)
 
     var title: String {
         self == .studio ? "Журнал действий" : "История изменений"
@@ -24,6 +25,7 @@ nonisolated enum AuditScope: Hashable, Sendable {
         case .client: "Здесь появятся изменения карточки клиента."
         case .sale: "Здесь появятся действия с этой продажей."
         case .product: "Здесь появятся изменения товара и его остатков."
+        case .certificate: "Здесь появятся изменения сертификата: получатель, заметка, срок, отмена и отправка."
         }
     }
 
@@ -40,6 +42,8 @@ nonisolated enum AuditScope: Hashable, Sendable {
             AuditQuery(sections: [.sale], entityId: id, limit: limit, offset: offset)
         case .product(let id):
             AuditQuery(sections: [.product, .stock], entityId: id, limit: limit, offset: offset)
+        case .certificate(let id):
+            AuditQuery(sections: [.certificate], entityId: id, limit: limit, offset: offset)
         }
     }
 }

@@ -763,7 +763,7 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   without a specific summary gets «Изменение: PUT /…» with the entity taken from the path.
 - Kept 2 years (older rows are pruned daily). A failure to write the log never fails the request (it is logged).
 - The app shows the log to the owner (More → «Журнал действий», filters by employee and section) and, on an
-  appointment, client, sale or product card, its own history (`?entity=&entityId=`).
+  appointment, client, sale, product or gift certificate card, its own history (`?entity=&entityId=`).
 
 ### Clients
 | Method | Path | Body | Response |

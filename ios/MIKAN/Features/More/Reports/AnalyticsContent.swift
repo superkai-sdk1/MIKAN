@@ -36,6 +36,9 @@ struct AnalyticsContent: View {
         if analytics.deposits != .zero {
             ReportDepositsCard(deposits: analytics.deposits)
         }
+        if !analytics.loyalty.isZero {
+            AnalyticsLoyaltyCard(loyalty: analytics.loyalty)
+        }
         if analytics.products.margin.quantity > 0 {
             AnalyticsMarginCard(products: analytics.products)
         }
