@@ -10,6 +10,8 @@ import {
   services,
 } from '../db/schema.js';
 import { setAuditLogger, writeAudit } from '../domain/audit.js';
+import { serializeCertificate } from '../domain/certificate-views.js';
+import { getCertificateRow } from '../domain/certificates.js';
 import { buildDraft, type SummaryContext } from '../domain/audit-summaries.js';
 import { getChat, serializeChat } from '../domain/bot-chats.js';
 import { getCampaignRow, serializeCampaign } from '../domain/campaigns.js';
@@ -70,6 +72,7 @@ const client: SnapshotLoader = (ctx, p) => clientOut(getClientRow(ctx.db, idOf(p
 const product: SnapshotLoader = (ctx, p) => serializeProduct(ctx.db, getProductRow(ctx.db, idOf(p)));
 const receipt: SnapshotLoader = (ctx, p) => serializeReceipt(ctx.db, getReceiptRow(ctx.db, idOf(p)));
 const chat: SnapshotLoader = (ctx, p) => serializeChat(ctx.db, getChat(ctx.db, chatIdOf(p)));
+const certificate: SnapshotLoader = (ctx, p) => serializeCertificate(ctx.db, getCertificateRow(ctx.db, idOf(p)));
 const campaign: SnapshotLoader = (ctx, p) => serializeCampaign(ctx.db, getCampaignRow(ctx.db, idOf(p)));
 
 const service: SnapshotLoader = (ctx, p) => {
@@ -142,6 +145,10 @@ const SNAPSHOTS: Record<string, SnapshotLoader> = {
   'POST /appointments/:id/online/reject': appointment,
   'PATCH /clients/:id': client,
   'POST /clients/:id/telegram-link': client,
+  'POST /clients/:id/bonuses': client,
+  'PATCH /certificates/:id': certificate,
+  'POST /certificates/:id/cancel': certificate,
+  'POST /certificates/:id/send': certificate,
   'PATCH /services/:id': service,
   'PATCH /aftercare-templates/:id': memo,
   'DELETE /aftercare-templates/:id': memo,

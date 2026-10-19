@@ -12,9 +12,10 @@ import {
 } from '../domain/clients.js';
 import { findClientChat, serializeChat } from '../domain/bot-chats.js';
 import { historyEntries } from '../domain/history.js';
+import { clientLoyalty } from '../domain/loyalty.js';
 import { getClientRow, serializeAppointments, serializeSales } from '../domain/refs.js';
 import { conflict } from '../lib/errors.js';
-import { clientOut } from '../lib/serialize.js';
+import { clientOut, type ClientRow } from '../lib/serialize.js';
 import {
   calendarDate,
   idParams,
@@ -55,6 +56,7 @@ const createBody = z.object({
   // Required for new clients; older rows without a phone stay valid (see updateClient).
   phone: phoneInput.refine((phone) => phone != null, { message: 'обязательное поле' }),
   botEnabled: nonNull(z.boolean()),
+  marketingOptOut: nonNull(z.boolean()),
 });
 const patchBody = z.object({
   name: nonNull(requiredText(200)),
@@ -70,6 +72,8 @@ const listQuery = pagination.extend({
 
 export function clientRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { db } = ctx;
+  /** The client card: with its stats and loyalty (lists leave both out). */
+  const card = (row: ClientRow) => clientOut(row, clientStats(db, row.id), clientLoyalty(db, row));
 
   app.get('/clients', async (request) => {
     const q = parse(listQuery, request.query);
@@ -79,20 +83,18 @@ export function clientRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/clients/:id', async (request) => {
     const { id } = parse(idParams, request.params);
-    return clientOut(getClientRow(db, id), clientStats(db, id));
+    return card(getClientRow(db, id));
   });
 
   app.post('/clients', async (request) => {
     const input = parse(createBody, request.body);
-    const row = createClient(db, input);
-    return clientOut(row, clientStats(db, row.id));
+    return card(createClient(db, input));
   });
 
   app.patch('/clients/:id', async (request) => {
     const { id } = parse(idParams, request.params);
     const input = parse(patchBody, request.body);
-    const row = updateClient(db, id, input);
-    return clientOut(row, clientStats(db, id));
+    return card(updateClient(db, id, input));
   });
 
   app.get('/clients/:id/history', async (request) => {

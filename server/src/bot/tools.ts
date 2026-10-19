@@ -149,6 +149,18 @@ export const TOOLS: Anthropic.Tool[] = [
       required: ['appointmentId', 'startsAt'],
     },
   },
+  {
+    name: 'certificate_balance',
+    description:
+      'Проверяет подарочный сертификат студии по коду (формат MIKAN-XXXX-XXXX; регистр, дефисы и пробелы не важны): ' +
+      'сколько на нём осталось и до какого числа он действует. Вызывай, когда клиент спрашивает о своём сертификате ' +
+      'и называет код. Кто купил сертификат, не сообщается и не обсуждается.',
+    input_schema: {
+      type: 'object',
+      properties: { code: { type: 'string', description: 'Код сертификата, как его написал клиент' } },
+      required: ['code'],
+    },
+  },
 ];
 
 const bookingInput = z.object({
