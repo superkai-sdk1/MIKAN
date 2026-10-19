@@ -40,13 +40,14 @@ export function createApi(options = {}) {
 
   /**
    * @param {string} url
-   * @param {{ method?: string, body?: unknown, telegram?: boolean, timeout?: number }} [options]
+   * @param {{ method?: string, body?: unknown, telegram?: boolean, timeout?: number, idempotencyKey?: string }} [options]
    */
-  async function request(url, { method = 'GET', body, telegram = false, timeout = timeoutMs } = {}) {
+  async function request(url, { method = 'GET', body, telegram = false, timeout = timeoutMs, idempotencyKey } = {}) {
     /** @type {Record<string, string>} */
     const headers = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (telegram && initData) headers[INIT_DATA_HEADER] = initData;
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
     const networkError = () => new ApiError({ status: 0, code: 'network', message: 'Нет связи', network: true });
@@ -96,7 +97,9 @@ export function createApi(options = {}) {
     /** @param {{ date: string, items: Array<{ serviceId: number, variant: string | null }>, master: number | 'any' | null }} q */
     slots: (q) => request(slotsUrl(q)),
     me: () => request(`${API_BASE}/me`, { telegram: true }),
-    book: (body) => request(API_BASE, { method: 'POST', body, telegram: true, timeout: bookTimeoutMs }),
+    /** `idempotencyKey` — the same for a retry of the same booking, so a lost answer never books twice. */
+    book: (body, idempotencyKey) =>
+      request(API_BASE, { method: 'POST', body, telegram: true, timeout: bookTimeoutMs, idempotencyKey }),
     booking: (token) => request(bookingUrl(token)),
     cancel: (token) => request(`${bookingUrl(token)}/cancel`, { method: 'POST', body: {} }),
     /** Stops sending the init data (Telegram said it is invalid): the page then books like the website. */

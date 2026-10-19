@@ -95,6 +95,16 @@ describe('booking page: API client against a fake API', () => {
     expect(header(calls[3], INIT_DATA_HEADER)).toBeNull();
   });
 
+  it('sends the idempotency key with the booking only when given', async () => {
+    const { fetchImpl, calls } = fakeApi({ 'POST /api/public/booking': () => json(booking) });
+    const api = createApi({ fetch: fetchImpl });
+    const key = '1b4e28ba-2fa1-41d2-883f-0016d3cca427';
+    await api.book({ items: [{ serviceId: 3 }], startsAt: booking.startsAt }, key);
+    await api.book({ items: [{ serviceId: 3 }], startsAt: booking.startsAt });
+    expect(header(calls[0], 'idempotency-key')).toBe(key);
+    expect(header(calls[1], 'idempotency-key')).toBeNull();
+  });
+
   it('turns error bodies into ApiError with the server message', async () => {
     const { fetchImpl } = fakeApi({
       'POST /api/public/booking': () => apiError(409, 'schedule_conflict', 'Это время только что заняли — выберите другое'),

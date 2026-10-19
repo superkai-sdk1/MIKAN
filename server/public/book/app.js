@@ -53,6 +53,8 @@ const app = {
   stepShownAt: 0,
   /** A booking was made: going «back» starts a new one instead of returning to the filled-in steps. */
   completed: false,
+  /** @type {null | { body: string, key: string }} The booking being sent and its `Idempotency-Key`. */
+  attempt: null,
 };
 
 function announce(text) {
@@ -251,11 +253,15 @@ async function submit() {
   const { state } = app;
   const phone = state.linked ? null : toE164(state.phone);
   const body = bookingBody({ ...state, startsAt: state.slot.startsAt, phone: phone ?? '' });
+  // One key per booking attempt: a retry after a lost answer resends it, a changed booking gets a new one.
+  const attempt = JSON.stringify(body);
+  if (app.attempt?.body !== attempt) app.attempt = { body: attempt, key: newIdempotencyKey() };
   app.submitting = true;
   app.view.clearError?.();
   updateChrome();
   try {
-    const booking = await app.api.book(body);
+    const booking = await app.api.book(body, app.attempt.key);
+    app.attempt = null;
     app.submitting = false;
     app.completed = true;
     app.tg.haptic('success');
@@ -268,6 +274,16 @@ async function submit() {
     app.tg.haptic('error');
     app.view.showError?.(description, errorActions(description, error));
   }
+}
+
+/** A random UUID v4 (`crypto.randomUUID` needs a secure context; the fallback covers older browsers). */
+function newIdempotencyKey() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
 async function openBooking(token, booking) {
