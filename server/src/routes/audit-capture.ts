@@ -147,6 +147,7 @@ const SNAPSHOTS: Record<string, SnapshotLoader> = {
   'PATCH /clients/:id': client,
   'POST /clients/:id/telegram-link': client,
   'POST /clients/:id/bonuses': client,
+  'POST /clients/:id/merge': client,
   'PATCH /certificates/:id': certificate,
   'POST /certificates/:id/cancel': certificate,
   'POST /certificates/:id/send': certificate,

@@ -43,11 +43,22 @@ final class ClientsListModel {
     func upsert(_ client: Client) {
         remote.upsert(client)
     }
+
+    /// Merged cards leave the list; the kept one is refreshed where it is shown.
+    func apply(_ outcome: ClientMergeOutcome) {
+        let removed = Set(outcome.removedIds)
+        remote.update { items in
+            items.filter { !removed.contains($0.id) }.map { $0.id == outcome.kept.id ? outcome.kept : $0 }
+        }
+        total = max(0, total - removed.count)
+    }
 }
 
 struct ClientsListView: View {
     @Environment(APIClient.self) private var api
+    @Environment(\.permissions) private var permissions
     @State private var model = ClientsListModel()
+    @State private var duplicates = ClientDuplicatesModel()
     @State private var showsEditor = false
     @State private var createdClient: Client?
 
@@ -56,11 +67,19 @@ struct ClientsListView: View {
     var body: some View {
         NavigationStack {
             List {
+                if showsDuplicates {
+                    Section {
+                        NavigationLink {
+                            ClientDuplicatesView(model: duplicates, onMerged: applyMerge)
+                        } label: {
+                            Label("Похожие карточки", systemImage: "person.2.badge.gearshape")
+                        }
+                        .badge(duplicates.count)
+                    }
+                }
                 ForEach(model.remote.value ?? []) { client in
                     NavigationLink {
-                        ClientDetailView(clientId: client.id, initial: client) { updated in
-                            model.upsert(updated)
-                        }
+                        detail(client)
                     } label: {
                         ClientRow(client: client)
                     }
@@ -78,7 +97,12 @@ struct ClientsListView: View {
                     emptyState
                 }
             }
-            .refreshable { await model.load(api: api) }
+            .refreshable {
+                await model.load(api: api)
+                await loadDuplicates()
+            }
+            .task { await loadDuplicates() }
+            .onAppear { duplicates.syncEntry() }
             .task(id: model.queryKey) {
                 if !model.search.isEmpty {
                     try? await Task.sleep(for: Self.searchDebounce)
@@ -107,11 +131,29 @@ struct ClientsListView: View {
                 }
             }
             .navigationDestination(item: $createdClient) { client in
-                ClientDetailView(clientId: client.id, initial: client) { updated in
-                    model.upsert(updated)
-                }
+                detail(client)
             }
         }
+    }
+
+    /// «Похожие карточки» for owner and admin, above the active clients while not searching.
+    private var showsDuplicates: Bool {
+        permissions.mergesClients && !model.showsArchived && model.search.trimmed.isEmpty && duplicates.showsEntry
+    }
+
+    private func detail(_ client: Client) -> some View {
+        ClientDetailView(clientId: client.id, initial: client, onChange: { model.upsert($0) }, onMerged: applyMerge)
+    }
+
+    private func loadDuplicates() async {
+        guard permissions.mergesClients else { return }
+        await duplicates.load(api: api)
+        duplicates.syncEntry()
+    }
+
+    private func applyMerge(_ outcome: ClientMergeOutcome) {
+        model.apply(outcome)
+        Task { await loadDuplicates() }
     }
 
     @ViewBuilder

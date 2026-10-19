@@ -76,6 +76,7 @@ Three roles; the server checks every request (the app only hides what a role can
 | Bonus adjustments (`POST /clients/:id/bonuses`) | ✓ | ✓ | — |
 | Certificates: cancel, change the expiry (`expiresAt` in `PATCH /certificates/:id`) | ✓ | — | — |
 | Clients, history | ✓ | ✓ | ✓ |
+| Duplicate cards: list, dismiss, merge (`/clients/duplicates…`, `POST /clients/:id/merge`) | ✓ | ✓ | — |
 | Services, products, categories, aftercare templates, stock movements, purchases, revisions, image generation: write | ✓ | ✓ | — |
 | Reports and analytics (`/reports/*`) | ✓ | ✓ | — |
 | Settings (studio, bot), knowledge base, staff chat binding (`PUT/DELETE /bot/chats/:chatId/employee`), `POST /bot/test`: write | ✓ | ✓ | — |
@@ -780,6 +781,18 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 `same_full_name` needs a last name on both; `phoneless_same_name` — the same first (+ last when both have one) name
 where one card has no phone; first-name-only matches between two cards with different phones are not offered. A pair
 the staff dismissed is not offered again (`POST /clients/duplicates/dismiss { clientIds: [a, b] }` → `204`).
+- The full name is the words of `name` + `lastName` (older cards hold it all in `name`): the first word is the first
+  name, the rest the last name. `same_telegram` — the staff-typed `telegramNick` or the linked chat's
+  `telegramUsername` of one card equals either of the other's (without `@`, any case); `same_instagram` — any case.
+  Archived cards take part.
+- Strongest first: `same_telegram`, `same_instagram`, `same_full_name`, `phoneless_same_name`. A group holds the cards
+  joined by pairs of its reason (so a first-name group may hold cards with different last names, each matching the
+  phoneless one); a group whose cards all sit in a stronger group is left out (a pair with the same Telegram and the
+  same name shows once). Groups of a reason go by name; in a group the card with the most visits (then spent) comes
+  first.
+- Dismiss: `clientIds` — 2…500 distinct cards (a whole group may be sent); the pairs among them that would be offered
+  are stored (settings key `clientDuplicatesDismissed`). An unknown card → `404`; fewer than two or repeated ids →
+  `400`. Audited as `client.dismiss_duplicates` («Карточки №12 и №34 отмечены как разные люди»).
 
 **Merge** `:id` (the source) into `intoId` (kept), in one transaction: every appointment, sale, open receipt, bot chat
 attribution, bonus operation, certificate (as buyer), campaign recipient, retention send and audit reference of the
@@ -788,6 +801,17 @@ source moves to the kept card; the kept card's empty fields take the source's va
 then the source card is deleted. Both linked to different Telegram chats → the kept card keeps its own link, the
 source's chat stays attributed to the kept card. The same card, an unknown card → `400` / `404`. Audited as
 `client.merge` («Карточка «Анна» (+7 999…) объединена с «Анна Иванова»»).
+- Also moved: scheduled messages, booking requests and the cart of an unpaid checkout QR code. Rows unique per client:
+  of two campaign recipients of one campaign the one that got further stays (`sent` > `blocked` > `failed` >
+  `skipped` > `pending`, so nobody gets a campaign twice); of two retention sends of the same kind and period the kept
+  card's stays. The source's dismissed duplicate pairs go to the kept card.
+- Fields: the source's last name is its `lastName`, or the words after the first name of an older card's `name`; it
+  is not added when the kept card's `name` already holds it; a note contained in the other is not
+  repeated (joined with an empty line) — joined notes longer than 5 000 characters → `400` «Заметки двух карточек
+  вместе длиннее 5000 символов — сократите их и повторите» (nothing changes). `telegramUsername` follows the link;
+  with neither card linked, a link sent to the source and not opened yet links the kept card. A «no news» request
+  (`marketingOptOut`) of either card stays; the card is archived only when both were; `createdAt` is the earlier one;
+  `name`, `botEnabled` are the kept card's. Reminders of the kept card's upcoming visits are rebuilt for its chat.
 
 ### Services
 | Method | Path | Body | Response |

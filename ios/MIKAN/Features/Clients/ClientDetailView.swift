@@ -4,9 +4,13 @@ struct ClientDetailView: View {
     @Environment(APIClient.self) private var api
     @Environment(AppState.self) private var appState
     @Environment(\.openURL) private var openURL
+    @Environment(\.permissions) private var permissions
+    @Environment(\.dismiss) private var dismiss
 
     let clientId: Int
     var onChange: ((Client) -> Void)?
+    /// «Объединить с…» done: the kept card and the cards that are gone (this one, when it was merged into another).
+    var onMerged: ((ClientMergeOutcome) -> Void)?
 
     @State private var client: Remote<Client>
     @State private var history = Remote<ClientHistory>()
@@ -17,10 +21,18 @@ struct ClientDetailView: View {
     @State private var confirmsArchive = false
     @State private var isWorking = false
     @State private var errorMessage: String?
+    @State private var showsMerge = false
+    @State private var mergedAway = false
 
-    init(clientId: Int, initial: Client? = nil, onChange: ((Client) -> Void)? = nil) {
+    init(
+        clientId: Int,
+        initial: Client? = nil,
+        onChange: ((Client) -> Void)? = nil,
+        onMerged: ((ClientMergeOutcome) -> Void)? = nil
+    ) {
         self.clientId = clientId
         self.onChange = onChange
+        self.onMerged = onMerged
         _client = State(initialValue: Remote(initial))
     }
 
@@ -65,6 +77,18 @@ struct ClientDetailView: View {
         .sheet(isPresented: $showsTelegramLink) {
             TelegramLinkSheet(clientId: clientId, clientName: client.value?.name ?? "")
         }
+        .sheet(isPresented: $showsMerge, onDismiss: { if mergedAway { dismiss() } }) {
+            if let current = client.value {
+                NavigationStack {
+                    ClientMergeSearchView(client: current) { finishMerge($0) }
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Отмена", role: .cancel) { showsMerge = false }
+                            }
+                        }
+                }
+            }
+        }
         .sheet(item: $appointmentDraft) { draft in
             AppointmentEditorView(draft: draft) { _ in
                 Task { await loadHistory() }
@@ -91,6 +115,9 @@ struct ClientDetailView: View {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button("Изменить", systemImage: "pencil") { showsEditor = true }
+                if permissions.mergesClients {
+                    Button("Объединить с…", systemImage: "arrow.triangle.merge") { showsMerge = true }
+                }
                 Button(
                     client.value?.archived == true ? "Вернуть из архива" : "В архив",
                     systemImage: client.value?.archived == true ? "tray.and.arrow.up" : "archivebox",
@@ -195,6 +222,17 @@ struct ClientDetailView: View {
         var result = updated
         result.stats = previous?.stats
         return result
+    }
+
+    /// After «Объединить с…»: this card shows the merged result, or — merged into another — the screen closes.
+    private func finishMerge(_ outcome: ClientMergeOutcome) {
+        mergedAway = outcome.removedIds.contains(clientId)
+        showsMerge = false
+        onMerged?(outcome)
+        guard !mergedAway else { return }
+        errorMessage = outcome.failure
+        apply(outcome.kept)
+        Task { await loadHistory() }
     }
 
     /// «Продать»: a new open receipt for the client in «Касса».

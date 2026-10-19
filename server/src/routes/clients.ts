@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import {
+  CLIENT_NOTES_MAX,
   cleanTelegramNick,
   clientHistory,
   clientStats,
@@ -11,6 +12,8 @@ import {
   updateClient,
 } from '../domain/clients.js';
 import { findClientChat, serializeChat } from '../domain/bot-chats.js';
+import { dismissDuplicates, listDuplicates } from '../domain/client-duplicates.js';
+import { mergeClients } from '../domain/client-merge.js';
 import { historyEntries } from '../domain/history.js';
 import { clientLoyalty } from '../domain/loyalty.js';
 import { getClientRow, serializeAppointments, serializeSales } from '../domain/refs.js';
@@ -46,7 +49,7 @@ const fields = {
   instagram: nullableText(100),
   telegramNick,
   birthday: calendarDate,
-  notes: nullableText(5000),
+  notes: nullableText(CLIENT_NOTES_MAX),
   source: nullableText(100),
 };
 
@@ -65,6 +68,16 @@ const patchBody = z.object({
   marketingOptOut: nonNull(z.boolean()),
   archived: nonNull(z.boolean()),
 });
+const clientId = z.number().int().positive();
+const mergeBody = z.object({ intoId: clientId });
+/** Distinct ids of the cards that are different people (a group of the duplicates list). */
+const dismissBody = z.object({
+  clientIds: z
+    .array(clientId)
+    .min(2)
+    .max(500)
+    .refine((ids) => new Set(ids).size === ids.length, { message: 'карточки не должны повторяться' }),
+});
 const listQuery = pagination.extend({
   search: z.string().trim().max(100).optional(),
   archived: queryBool,
@@ -79,6 +92,20 @@ export function clientRoutes(app: FastifyInstance, ctx: AppContext): void {
     const q = parse(listQuery, request.query);
     const { rows, total } = searchClients(db, { search: q.search, archived: q.archived ?? false, limit: q.limit, offset: q.offset });
     return { items: rows.map((r) => clientOut(r)), total };
+  });
+
+  app.get('/clients/duplicates', async () => ({ items: listDuplicates(db) }));
+
+  app.post('/clients/duplicates/dismiss', async (request, reply) => {
+    const input = parse(dismissBody, request.body);
+    dismissDuplicates(db, input.clientIds);
+    return reply.code(204).send();
+  });
+
+  app.post('/clients/:id/merge', async (request) => {
+    const { id } = parse(idParams, request.params);
+    const input = parse(mergeBody, request.body);
+    return card(mergeClients(db, id, input.intoId));
   });
 
   app.get('/clients/:id', async (request) => {
