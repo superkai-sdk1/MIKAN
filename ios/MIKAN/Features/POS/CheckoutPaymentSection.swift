@@ -12,10 +12,15 @@ struct CheckoutPaymentSection: View {
 
     var body: some View {
         Section {
-            if cart.isPaidByDeposit {
-                Label("Чек полностью оплачен предоплатой", systemImage: "checkmark.seal.fill")
-                    .font(.headline)
-                    .foregroundStyle(.green)
+            if cart.isPaidInFull {
+                Label(
+                    CheckoutPaidText.fullyPaid(
+                        deposit: cart.depositApplied, bonus: cart.bonusApplied, certificate: cart.certificatesApplied
+                    ),
+                    systemImage: "checkmark.seal.fill"
+                )
+                .font(.headline)
+                .foregroundStyle(.green)
             } else {
                 PaymentModePicker(qrEnabled: qrShown)
                 switch cart.paymentMode {
@@ -29,8 +34,8 @@ struct CheckoutPaymentSection: View {
             Text("Оплата")
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
-                if cart.paymentMode == .split, cart.depositApplied > 0, !cart.isPaidByDeposit {
-                    Text("Распределите \(Money.format(cart.amountDue)) — сумму к оплате без предоплаты.")
+                if cart.paymentMode == .split, cart.depositApplied + cart.creditsApplied > 0, !cart.isPaidInFull {
+                    Text("Распределите \(Money.format(cart.amountDue)) — сумму к оплате без предоплаты, бонусов и сертификатов.")
                 }
                 if cart.split.qr > 0 {
                     Text("Клиент оплатит \(Money.format(cart.split.qr)) через СБП по QR-коду на экране. Продажа проведётся, как только банк подтвердит оплату.")

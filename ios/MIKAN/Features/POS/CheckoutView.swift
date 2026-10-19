@@ -97,8 +97,11 @@ struct CheckoutView: View {
             CheckoutClientSection()
             CheckoutAppointmentSection()
             CheckoutTotalsSection()
+            CheckoutBonusSection()
+            CheckoutCertificatesSection()
             CheckoutPaymentSection()
         }
+        .loadsCheckoutLoyalty()
         .safeAreaBar(edge: .bottom) {
             submitButton
                 .padding(.horizontal, 16)

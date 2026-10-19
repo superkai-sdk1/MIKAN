@@ -20,6 +20,7 @@ struct ReceiptView: View {
     /// The category chip chosen in each product segment.
     @State private var categories: [ProductKind: String] = [:]
     @State private var showsServiceSheet = false
+    @State private var showsCertificateSheet = false
     /// A product with several sizes whose size is being picked.
     @State private var sizePickerProduct: Product?
     @State private var addCount = 0
@@ -81,6 +82,9 @@ struct ReceiptView: View {
         .sheet(isPresented: $showsServiceSheet) {
             AddServiceSheet { text in showHint(text) }
         }
+        .sheet(isPresented: $showsCertificateSheet) {
+            CertificateSaleSheet()
+        }
         .sheet(item: $sizePickerProduct) { picked in
             // The latest copy after a catalog refresh, so the stock of every size is current.
             let product = products.first { $0.id == picked.id } ?? picked
@@ -91,6 +95,10 @@ struct ReceiptView: View {
 
     @ToolbarContentBuilder
     private var menu: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Сертификат", systemImage: PaymentLine.certificateSymbol) { showsCertificateSheet = true }
+                .accessibilityHint("Продать подарочный сертификат")
+        }
         if let receiptId = cart.receiptId {
             ToolbarItem(placement: .topBarTrailing) {
                 if isDeleting {
