@@ -153,12 +153,14 @@ final class AppState {
         }
     }
 
-    /// Polls badges and the cash shift while the app is active (cancelled with the calling task).
+    /// Polls badges and the cash shift while the app is active (cancelled with the calling task); also retries
+    /// registering this iPhone for push notifications until the server has it (a no-op once it has).
     func runPolling() async {
         while !Task.isCancelled, phase == .signedIn {
             async let badgesRefresh: Void = refreshBadges()
             async let shiftRefresh: Void = shift.refresh()
-            _ = await (badgesRefresh, shiftRefresh)
+            async let pushRegistration: Void = registerPushDevice()
+            _ = await (badgesRefresh, shiftRefresh, pushRegistration)
             try? await Task.sleep(for: Self.badgePollInterval)
         }
     }

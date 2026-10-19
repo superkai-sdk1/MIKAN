@@ -319,9 +319,11 @@ struct AppointmentDetailView: View {
             do {
                 apply(try await api.confirmOnlineBooking(id: appointment.id))
                 successCount += 1
-                await appState.refreshBadges()
+                Task { await appState.refreshBadges() }
             } catch {
                 errorMessage = error.userMessage
+                // Often settled elsewhere meanwhile (`409`): show the booking as it is now.
+                await reload()
             }
         }
     }

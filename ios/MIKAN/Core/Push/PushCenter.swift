@@ -12,6 +12,8 @@ final class PushCenter {
     private(set) var deviceToken: String?
     /// The device token and the session it was last sent for, so a session sends it once.
     @ObservationIgnored private var registeredKey: String?
+    /// A `POST /devices` is in flight (the key is set only once it succeeds).
+    @ObservationIgnored private var isRegistering = false
     @ObservationIgnored private let environment: PushEnvironment
     @ObservationIgnored private let logger = Logger(subsystem: "com.mikanstudio.crm", category: "push")
 
@@ -47,11 +49,14 @@ final class PushCenter {
         logger.error("APNs registration failed: \(error.localizedDescription, privacy: .public)")
     }
 
-    /// `POST /devices` for the signed-in employee (once per token and session).
+    /// `POST /devices` for the signed-in employee: once per token and session, retried by the badge poll after a
+    /// failure.
     func register(with api: APIClient) async {
-        guard let deviceToken, let session = api.token else { return }
+        guard !isRegistering, let deviceToken, let session = api.token else { return }
         let key = Self.registrationKey(deviceToken: deviceToken, session: session)
         guard key != registeredKey else { return }
+        isRegistering = true
+        defer { isRegistering = false }
         do {
             try await api.registerDevice(DeviceBody(token: deviceToken, environment: environment))
             registeredKey = key
@@ -63,9 +68,11 @@ final class PushCenter {
     }
 
     /// `DELETE /devices/:token` with the session that is ending: call it before the session token is cleared.
-    /// Sent by its own client, so a refused (already expired) session does not sign anyone out again.
+    /// Sent by its own client, so a refused (already expired) session does not sign anyone out again. The employee's
+    /// notifications already shown on this iPhone are cleared too.
     func unregister(from api: APIClient) {
         registeredKey = nil
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         guard let deviceToken, let session = api.token else { return }
         let client = APIClient(serverURL: api.serverURL, token: session, session: .shared)
         let logger = logger

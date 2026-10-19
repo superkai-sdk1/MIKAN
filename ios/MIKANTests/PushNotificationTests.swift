@@ -101,4 +101,10 @@ struct PushDeviceTests {
         signedOut.open(.bookingRequests)
         #expect(signedOut.pushRoute == nil)
     }
+
+    @Test("A notification for a session that has ended is not shown in the foreground")
+    func foregroundAfterSignOut() throws {
+        let api = APIClient(serverURL: try #require(URL(string: "https://mikan.invalid")))
+        #expect(AppState(api: api, employee: nil, phase: .signedOut).foregroundPresentation().isEmpty)
+    }
 }

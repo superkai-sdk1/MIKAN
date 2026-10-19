@@ -13,6 +13,11 @@ struct OnlineBookingsView: View {
     @State private var confirmingId: Int?
     @State private var errorMessage: String?
     @State private var successCount = 0
+    /// A rejected booking that still holds a prepayment, told about once the reject sheet is gone.
+    @State private var pendingHeldDeposit: Appointment?
+    @State private var heldDeposit: Appointment?
+    /// The card opened to refund or retain that prepayment.
+    @State private var openedAppointment: Appointment?
 
     var body: some View {
         ScrollView {
@@ -54,12 +59,23 @@ struct OnlineBookingsView: View {
         .task(id: appState.badges.onlineAwaiting) { await load() }
         .remoteErrorAlert(bookings)
         .errorAlert($errorMessage)
-        .sheet(item: $rejecting) { appointment in
+        .sheet(item: $rejecting, onDismiss: showHeldDeposit) { appointment in
             OnlineRejectSheet(appointment: appointment) { rejected in
                 apply(rejected)
                 appState.appointmentClosed(rejected)
                 successCount += 1
+                // Money taken before the rejection stays held: refund or retain it in the card.
+                if DepositFlow.needsDecision(rejected) { pendingHeldDeposit = rejected }
             }
+        }
+        .alert("Предоплата осталась у студии", isPresented: showsHeldDeposit, presenting: heldDeposit) { appointment in
+            Button("Открыть запись") { openedAppointment = appointment }
+            Button("Позже", role: .cancel) {}
+        } message: { appointment in
+            Text("Клиент внёс \(Money.format(appointment.deposit)). Верните предоплату или удержите её в карточке записи.")
+        }
+        .navigationDestination(item: $openedAppointment) { appointment in
+            AppointmentDetailView(appointment: appointment)
         }
         .sensoryFeedback(.success, trigger: successCount)
         .navigationTitle("Онлайн-записи")
@@ -83,8 +99,19 @@ struct OnlineBookingsView: View {
                 successCount += 1
             } catch {
                 errorMessage = error.userMessage
+                // Often settled elsewhere meanwhile (`409`): show the list as it is now.
+                await load()
             }
         }
+    }
+
+    private var showsHeldDeposit: Binding<Bool> {
+        Binding(get: { heldDeposit != nil }, set: { if !$0 { heldDeposit = nil } })
+    }
+
+    private func showHeldDeposit() {
+        heldDeposit = pendingHeldDeposit
+        pendingHeldDeposit = nil
     }
 
     private func apply(_ updated: Appointment) {

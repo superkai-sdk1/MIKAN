@@ -24,14 +24,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+// Nonisolated: iOS may call these off the main thread; the app state is reached by hopping to the main actor.
 extension AppDelegate: nonisolated UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .list, .sound])
-        Task { @MainActor in await self.appState.refreshBadges() }
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        await MainActor.run { appState.foregroundPresentation() }
     }
 
     nonisolated func userNotificationCenter(
@@ -40,7 +39,11 @@ extension AppDelegate: nonisolated UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let route = PushRoute(userInfo: response.notification.request.content.userInfo)
-        Task { @MainActor in self.appState.open(route) }
+        Task { @MainActor in
+            guard self.appState.phase == .signedIn else { return }
+            self.appState.open(route)
+            await self.appState.refreshBadges()
+        }
         completionHandler()
     }
 }
