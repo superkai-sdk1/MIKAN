@@ -107,6 +107,8 @@ const FIELD_LABELS: Record<string, string> = {
   lines: 'Размеры',
   description: 'Описание',
   freshProcedure: 'Свежий прокол / свежее тату',
+  healingCheckDays: 'Спросить, как заживает',
+  jewelryChangeWeeks: 'Напомнить о замене украшения',
   section: 'Раздел',
   serviceCategory: 'Раздел услуг',
   ids: 'Категории',

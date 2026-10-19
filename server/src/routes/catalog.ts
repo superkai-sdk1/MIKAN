@@ -19,6 +19,7 @@ import {
 } from '../lib/service-images.js';
 import { idParams, money, nonNull, nullableText, parse, queryBool, requiredText } from '../lib/validation.js';
 import { resolveCategory, serviceScope } from '../domain/categories.js';
+import { DEFAULT_HEALING_CHECK_DAYS, HEALING_CHECK_DAYS_MAX, JEWELRY_CHANGE_WEEKS_MAX } from '../domain/follow-ups.js';
 import { serializeService, serializeServices, setCompatibleJewelry, setConsumptionNorms } from '../domain/services.js';
 import { sniffImage } from './uploads.js';
 
@@ -56,6 +57,8 @@ const optionalServiceFields = {
   depositAmount: nonNull(money),
   aftercareTemplateId: z.number().int().positive().nullish(),
   freshProcedure: nonNull(z.boolean()),
+  healingCheckDays: z.number().int().min(1).max(HEALING_CHECK_DAYS_MAX).nullish(),
+  jewelryChangeWeeks: z.number().int().min(1).max(JEWELRY_CHANGE_WEEKS_MAX).nullish(),
   jewelryIds: nonNull(z.array(z.number().int().positive()).max(100)),
   consumables: nonNull(
     z.array(z.object({ productId: z.number().int().positive(), quantity: z.number().int().min(1).max(1000) })).max(50),
@@ -147,6 +150,10 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
     const input = parse(serviceCreate, request.body);
     assertTemplate(db, input.aftercareTemplateId);
     const pricing = resolvePricing(input.price, input.priceMax ?? null, input.priceFrom ?? false);
+    // Older builds do not send it: a service with its own memo template is taken as a fresh procedure.
+    const freshProcedure = input.freshProcedure ?? input.aftercareTemplateId != null;
+    // A fresh procedure asks «Как заживает?» a week after the visit unless staff chose otherwise.
+    const healingCheckDays = input.healingCheckDays !== undefined ? input.healingCheckDays : freshProcedure ? DEFAULT_HEALING_CHECK_DAYS : null;
     const now = Date.now();
     return db.transaction((tx) => {
       const row = tx
@@ -164,8 +171,9 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
           variantsJson: variantsJson(input.variants ?? []),
           depositAmount: input.depositAmount ?? 0,
           aftercareTemplateId: input.aftercareTemplateId ?? null,
-          // Older builds do not send it: a service with its own memo template is taken as a fresh procedure.
-          freshProcedure: input.freshProcedure ?? input.aftercareTemplateId != null,
+          freshProcedure,
+          healingCheckDays,
+          jewelryChangeWeeks: input.jewelryChangeWeeks ?? null,
           active: input.active ?? true,
           sort: input.sort ?? 0,
           createdAt: now,
@@ -208,6 +216,8 @@ export function catalogRoutes(app: FastifyInstance, ctx: AppContext): void {
           depositAmount: input.depositAmount ?? current.depositAmount,
           aftercareTemplateId: keep(input.aftercareTemplateId, current.aftercareTemplateId),
           freshProcedure: input.freshProcedure ?? current.freshProcedure,
+          healingCheckDays: keep(input.healingCheckDays, current.healingCheckDays),
+          jewelryChangeWeeks: keep(input.jewelryChangeWeeks, current.jewelryChangeWeeks),
           active: input.active ?? current.active,
           sort: input.sort ?? current.sort,
           updatedAt: Date.now(),

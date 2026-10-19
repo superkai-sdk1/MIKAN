@@ -27,7 +27,11 @@ const MAX_CACHED_FILE_IDS = 500;
 
 function markup(keyboard: InlineKeyboard | null | undefined): InlineKeyboardMarkup | undefined {
   if (keyboard === undefined) return undefined;
-  return { inline_keyboard: (keyboard ?? []).map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) };
+  return {
+    inline_keyboard: (keyboard ?? []).map((row) =>
+      row.map((b) => (b.url !== undefined ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data })),
+    ),
+  };
 }
 
 /** Inline buttons win over a keyboard under the input field (a message carries one `reply_markup`). */

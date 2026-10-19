@@ -3,12 +3,14 @@ import type { AppContext } from '../context.js';
 import { appointments, clients, scheduledMessages } from '../db/schema.js';
 import { storeMessage, upsertChat } from '../domain/bot-chats.js';
 import { reminderAsSent } from '../domain/cancellation.js';
+import { followUpSkipReason } from '../domain/follow-ups.js';
 import { ACTIVE_APPOINTMENT_STATUSES } from '../domain/scheduling.js';
 import { errorMessage } from '../lib/errors.js';
 import type { ScheduledRow } from '../lib/serialize.js';
 import { truncate } from '../lib/text.js';
 import { reminderKeyboard } from './callbacks.js';
-import { BotSendError } from './gateway.js';
+import { followUpKeyboard } from './follow-ups.js';
+import { BotSendError, type InlineKeyboard } from './gateway.js';
 
 export const SENDER_INTERVAL_MS = 30_000;
 export const MAX_ATTEMPTS = 3;
@@ -37,10 +39,16 @@ function skipReason(ctx: AppContext, msg: ScheduledRow, now: number): string | n
     }
     if (appointment.startsAt <= now) return 'Время записи уже наступило';
   }
-  return null;
+  return followUpSkipReason(ctx.db, msg, client);
 }
 
-/** Sends due pending aftercare/reminder messages. Does nothing while the bot is offline. */
+/** Reminders and follow-ups carry their inline buttons. */
+function keyboardOf(msg: ScheduledRow): InlineKeyboard | undefined {
+  if (msg.appointmentId == null) return undefined;
+  return msg.kind === 'reminder' ? reminderKeyboard(msg.appointmentId) : followUpKeyboard(msg.kind, msg.appointmentId);
+}
+
+/** Sends due pending aftercare/reminder/follow-up messages. Does nothing while the bot is offline. */
 export async function processDueMessages(ctx: AppContext, now = Date.now()): Promise<SendStats> {
   const stats: SendStats = { sent: 0, failed: 0, cancelled: 0, retried: 0 };
   if (!ctx.gateway.isRunning()) return stats;
@@ -64,7 +72,7 @@ export async function processDueMessages(ctx: AppContext, now = Date.now()): Pro
     const client = ctx.db.select().from(clients).where(eq(clients.id, msg.clientId)).get();
     const chatId = client?.telegramChatId ?? msg.chatId;
     try {
-      const keyboard = msg.kind === 'reminder' && msg.appointmentId != null ? reminderKeyboard(msg.appointmentId) : undefined;
+      const keyboard = keyboardOf(msg);
       await ctx.gateway.sendText(chatId, msg.text, keyboard ? { keyboard } : {});
       mark(ctx, msg.id, { status: 'sent', sentAt: Date.now(), error: null, chatId, text: msg.text });
       upsertChat(ctx.db, chatId, { clientId: msg.clientId });

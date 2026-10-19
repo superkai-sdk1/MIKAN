@@ -23,10 +23,11 @@ import {
   type CurrentMessage,
 } from './catalog.js';
 import { appointmentWhat, confirmForClient, ownActiveAppointment } from './client-appointments.js';
+import { followUpButton } from './follow-ups.js';
 import type { InlineKeyboard } from './gateway.js';
 import type { BotPipeline, IncomingFrom } from './pipeline.js';
 
-/** Inline buttons: catalog paging and choices, and the reminder buttons. */
+/** Inline buttons: catalog paging and choices, the reminder buttons and the follow-up buttons (bot/follow-ups.ts). */
 
 export interface CallbackDeps {
   ctx: AppContext;
@@ -143,6 +144,12 @@ async function dispatch(deps: CallbackDeps, query: CallbackQueryInput, action: C
     case 'reminderConfirm':
     case 'reminderMove':
       return reminderButton(deps, query, action.kind, action.appointmentId);
+
+    case 'healingOk':
+    case 'healingQuestion':
+    case 'jewelryChangeBook':
+    case 'jewelryChangeLater':
+      return followUpButton(deps, query, action);
   }
 }
 

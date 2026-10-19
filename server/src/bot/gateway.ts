@@ -4,11 +4,11 @@
  */
 export type PhotoSource = { kind: 'file'; path: string } | { kind: 'url'; url: string };
 
-/** One inline button: `data` is the callback payload (≤ 64 bytes, see TELEGRAM_MAX_CALLBACK_DATA). */
-export interface InlineButton {
-  text: string;
-  data: string;
-}
+/**
+ * One inline button: a callback button (`data` is its payload, ≤ 64 bytes, see TELEGRAM_MAX_CALLBACK_DATA) or a link
+ * button (`url`, opened by Telegram itself; nothing comes back to the bot).
+ */
+export type InlineButton = { text: string; data: string; url?: undefined } | { text: string; url: string; data?: undefined };
 
 /** Rows of inline buttons under a message. */
 export type InlineKeyboard = InlineButton[][];

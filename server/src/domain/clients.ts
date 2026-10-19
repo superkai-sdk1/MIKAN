@@ -8,6 +8,7 @@ import { clientFullName, type ClientRow, type ClientStats } from '../lib/seriali
 import { normalizeSearchTerm, searchKey } from '../lib/text.js';
 import { toIso } from '../lib/time.js';
 import { likePattern } from '../lib/validation.js';
+import { cancelPendingFollowUps, FOLLOW_UP_SKIP } from './follow-ups.js';
 import { getClientRow } from './refs.js';
 import { syncRemindersForClient } from './scheduling.js';
 
@@ -111,7 +112,7 @@ export function updateClient(db: DbOrTx, id: number, input: ClientInput): Client
     telegramNick: input.telegramNick === undefined ? current.telegramNick : input.telegramNick,
     telegramUsername: current.telegramUsername,
   };
-  return db
+  const row = db
     .update(clients)
     .set({
       ...next,
@@ -126,6 +127,8 @@ export function updateClient(db: DbOrTx, id: number, input: ClientInput): Client
     .where(eq(clients.id, id))
     .returning()
     .get();
+  if (current.botEnabled && !row.botEnabled) cancelPendingFollowUps(db, [id], FOLLOW_UP_SKIP.botOff);
+  return row;
 }
 
 export function searchClients(db: DbOrTx, f: { search?: string; archived: boolean; limit: number; offset: number }) {
@@ -212,10 +215,13 @@ export function findClientByChat(db: DbOrTx, chatId: number): ClientRow | null {
 export function linkTelegram(db: DbOrTx, clientId: number, chatId: number, username: string | null): ClientRow {
   return db.transaction((tx) => {
     const now = Date.now();
-    tx.update(clients)
+    const unlinked = tx
+      .update(clients)
       .set({ telegramChatId: null, updatedAt: now })
       .where(and(eq(clients.telegramChatId, chatId), ne(clients.id, clientId)))
-      .run();
+      .returning({ id: clients.id })
+      .all();
+    cancelPendingFollowUps(tx, unlinked.map((c) => c.id), FOLLOW_UP_SKIP.unlinked);
     const current = getClientRow(tx, clientId);
     const next = { ...current, telegramUsername: username ?? current.telegramUsername };
     const row = tx

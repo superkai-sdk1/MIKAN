@@ -9,6 +9,7 @@ import { getOpenShift } from './cash.js';
 import { applyDeposit, cancelPendingDepositCodes, heldDeposit, unapplyDeposit } from './deposits.js';
 import { getAppointmentRow, getSaleRow, serializeSales } from './refs.js';
 import { applyConsumptionNorms, usageRecorded } from './consumption.js';
+import { scheduleFollowUps } from './follow-ups.js';
 import { closeReceipts } from './receipts.js';
 import { cancelPendingForAppointment } from './scheduling.js';
 import { applyMovement, assertInWarehouse, getProductRow, insufficientMessage, resolveVariant, returnVariantId } from './stock.js';
@@ -230,6 +231,7 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
       if (completing) cancelPendingForAppointment(tx, appointment.id, 'reminder');
       // A visit completed by its payment consumes its services' norms, unless staff already recorded usage.
       if (completing && !usageRecorded(tx, appointment.id)) applyConsumptionNorms(tx, appointment, employeeId);
+      if (completing) scheduleFollowUps(tx, appointment, appointment.completedAt ?? now, now);
       cancelPendingDepositCodes(tx, appointment.id, now);
     }
     closeReceipts(tx, input.receiptId, appointment?.id);

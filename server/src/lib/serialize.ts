@@ -121,6 +121,8 @@ export const serviceOut = (sv: ServiceRow) => ({
   depositAmount: sv.depositAmount,
   aftercareTemplateId: sv.aftercareTemplateId,
   freshProcedure: sv.freshProcedure,
+  healingCheckDays: sv.healingCheckDays,
+  jewelryChangeWeeks: sv.jewelryChangeWeeks,
   active: sv.active,
   sort: sv.sort,
 });

@@ -17,6 +17,7 @@ import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByI
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
 import { applyConsumptionNorms, noConsumption, recordListedUsage, usageRecorded } from './consumption.js';
+import { scheduleFollowUps } from './follow-ups.js';
 
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
@@ -367,6 +368,8 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
         scheduled = scheduleAftercare(tx, row, client, parseSteps(template.stepsJson), completedAt);
       }
     }
+    // The healing check-in and the jewelry change reminder do not depend on the memo switch.
+    scheduleFollowUps(tx, row, completedAt, now);
     return { row, scheduled, consumption };
   });
 }

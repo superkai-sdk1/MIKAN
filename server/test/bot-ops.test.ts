@@ -123,7 +123,10 @@ describe('bot chats API, staff chat, onboarding and scheduled sender', () => {
   });
 
   it('sends due aftercare/reminders, stores them as system messages, handles blocked/retry/disabled', async () => {
-    const service = await make(t, '/api/services', { name: 'Прокол', category: 'piercing', price: 2500, durationMin: 30, aftercareTemplateId: 2 });
+    // Without the healing check-in (bot-follow-ups.test.ts covers it), so only the memo steps are queued.
+    const service = await make(t, '/api/services', {
+      name: 'Прокол', category: 'piercing', price: 2500, durationMin: 30, aftercareTemplateId: 2, healingCheckDays: null,
+    });
     const client = await make(t, '/api/clients', { name: 'Иван', phone: '+79991234567' });
     const url = (await t.api('POST', `/api/clients/${client.id}/telegram-link`)).json().url as string;
     handleStart(t.ctx, { chatId: CHAT, telegramName: 'Иван', username: null }, new URL(url).searchParams.get('start')!);
