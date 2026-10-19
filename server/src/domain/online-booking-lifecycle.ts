@@ -6,6 +6,7 @@ import { appointments } from '../db/schema.js';
 import { conflict, errorMessage, notFound } from '../lib/errors.js';
 import type { AppointmentRow, QrPaymentRow } from '../lib/serialize.js';
 import { MINUTE_MS } from '../lib/time.js';
+import { clientCancelledPush, depositPaidPush } from '../push/staff-events.js';
 import { updateAppointment } from './appointments.js';
 import { heldDeposit, pendingDepositCodes } from './deposits.js';
 import { findBookingByToken } from './online-booking.js';
@@ -85,7 +86,9 @@ export async function cancelOnlineBookingByClient(ctx: AppContext, token: string
     return { before: a, after: cancelled(tx, a, 'Отменена клиентом онлайн', null) };
   });
   auditClientCancelled(ctx, before, after);
-  await safely(ctx, 'cancellation notice', () => notifyStaff(ctx, staffClientCancelText(ctx.db, after, bookingFacts(ctx.db, after))));
+  await safely(ctx, 'cancellation notice', () =>
+    notifyStaff(ctx, staffClientCancelText(ctx.db, after, bookingFacts(ctx.db, after)), () => clientCancelledPush(ctx.db, after)),
+  );
   return after;
 }
 
@@ -119,13 +122,16 @@ export function settlePaidHold(db: DbOrTx, code: QrPaymentRow, now: number): boo
   return changed > 0;
 }
 
-/** The hold is paid: logged, the staff chat and the client are told (instead of the usual prepayment thanks). */
+/**
+ * The hold is paid: logged, the staff chat and the client are told (instead of the usual prepayment notices, so the
+ * `deposit_paid` push goes from here — once).
+ */
 export async function announceHoldPaid(ctx: AppContext, appointmentId: number, amount: number): Promise<void> {
   await safely(ctx, 'payment notice', async () => {
     const a = getAppointmentRow(ctx.db, appointmentId);
     const facts = bookingFacts(ctx.db, a);
     auditHoldPaid(ctx, a);
-    await notifyStaff(ctx, staffPaidText(facts, amount));
+    await notifyStaff(ctx, staffPaidText(facts, amount), () => depositPaidPush(ctx.db, a, amount));
     await tellClient(ctx, a, { text: clientConfirmedText(ctx.db, a, facts) });
   });
 }

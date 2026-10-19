@@ -6,6 +6,7 @@ import { errorMessage } from '../lib/errors.js';
 import { clientFullName, type AppointmentRow, type ClientRow, type QrPaymentRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
 import { formatTime } from '../lib/time.js';
+import { onlineBookingPush } from '../push/staff-events.js';
 import { formatWhen } from './audit-text.js';
 import { findChat, storeMessage, upsertChat } from './bot-chats.js';
 import { cancellationPolicyText } from './cancellation.js';
@@ -179,7 +180,7 @@ export async function announceBooking(
 ): Promise<void> {
   await safely(ctx, 'new booking notice', async () => {
     const facts = bookingFacts(ctx.db, a);
-    await notifyStaff(ctx, staffBookedText(ctx.db, a, facts));
+    await notifyStaff(ctx, staffBookedText(ctx.db, a, facts), () => onlineBookingPush(ctx.db, a));
     if (opts.toClient) await tellClient(ctx, a, clientBookingMessage(ctx.db, a, facts, payment), opts.chatId);
   });
 }
