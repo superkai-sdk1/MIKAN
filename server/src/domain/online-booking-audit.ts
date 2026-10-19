@@ -60,6 +60,21 @@ export function auditHoldReleased(ctx: AppContext, before: AppointmentRow, after
   }, ctx.log);
 }
 
+/** Nobody confirmed the booking in time (`onlineBooking.confirmationHours`): the server rejected it. */
+export function auditUnconfirmedRejected(ctx: AppContext, before: AppointmentRow, after: AppointmentRow): void {
+  auditSafely(() => {
+    const f = bookingFacts(ctx.db, after);
+    entry(
+      ctx,
+      'system',
+      after,
+      'appointment.online_reject',
+      `Онлайн-запись ${appointmentRef(after.id, f.client)} на ${f.when} отклонена: её не подтвердили вовремя`,
+      { status: { from: before.status, to: after.status } },
+    );
+  }, ctx.log);
+}
+
 /** The client cancelled on their booking page. */
 export function auditClientCancelled(ctx: AppContext, before: AppointmentRow, after: AppointmentRow): void {
   auditSafely(() => {

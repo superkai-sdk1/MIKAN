@@ -37,6 +37,11 @@ export interface OnlineBookingSettings {
   stepMinutes: number;
   /** Shown to clients on the booking page (≤ 500 characters). */
   note: string;
+  /**
+   * An unconfirmed booking rejects itself this many hours after it was made (or 2 hours before its start, if that
+   * comes first); 1…168, `null` = never (see domain/online-booking-lifecycle.ts).
+   */
+  confirmationHours: number | null;
 }
 
 export interface CancellationRules {
@@ -66,6 +71,8 @@ export const ONLINE_HOLD_MIN = 5;
 export const ONLINE_HOLD_MAX = 60;
 export const ONLINE_STEPS = [15, 30, 60] as const;
 export const ONLINE_NOTE_MAX = 500;
+export const ONLINE_CONFIRMATION_MIN = 1;
+export const ONLINE_CONFIRMATION_MAX = 7 * 24;
 
 export interface BotSettingsStored {
   enabled: boolean;
@@ -122,7 +129,7 @@ export const DEFAULT_STUDIO: StudioSettings = {
   workdayEnd: '21:00',
   cancellation: { freeHours: 24, lateRetainPercent: 100, noShowRetainPercent: 100, autoRetain: false },
   reviewLinks: { yandex: '', twogis: '', google: '' },
-  onlineBooking: { enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '' },
+  onlineBooking: { enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '', confirmationHours: 24 },
 };
 
 export const DEFAULT_BOT: BotSettingsStored = {

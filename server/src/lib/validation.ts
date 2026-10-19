@@ -139,6 +139,7 @@ const FIELD_LABELS: Record<string, string> = {
   horizonDays: 'Запись вперёд, дней',
   holdMinutes: 'Время на оплату предоплаты, мин',
   stepMinutes: 'Шаг времени записи, мин',
+  confirmationHours: 'Отклонять неподтверждённые через, ч',
   variant: 'Вариант',
   comment: 'Комментарий',
   bonus: 'Бонусы',

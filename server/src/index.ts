@@ -16,7 +16,7 @@ import { checkDiskSpace, DISK_CHECK_INTERVAL_MS, raiseAlert, resolveAlerts } fro
 import { pruneAuditLog } from './domain/audit.js';
 import { runBackupIfDue } from './domain/backup.js';
 import { expireLoyalty, LOYALTY_EXPIRY_INTERVAL_MS } from './domain/loyalty.js';
-import { HOLD_CHECK_INTERVAL_MS, releaseUnpaidHolds } from './domain/online-booking-lifecycle.js';
+import { HOLD_CHECK_INTERVAL_MS, rejectUnconfirmedBookings, releaseUnpaidHolds } from './domain/online-booking-lifecycle.js';
 import { uploadBackupOffsite } from './domain/offsite-backup.js';
 import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
 import { studioTimezone } from './domain/settings.js';
@@ -95,7 +95,8 @@ async function main(): Promise<void> {
       });
   }, QR_SWEEP_INTERVAL_MS);
 
-  // Online bookings whose prepayment did not arrive in time free their time (docs/API.md «Online booking»).
+  // Online bookings whose prepayment did not arrive in time free their time, and the ones nobody confirmed in time are
+  // rejected (docs/API.md «Online booking», «StudioSettings»).
   let releasing = false;
   const holdTimer = setInterval(() => {
     if (releasing) return;
@@ -103,6 +104,9 @@ async function main(): Promise<void> {
     releaseUnpaidHolds(ctx)
       .then((released) => released && log.info({ released }, 'unpaid online holds released'))
       .catch((err) => log.error({ err: errorMessage(err) }, 'online hold check failed'))
+      .then(() => rejectUnconfirmedBookings(ctx))
+      .then((rejected) => rejected && log.info({ rejected }, 'unconfirmed online bookings rejected'))
+      .catch((err) => log.error({ err: errorMessage(err) }, 'unconfirmed online booking check failed'))
       .finally(() => {
         releasing = false;
       });

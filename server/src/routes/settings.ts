@@ -11,6 +11,8 @@ import {
   legacyReminderHours,
   MAX_REMINDER_OFFSETS,
   normalizeReminderOffsets,
+  ONLINE_CONFIRMATION_MAX,
+  ONLINE_CONFIRMATION_MIN,
   ONLINE_HOLD_MAX,
   ONLINE_HOLD_MIN,
   ONLINE_HORIZON_MAX,
@@ -75,7 +77,7 @@ const reviewLink = z
 
 const reviewLinks = z.object({ yandex: reviewLink, twogis: reviewLink, google: reviewLink });
 
-/** Each field omitted = unchanged; `note: null` clears it. */
+/** Each field omitted = unchanged; `note: null` clears it, `confirmationHours: null` = never reject by itself. */
 const onlineBooking = z.object({
   enabled: nonNull(z.boolean()),
   leadMinutes: nonNull(z.number().int().min(0).max(ONLINE_LEAD_MAX)),
@@ -85,6 +87,7 @@ const onlineBooking = z.object({
     z.number().int().refine((v) => (ONLINE_STEPS as readonly number[]).includes(v), { message: 'допустимо 15, 30 или 60 минут' }),
   ),
   note: text(ONLINE_NOTE_MAX),
+  confirmationHours: z.number().int().min(ONLINE_CONFIRMATION_MIN).max(ONLINE_CONFIRMATION_MAX).nullish(),
 });
 
 const studioBody = z.object({
@@ -162,13 +165,18 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.put('/settings/studio', async (request) => {
     const { cancellation, reviewLinks: links, onlineBooking: online, ...input } = parse(studioBody, request.body);
+    const { confirmationHours, ...onlineRest } = online ?? {};
     const current = getStudioSettings(db);
     const next: StudioSettings = {
       ...merge(current, input),
       // Nested: each rule / link / booking setting omitted = unchanged.
       cancellation: merge(current.cancellation, cancellation ?? {}),
       reviewLinks: merge(current.reviewLinks, links ?? {}),
-      onlineBooking: merge(current.onlineBooking, online ?? {}),
+      onlineBooking: {
+        ...merge(current.onlineBooking, onlineRest),
+        // `merge` turns null into '' (text fields); here null means «never».
+        confirmationHours: confirmationHours === undefined ? current.onlineBooking.confirmationHours : confirmationHours,
+      },
     };
     // Only the calendar's default range: appointments outside it are still allowed.
     if (parseTimeOfDay(next.workdayEnd)! <= parseTimeOfDay(next.workdayStart)!) {

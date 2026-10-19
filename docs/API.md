@@ -744,7 +744,8 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   cancellations on the booking page and moves / cancellations in the client cabinet as `online`; client actions in the bot (online booking, booking request,
   reschedule, confirm «Приду», «🔕 Не присылать новости» / «Снова получать новости» — `client.marketing_opt_out` /
   `client.marketing_opt_in`) as `bot`; staff bot actions as `bot_staff`; automatic prepayment retain, bank-confirmed
-  QR payments, an online hold confirmed by its prepayment and an unpaid hold released as `system`. Staff confirming / rejecting an online booking
+  QR payments, an online hold confirmed by its prepayment, an unpaid hold released and an online booking nobody
+  confirmed in time (`appointment.online_reject`) as `system`. Staff confirming / rejecting an online booking
   in the app is `appointment.online_confirm` / `appointment.online_reject`. Signing out is `employee.logout`
   («Выход из приложения на устройстве «iPhone 16 Pro · MIKAN 13»»), ending a session from the list
   `employee.session_end` («Сессия «Анна» на устройстве «…» завершена»), both with the id of the session's employee.
@@ -1461,7 +1462,9 @@ most 2 unsettled online bookings per client: a third → `409` «У вас уж�
 - Staff are told in the staff chat (and by push): «🆕 Онлайн-запись (сайт): Анна, +7…, Мочка — 21 октября, 15:00,
   мастер Фатима · ждёт подтверждения» / «· ждёт оплату до 14:35» (channel: `сайт` | `Mini App` | `бот`; the client's
   comment on a second line «Комментарий: …») / «💳 Онлайн-запись оплачена: … · предоплата 1 000 ₽» (instead of the usual
-  «💳 Предоплата … получена»); a released hold — «⌛ Онлайн-запись №… снята — предоплата не поступила вовремя: …».
+  «💳 Предоплата … получена»); a released hold — «⌛ Онлайн-запись №… снята — предоплата не поступила вовремя: …»; a
+  booking nobody confirmed in time (`confirmationHours`, see «StudioSettings») — «⌛ Онлайн-запись №… отклонена — её не
+  подтвердили вовремя: …».
 - The client with a Telegram chat (the chat linked to the card; the Mini App chat that booked) gets: on booking —
   «Заявка принята, время за вами 🙌 Подтвердим в ближайшее время.» with the time, services and master, or the payment
   request with the link button «💳 Оплатить предоплату»; on confirmation or payment — «✅ Запись подтверждена: 21
@@ -1470,8 +1473,9 @@ most 2 unsettled online bookings per client: a third → `409` «У вас уж�
   (`PUBLIC_URL/book`); on release — «⌛ Время … освободилось — предоплата не поступила вовремя.» and the booking link.
   In the bot the AI tells the booking itself; only the payment request follows its reply. Reminders are scheduled as for
   any appointment.
-- Background: unpaid holds are checked every minute.
-- Audit: the booking is logged with source `bot` / `online`, its release with `system`.
+- Background: unpaid holds and bookings past their confirmation deadline are checked every minute.
+- Audit: the booking is logged with source `bot` / `online`, its release and a rejection nobody confirmed in time
+  (`appointment.online_reject`) with `system`.
 
 **Booking page and Mini App** (`PUBLIC_URL/book`, static files in `server/public/book` served by the server; `/book/*`
 paths that are not files return the page, a missing `.js` / `.css` / `.png`… → `404`).
