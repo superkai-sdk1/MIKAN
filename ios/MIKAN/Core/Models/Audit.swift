@@ -25,7 +25,9 @@ nonisolated enum AuditSource: String, Decodable, Hashable, Sendable {
     case botStaff = "bot_staff"
     /// A client through the bot.
     case bot
-    /// The server by itself: automatic prepayment retain, a QR payment confirmed by the bank.
+    /// A client on the booking page or in the Mini App.
+    case online
+    /// The server by itself: automatic prepayment retain, a QR payment confirmed by the bank, a released online hold.
     case system
     /// A source this build does not know yet (sent by a newer server).
     case other

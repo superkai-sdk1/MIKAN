@@ -29,6 +29,8 @@ final class AppState {
     let reference: ReferenceStore
     /// Masters' working time for the calendar.
     let workSchedules: WorkScheduleStore
+    /// Push notifications: permission, the device token and its registration.
+    let push: PushCenter
 
     private(set) var phase: Phase
     private(set) var employee: Employee?
@@ -38,11 +40,14 @@ final class AppState {
     var posPath: [POSRoute] = []
     /// Shown on the login screen after a forced sign-out.
     var signOutNotice: String?
+    /// The screen of a tapped push notification, shown over the tabs.
+    var pushRoute: PushRoute?
 
     @ObservationIgnored private let logger = Logger(subsystem: "com.mikanstudio.crm", category: "session")
 
-    init(api: APIClient, employee: Employee?, phase: Phase) {
+    init(api: APIClient, employee: Employee?, phase: Phase, push: PushCenter = PushCenter()) {
         self.api = api
+        self.push = push
         self.shift = ShiftStore(api: api)
         let cart = CartStore()
         self.cart = cart
@@ -65,7 +70,7 @@ final class AppState {
     }
 
     /// «Ещё» tab badge.
-    var moreBadge: Int { badges.unreadChats + badges.newBookingRequests }
+    var moreBadge: Int { badges.unreadChats + badges.newBookingRequests + badges.onlineAwaiting }
 
     func signIn(login: String, password: String, server: String) async throws {
         guard let url = ServerConfig.normalize(server) else { throw APIError.invalidServerAddress }
@@ -82,6 +87,9 @@ final class AppState {
     }
 
     func signOut(notice: String? = nil) {
+        // While the session token still works: this iPhone stops getting the employee's notifications.
+        push.unregister(from: api)
+        pushRoute = nil
         Keychain.set(nil, for: Keychain.tokenAccount)
         api.updateToken(nil)
         employee = nil
@@ -145,12 +153,14 @@ final class AppState {
         }
     }
 
-    /// Polls badges and the cash shift while the app is active (cancelled with the calling task).
+    /// Polls badges and the cash shift while the app is active (cancelled with the calling task); also retries
+    /// registering this iPhone for push notifications until the server has it (a no-op once it has).
     func runPolling() async {
         while !Task.isCancelled, phase == .signedIn {
             async let badgesRefresh: Void = refreshBadges()
             async let shiftRefresh: Void = shift.refresh()
-            _ = await (badgesRefresh, shiftRefresh)
+            async let pushRegistration: Void = registerPushDevice()
+            _ = await (badgesRefresh, shiftRefresh, pushRegistration)
             try? await Task.sleep(for: Self.badgePollInterval)
         }
     }
@@ -188,6 +198,7 @@ final class AppState {
 
     /// The cart's receipt on the «Касса» tab (not in checkout).
     func showReceipt() {
+        pushRoute = nil
         cart.isCheckoutPresented = false
         selectedTab = .pos
         posPath = [.receipt]

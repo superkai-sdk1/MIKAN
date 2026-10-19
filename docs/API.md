@@ -1279,7 +1279,8 @@ most 2 unsettled online bookings per client: a third → `409` «У вас уж�
 - Background: unpaid holds are checked every minute.
 - Audit: the booking is logged with source `bot` / `online`, its release with `system`.
 
-**Booking page and Mini App** (`PUBLIC_URL/book`, static files served by the server; `/book/*` paths return the page).
+**Booking page and Mini App** (`PUBLIC_URL/book`, static files in `server/public/book` served by the server; `/book/*`
+paths that are not files return the page, a missing `.js` / `.css` / `.png`… → `404`).
 One mobile-first page in Russian: service (categories → groups → services with photo, price text, duration, variants)
 → master or «Любой мастер» → a day strip and free starts → name, phone, comment → confirm. With a prepayment it shows
 the QR / bank link, a countdown to `holdUntil` and waits for the payment; otherwise «Ждёт подтверждения». Then the
@@ -1288,6 +1289,13 @@ booking page `/book/b/<token>`: status, details, «Добавить в кале�
 (opened from the bot's menu button «📅 Записаться» or `https://t.me/<bot>/book`) it uses the Telegram theme, the
 MainButton, skips name and phone for a linked chat and sends the Mini App init data; the bot confirms in the chat.
 Link previews (Open Graph): «Запись в MIKAN STUDIO».
+- Caching: the HTML is `no-cache` (ETag); it loads its scripts and styles from `/book/v/<content hash>/…`, cached for a
+  year (`immutable`); plain `/book/<file>` (icons, `og.png`) for an hour. Link previews use `PUBLIC_URL` (else the
+  request's origin) for `og:url` / `og:image`.
+- A linked Mini App chat posts the booking without `name` and `phone` (the chat's client is used). When `/me` answers
+  `401` the page stops sending the init data and books like the website (name and phone).
+- `items` in `/days` and `/slots` is built as `serviceId[:encodeURIComponent(variant)]` and then encoded once more as a
+  query value: the server splits the decoded value on `,` / `:` and decodes each variant.
 
 | Method | Path (no auth) | Body | Response |
 |---|---|---|---|

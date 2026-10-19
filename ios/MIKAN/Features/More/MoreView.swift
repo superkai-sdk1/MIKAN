@@ -8,6 +8,15 @@ struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section("Онлайн-запись") {
+                    NavigationLink { OnlineBookingsView() } label: {
+                        Label("Онлайн-записи", systemImage: "globe")
+                    }
+                    .badge(appState.badges.onlineAwaiting)
+                    NavigationLink { BookingLinkView() } label: {
+                        Label("Ссылка для записи", systemImage: "link")
+                    }
+                }
                 Section("Бот") {
                     NavigationLink { ChatsListView() } label: {
                         Label("Чаты", systemImage: "bubble.left.and.bubble.right")

@@ -32,6 +32,10 @@ struct StudioSettingsView: View {
 
     private var hasChanges: Bool { settings != nil && settings != remote.value }
     private var reviewLinksIssue: String? { settings?.reviewLinks.flatMap(ReviewLinksRules.issue) }
+    private var onlineBookingIssue: String? { settings?.onlineBooking.flatMap(OnlineBookingRules.issue) }
+    private var canSave: Bool { hasChanges && hasValidHours && reviewLinksIssue == nil && onlineBookingIssue == nil }
+    /// A master only looks at the settings; the booking link stays open to everyone.
+    private var isReadOnly: Bool { !permissions.editsSettings }
     private var hasValidHours: Bool {
         guard let settings else { return false }
         return WorkdayHours(start: settings.workdayStart, end: settings.workdayEnd, timeZoneIdentifier: settings.timezone) != nil
@@ -39,7 +43,7 @@ struct StudioSettingsView: View {
 
     var body: some View {
         Form {
-            if !permissions.editsSettings {
+            if isReadOnly {
                 ReadOnlyNotice()
             }
             if let settings = Binding($settings) {
@@ -49,7 +53,9 @@ struct StudioSettingsView: View {
                     TextField("Телефон", text: settings.phone)
                         .keyboardType(.phonePad)
                 }
+                .disabled(isReadOnly)
                 workdaySection(settings)
+                    .disabled(isReadOnly)
                 Section("Онлайн") {
                     TextField("Instagram", text: settings.instagram)
                         .textInputAutocapitalization(.never)
@@ -59,6 +65,7 @@ struct StudioSettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
+                .disabled(isReadOnly)
                 Section {
                     TextField("Пара слов о студии, мастерах, стиле", text: settings.about, axis: .vertical)
                         .lineLimit(3...10)
@@ -67,12 +74,20 @@ struct StudioSettingsView: View {
                 } footer: {
                     Text("Эти сведения бот использует в ответах клиентам.")
                 }
+                .disabled(isReadOnly)
                 // Only on servers that know them (older ones omit the fields).
                 if let rules = Binding(settings.cancellation) {
                     CancellationRulesSection(rules: rules)
+                        .disabled(isReadOnly)
                 }
                 if let links = Binding(settings.reviewLinks) {
                     ReviewLinksSection(links: links)
+                        .disabled(isReadOnly)
+                }
+                if let online = Binding(settings.onlineBooking) {
+                    OnlineBookingSection(settings: online)
+                        .disabled(isReadOnly)
+                    BookingLinkSection(isEnabled: online.wrappedValue.enabled)
                 }
                 Section {
                     Picker("Часовой пояс", selection: settings.timezone) {
@@ -83,10 +98,9 @@ struct StudioSettingsView: View {
                 } footer: {
                     Text("По нему считаются дни в отчётах и время отправки памяток.")
                 }
+                .disabled(isReadOnly)
             }
         }
-        // A master only looks at the settings.
-        .disabled(!permissions.editsSettings)
         .overlay {
             if settings == nil { RemoteStateOverlay(remote: remote, retry: load) }
         }
@@ -95,7 +109,7 @@ struct StudioSettingsView: View {
         .toolbar {
             if permissions.editsSettings {
                 ToolbarItem(placement: .confirmationAction) {
-                    if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!hasChanges || !hasValidHours || reviewLinksIssue != nil) }
+                    if isSaving { ProgressView() } else { Button("Сохранить", action: save).disabled(!canSave) }
                 }
             }
         }
