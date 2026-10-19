@@ -18,6 +18,7 @@ import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
 import { applyConsumptionNorms, noConsumption, recordListedUsage, usageRecorded } from './consumption.js';
 import { scheduleFollowUps } from './follow-ups.js';
+import { syncRescheduleNotice } from './reschedule-notice.js';
 
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
@@ -57,6 +58,8 @@ export interface AppointmentInput {
   notes?: string | null;
   status?: AppointmentStatus;
   force?: boolean;
+  /** PATCH that changes `startsAt`: tell the client in Telegram (see domain/reschedule-notice.ts). */
+  notifyClient?: boolean;
 }
 
 export interface AppointmentFilter {
@@ -309,6 +312,7 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
     const reminderRelevant =
       timingChanged || next.status !== current.status || next.clientId !== current.clientId || replaced !== undefined;
     if (reminderRelevant) syncReminder(tx, row, now);
+    syncRescheduleNotice(tx, current, row, input.notifyClient === true, now);
     const closedWithoutVisit =
       INACTIVE_FOR_OVERLAP.includes(next.status) && !INACTIVE_FOR_OVERLAP.includes(current.status);
     return (closedWithoutVisit ? autoRetainDeposit(tx, row, now, actorId) : null) ?? row;

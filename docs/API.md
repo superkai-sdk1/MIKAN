@@ -830,8 +830,10 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
   client has Telegram linked and `botEnabled`, the server queues a `reschedule_notice` scheduled message sent at once
   (the sender delivers it within 30 s, with retries) with the «✅ Приду» / «🔁 Перенести» buttons:
   «Анна, ваша запись перенесена 🗓\n\nБыло: 20 октября, 14:00\nСтало: **21 октября, 15:00**\nМастер: Фатима\n\nЕсли
-  новое время не подходит — нажмите «🔁 Перенести».» A pending notice of the same appointment is replaced. Without
-  Telegram (or without the flag) nothing is sent. Reminders are rescheduled as before either way.
+  новое время не подходит — нажмите «🔁 Перенести».» A pending notice of the same appointment is replaced (a move
+  without the flag just drops it). Without Telegram (or without the flag) nothing is sent, nor for a move into the past
+  or of an appointment that is not `scheduled` / `confirmed`; the sender skips a notice whose appointment is no longer
+  active. Reminders are rescheduled as before either way.
 - Consumption: `consumables` **omitted or `null`** → the server deducts the norms of the appointment's services
   (Σ over its service lines of each service's `consumables`, quantity-mode only), never failing: a consumable short of
   stock gives what it has and is reported. `consumables` given (an array, `[]` included) → exactly those, and a shortage

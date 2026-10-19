@@ -43,6 +43,7 @@ const body = z.object({
   notes: nullableText(5000),
   status: nonNull(status),
   force: nonNull(z.boolean()),
+  notifyClient: nonNull(z.boolean()),
 });
 const listQuery = z.object({
   from: queryInstant,
