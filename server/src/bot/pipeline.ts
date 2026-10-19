@@ -1,6 +1,7 @@
 import { and, asc, count, eq, gt, gte } from 'drizzle-orm';
 import type { AppContext } from '../context.js';
 import { aiUsage, botMessages, clients } from '../db/schema.js';
+import { noteAiOutcome } from '../domain/alerts.js';
 import { chatEmployee, findChat, storeMessage, updateChatFlags, upsertChat } from '../domain/bot-chats.js';
 import { getBotSettings, studioTimezone } from '../domain/settings.js';
 import { AppError, conflict, errorMessage } from '../lib/errors.js';
@@ -320,6 +321,7 @@ export class BotPipeline {
       stopTyping();
     }
     recordUsage(ctx, chatId, result);
+    await noteAiOutcome(ctx, result);
 
     // The model may finish with no text after a successful action — confirm the action instead of an error.
     const confirmation = result.outcome !== 'ok' ? '' :

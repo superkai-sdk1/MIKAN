@@ -90,6 +90,36 @@ curl https://95-170-124-192.sslip.io/api/health
 - Фото товаров лежат в `data/uploads/` — копируйте каталог целиком:
   `rsync -az mikan:/opt/mikan/deploy/data/uploads/ ./uploads-backup/`
 
+## Бэкапы вне сервера
+
+Каждый ежедневный бэкап сервер шифрует (AES-256-GCM, ключ знает только сервер) и отправляет в S3-совместимое
+хранилище (Yandex Object Storage, Selectel, Cloudflare R2, MinIO). Там лежат последние 30 копий
+`mikan/mikan-ГГГГ-ММ-ДД.db.enc`.
+
+1. Создайте бакет и сервисный аккаунт с правом записи в него, выпустите статический ключ доступа.
+2. Сгенерируйте ключ шифрования и **сохраните его копию вне сервера** (менеджер паролей):
+   ```bash
+   openssl rand -base64 32
+   ```
+3. Заполните `BACKUP_*` в `/opt/mikan/deploy/.env` (см. `.env.example`), например для Yandex:
+   `BACKUP_S3_ENDPOINT=https://storage.yandexcloud.net`, `BACKUP_S3_REGION=ru-central1`.
+4. `docker compose up -d api`, затем проверьте выгрузку сразу, не дожидаясь утра:
+   ```bash
+   docker compose exec api node dist/scripts/offsite-backup.js upload
+   ```
+
+Расшифровать скачанную копию (на сервере или у себя, с тем же ключом):
+
+```bash
+BACKUP_ENCRYPTION_KEY=... node dist/scripts/offsite-backup.js decrypt mikan-2026-10-19.db.enc mikan.db
+```
+
+## Оповещения
+
+Сервер сам пишет в группу сотрудников (или каждому сотруднику, если группа не привязана), когда закончился
+баланс ИИ, ИИ не отвечает три раза подряд, не создался бэкап, копия не ушла во внешнее хранилище или на диске
+меньше 1 ГБ. Повтор — не чаще раза в 6 часов; когда всё восстановилось, приходит одно сообщение «✅ …».
+
 ## Восстановление из копии
 
 ```bash

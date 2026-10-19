@@ -10,7 +10,9 @@ import type { AppContext } from './context.js';
 import { openDatabase } from './db/client.js';
 import { seedDatabase } from './db/seed.js';
 import { DIGEST_CHECK_INTERVAL_MS, sendDueDigests } from './bot/digest.js';
+import { checkDiskSpace, DISK_CHECK_INTERVAL_MS, raiseAlert, resolveAlerts } from './domain/alerts.js';
 import { runBackupIfDue } from './domain/backup.js';
+import { uploadBackupOffsite } from './domain/offsite-backup.js';
 import { QR_SWEEP_INTERVAL_MS, sweepQrPayments } from './domain/qr-payments.js';
 import { studioTimezone } from './domain/settings.js';
 import { errorMessage } from './lib/errors.js';
@@ -93,12 +95,45 @@ async function main(): Promise<void> {
   }, DIGEST_CHECK_INTERVAL_MS);
 
   const backupDir = path.join(config.dataDir, 'backups');
+  // The daily copy, then its encrypted off-site copy; staff hear about failures (domain/alerts.ts).
+  const copyOffsite = async (file: string) => {
+    if (!config.offsiteBackup) {
+      if (config.offsiteBackupProblem) {
+        await raiseAlert(ctx, 'offsite_backup', `⚠️ Бэкапы вне сервера не настроены до конца: ${config.offsiteBackupProblem}`);
+      }
+      return;
+    }
+    try {
+      const copy = await uploadBackupOffsite(config.offsiteBackup, file);
+      log.info({ key: copy.key, bytes: copy.bytes, pruned: copy.pruned.length }, 'off-site backup uploaded');
+      await resolveAlerts(ctx, ['offsite_backup'], '✅ Бэкап снова уходит во внешнее хранилище');
+    } catch (err) {
+      log.error({ err: errorMessage(err) }, 'off-site backup failed');
+      await raiseAlert(ctx, 'offsite_backup', `⚠️ Не удалось отправить бэкап во внешнее хранилище: ${errorMessage(err)}`);
+    }
+  };
   const backupTick = () =>
     runBackupIfDue(sqlite, backupDir, studioTimezone(db))
-      .then((file) => file && log.info({ file }, 'database backup created'))
-      .catch((err) => log.error({ err: errorMessage(err) }, 'database backup failed'));
+      .then(
+        async (file) => {
+          if (!file) return;
+          log.info({ file }, 'database backup created');
+          await resolveAlerts(ctx, ['backup'], '✅ Бэкап базы снова создаётся');
+          await copyOffsite(file);
+        },
+        async (err) => {
+          log.error({ err: errorMessage(err) }, 'database backup failed');
+          await raiseAlert(ctx, 'backup', `⚠️ Не удалось создать бэкап базы: ${errorMessage(err)}`);
+        },
+      )
+      .catch((err) => log.error({ err: errorMessage(err) }, 'backup alert failed'));
   const backupTimer = setInterval(backupTick, BACKUP_CHECK_MS);
   void backupTick();
+
+  const diskTick = () =>
+    checkDiskSpace(ctx, config.dataDir).catch((err) => log.error({ err: errorMessage(err) }, 'disk space check failed'));
+  const diskTimer = setInterval(diskTick, DISK_CHECK_INTERVAL_MS);
+  void diskTick();
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
@@ -109,6 +144,7 @@ async function main(): Promise<void> {
     clearInterval(qrTimer);
     clearInterval(digestTimer);
     clearInterval(backupTimer);
+    clearInterval(diskTimer);
     const force = setTimeout(() => process.exit(1), 15_000);
     force.unref();
     try {

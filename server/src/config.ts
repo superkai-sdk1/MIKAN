@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { S3Config } from './lib/s3.js';
 import { z } from 'zod';
 import { SERVICE_IMAGE_MODEL } from './lib/service-images.js';
 
@@ -48,6 +49,14 @@ const envSchema = z.object({
     z.string().default(SERVICE_IMAGE_MODEL),
   ),
   AI_HTTPS_PROXY: optionalString,
+  BACKUP_S3_ENDPOINT: optionalString,
+  BACKUP_S3_REGION: z.string().trim().default('ru-central1'),
+  BACKUP_S3_BUCKET: optionalString,
+  BACKUP_S3_ACCESS_KEY_ID: optionalString,
+  BACKUP_S3_SECRET_ACCESS_KEY: optionalString,
+  BACKUP_S3_PREFIX: z.string().trim().default('mikan/'),
+  BACKUP_ENCRYPTION_KEY: optionalString,
+  BACKUP_OFFSITE_KEEP: intWithDefault(30, 1, 3650),
   AI_MAX_TOKENS: intWithDefault(4096, 256, 64_000),
   AI_DAILY_LIMIT: intWithDefault(500, 0, 1_000_000),
   AI_CHAT_HOURLY_LIMIT: intWithDefault(20, 0, 10_000),
@@ -96,7 +105,45 @@ export interface Config {
     /** `<20-digit account>/<BIC>` the money is credited to. */
     accountId: string | null;
   };
+  /** Encrypted copies of the daily backup in S3-compatible storage; `null` when not configured. */
+  offsiteBackup: OffsiteBackupConfig | null;
+  /** Why the off-site copies are off although some of their settings are given (a half-done setup), else null. */
+  offsiteBackupProblem: string | null;
   logLevel: string;
+}
+
+export interface OffsiteBackupConfig {
+  s3: S3Config;
+  prefix: string;
+  /** AES-256 key (32 bytes). */
+  key: Buffer;
+  keep: number;
+}
+
+const OFFSITE_KEYS = ['BACKUP_S3_ENDPOINT', 'BACKUP_S3_BUCKET', 'BACKUP_S3_ACCESS_KEY_ID', 'BACKUP_S3_SECRET_ACCESS_KEY', 'BACKUP_ENCRYPTION_KEY'] as const;
+
+/** Off-site backups need all five settings; a partial set is reported, never half-used (no unencrypted copies). */
+function offsiteOf(e: z.infer<typeof envSchema>): { config: OffsiteBackupConfig | null; problem: string | null } {
+  const missing = OFFSITE_KEYS.filter((k) => !e[k]);
+  if (missing.length === OFFSITE_KEYS.length) return { config: null, problem: null };
+  if (missing.length > 0) return { config: null, problem: `не заданы ${missing.join(', ')}` };
+  const key = Buffer.from(e.BACKUP_ENCRYPTION_KEY!, 'base64');
+  if (key.length !== 32) return { config: null, problem: 'BACKUP_ENCRYPTION_KEY должен быть 32 байтами в base64 (openssl rand -base64 32)' };
+  return {
+    config: {
+      s3: {
+        endpoint: e.BACKUP_S3_ENDPOINT!,
+        region: e.BACKUP_S3_REGION,
+        bucket: e.BACKUP_S3_BUCKET!,
+        accessKeyId: e.BACKUP_S3_ACCESS_KEY_ID!,
+        secretAccessKey: e.BACKUP_S3_SECRET_ACCESS_KEY!,
+      },
+      prefix: e.BACKUP_S3_PREFIX,
+      key,
+      keep: e.BACKUP_OFFSITE_KEEP,
+    },
+    problem: null,
+  };
 }
 
 function parseEnv<T extends z.ZodType>(schema: T, env: NodeJS.ProcessEnv): z.infer<T> {
@@ -129,6 +176,7 @@ export function loadTochkaConfig(env: NodeJS.ProcessEnv = process.env): Config['
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const e = parseEnv(envSchema, env);
   const baseUrl = e.AI_BASE_URL ?? null;
+  const offsite = offsiteOf(e);
   return {
     port: e.PORT,
     host: e.HOST,
@@ -150,6 +198,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       chatHourlyLimit: e.AI_CHAT_HOURLY_LIMIT,
     },
     tochka: tochkaOf(e),
+    offsiteBackup: offsite.config,
+    offsiteBackupProblem: offsite.problem,
     logLevel: e.LOG_LEVEL,
   };
 }

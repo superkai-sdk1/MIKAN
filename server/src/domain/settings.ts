@@ -93,6 +93,7 @@ const KEY_STAFF_CHAT = 'staffChatId';
 const KEY_STAFF_CODE = 'staffCode';
 const KEY_BOT_USERNAME = 'botUsername';
 const KEY_DIGESTS_SENT = 'digestsSent';
+const KEY_ALERTS = 'alerts';
 
 function readKey<T>(db: DbOrTx, key: string): T | null {
   const row = db.select().from(settings).where(eq(settings.key, key)).get();
@@ -177,6 +178,21 @@ export function getDigestsSent(db: DbOrTx): DigestsSent {
 
 export function setDigestsSent(db: DbOrTx, value: DigestsSent): void {
   writeKey(db, KEY_DIGESTS_SENT, value);
+}
+
+/** An alert kind's state: whether it is raised, since when, and when the staff were last told. */
+export interface AlertState {
+  active: boolean;
+  since: number;
+  lastSentAt: number;
+}
+
+export function getAlertStates(db: DbOrTx): Record<string, AlertState> {
+  return readKey<Record<string, AlertState>>(db, KEY_ALERTS) ?? {};
+}
+
+export function setAlertStates(db: DbOrTx, value: Record<string, AlertState>): void {
+  writeKey(db, KEY_ALERTS, value);
 }
 
 export function studioTimezone(db: DbOrTx): string {
