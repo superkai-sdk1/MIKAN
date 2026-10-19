@@ -132,7 +132,6 @@ private struct CheckoutDepositRows: View {
 struct CheckoutAppointmentSection: View {
     @Environment(CartStore.self) private var cart
     @Environment(ReferenceStore.self) private var reference
-    @Environment(\.permissions) private var permissions
 
     var body: some View {
         @Bindable var cart = cart
@@ -140,8 +139,6 @@ struct CheckoutAppointmentSection: View {
             // The server sends a memo only for a fresh piercing / tattoo among the visit's services.
             let hasFreshProcedure = AftercareDefaults.sendsMemo(for: appointment, services: reference.services)
             let canSend = cart.canSendAftercare && hasFreshProcedure
-            // Another master's visit: a master can't complete it, the sale marks it completed without the memo.
-            let canComplete = permissions.canChange(appointment)
             Section {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(appointment.displayTitle).font(.headline)
@@ -150,22 +147,16 @@ struct CheckoutAppointmentSection: View {
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
-                Toggle("Завершить запись при оплате", isOn: Binding(
-                    get: { cart.completesAppointment && canComplete },
-                    set: { cart.completesAppointment = $0 }
-                ))
-                .disabled(!canComplete)
+                Toggle("Завершить запись при оплате", isOn: $cart.completesAppointment)
                 Toggle("Отправить памятку по уходу", isOn: Binding(
-                    get: { cart.sendsAftercare && canSend && cart.completesAppointment && canComplete },
+                    get: { cart.sendsAftercare && canSend && cart.completesAppointment },
                     set: { cart.sendsAftercare = $0 }
                 ))
-                .disabled(!canSend || !cart.completesAppointment || !canComplete)
+                .disabled(!canSend || !cart.completesAppointment)
             } header: {
                 Text("Запись")
             } footer: {
-                if !canComplete {
-                    Text("Это запись другого мастера: после оплаты она отметится завершённой, но без памятки по уходу.")
-                } else if !cart.completesAppointment {
+                if !cart.completesAppointment {
                     Text("После оплаты запись всё равно отметится завершённой, но без памятки по уходу.")
                 } else if !cart.canSendAftercare {
                     Text("Клиент не подключил Telegram-бота")

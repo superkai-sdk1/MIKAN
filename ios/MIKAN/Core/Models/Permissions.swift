@@ -26,7 +26,8 @@ nonisolated struct Permissions: Equatable, Sendable {
     /// Studio and bot settings, the knowledge base, staff chat binding and the bot test.
     var editsSettings: Bool { role != .master }
 
-    /// Edit, move, cancel, complete and take prepayments: owner and admin — any appointment, a master — their own.
+    /// Edit, move, cancel and take prepayments: owner and admin — any appointment, a master — their own.
+    /// Completing a visit is a till action, open to every role (checkout, «Завершить»).
     func canChange(appointmentOf masterId: Int) -> Bool {
         role != .master || masterId == employeeId
     }

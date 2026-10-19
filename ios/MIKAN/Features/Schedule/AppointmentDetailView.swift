@@ -42,8 +42,10 @@ struct AppointmentDetailView: View {
                 Section("Заметки") { Text(notes) }
             }
             paymentSection
-            if !actions.isEmpty {
-                if canChange { actionsSection } else { ReadOnlyNotice(text: "Чужие записи меняют владелец и администратор.") }
+            if !visibleActions.isEmpty {
+                actionsSection
+            } else if !actions.isEmpty {
+                ReadOnlyNotice(text: "Чужие записи меняют владелец и администратор.")
             }
         }
         .navigationTitle("Запись")
@@ -198,8 +200,10 @@ struct AppointmentDetailView: View {
         }
     }
 
-    /// A master sees every appointment but changes only their own.
+    /// A master sees every appointment but changes only their own; completing a visit is a till action, open to all.
     private var canChange: Bool { permissions.canChange(appointment) }
+
+    private var visibleActions: [Action] { canChange ? actions : actions.filter { $0 == .complete } }
 
     private enum Action: Hashable {
         case confirm, complete, reschedule, noShow, cancel, restore
@@ -215,8 +219,8 @@ struct AppointmentDetailView: View {
     }
 
     private var actionsSection: some View {
-        Section("Действия") {
-            ForEach(actions, id: \.self) { action in
+        Section {
+            ForEach(visibleActions, id: \.self) { action in
                 switch action {
                 case .confirm:
                     Button("Подтвердить", systemImage: "checkmark.circle") { setStatus(.confirmed) }
@@ -233,6 +237,12 @@ struct AppointmentDetailView: View {
                 case .restore:
                     Button("Вернуть в запись", systemImage: "arrow.uturn.backward.circle") { setStatus(.scheduled) }
                 }
+            }
+        } header: {
+            Text("Действия")
+        } footer: {
+            if !canChange {
+                Text("Перенести, отменить или отметить неявку в чужой записи могут владелец и администратор.")
             }
         }
     }
