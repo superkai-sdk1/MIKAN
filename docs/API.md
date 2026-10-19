@@ -1496,7 +1496,7 @@ and digits without look-alikes: no 0/O, 1/I/L), `amount` = `balance` = the price
 (studio calendar; `null` when `validityMonths` is `null`). It is spent in parts at checkout (`payments.certificates`)
 until the balance is 0 (`used`); after `expiresAt` it is `expired` (checked hourly). Selling counts as money received
 but not as revenue (analytics `certificatesSold`); spending counts as revenue of the sale it pays. Refunds: a sale paid
-with a certificate gives the amount back to it (`used` → `active`; a certificate that has expired or been cancelled
+with a certificate gives the amount back to it (`used` → `active`; a certificate past its `expiresAt` or cancelled
 since burns it at once); a sale that sold an unspent certificate cancels it (`409` when it was already spent in part).
 
 `GiftCertificate`: `{ id, code, amount, balance, status: "active"|"used"|"expired"|"cancelled", expiresAt,

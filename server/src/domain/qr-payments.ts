@@ -213,7 +213,8 @@ async function checkBank(ctx: AppContext, id: number, force: boolean): Promise<Q
     if (updated.error) await alertStaff(ctx, updated);
     if (holdWaiting && holdSettled(ctx.db, updated)) await announceHoldPaid(ctx, updated.appointmentId!, updated.amount);
     else if (updated.kind === 'deposit') await announceQrDeposit(ctx, updated);
-    if (updated.saleId != null) await announceBonusEarned(ctx, updated.saleId);
+    // The poll that found the payment does not wait for Telegram (announceBonusEarned never throws).
+    if (updated.saleId != null) void announceBonusEarned(ctx, updated.saleId);
   }
   return updated;
 }

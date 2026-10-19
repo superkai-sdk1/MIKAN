@@ -210,9 +210,11 @@ export function reverseSaleCertificates(db: DbOrTx, sale: SaleRow, employeeId: n
     const certificate = getCertificateRow(db, op.certificateId);
     const back = -op.amount;
     addOperation(db, certificate.id, 'refund', back, v);
-    const status = statusOf(certificate, now);
-    if (status === 'cancelled' || status === 'expired') {
-      // What it still held burns with what came back (a certificate past expiresAt the hourly job has not reached).
+    const lapsed = certificate.expiresAt != null && certificate.expiresAt <= now;
+    const status: CertificateStatus | null =
+      certificate.status === 'cancelled' ? 'cancelled' : certificate.status === 'expired' || lapsed ? 'expired' : null;
+    if (status) {
+      // What it still held burns with what came back (also a used or active one past expiresAt the job has not reached).
       addOperation(db, certificate.id, status === 'cancelled' ? 'cancel' : 'expire', -(certificate.balance + back), v);
       setCertificate(db, certificate.id, { status, balance: 0 }, now);
     } else {
@@ -269,7 +271,8 @@ export function updateCertificate(db: DbOrTx, id: number, patch: CertificatePatc
   if (patch.recipientName !== undefined) values.recipientName = patch.recipientName;
   if (patch.note !== undefined) values.note = patch.note;
   if (patch.expiresAt !== undefined && patch.expiresAt !== certificate.expiresAt) {
-    if (certificate.status === 'expired' || certificate.status === 'cancelled') {
+    const status = statusOf(certificate, now);
+    if (status === 'expired' || status === 'cancelled') {
       throw conflict(`Сертификат ${certificate.code} уже не действует — срок изменить нельзя`);
     }
     if (patch.expiresAt != null && patch.expiresAt <= now) throw badRequest('Срок действия должен быть в будущем');

@@ -216,6 +216,27 @@ describe('gift certificates', () => {
     ]);
   });
 
+  it('a refund to a used certificate past its expiry burns at once; an expired one cannot be extended', async () => {
+    const { code } = await sellCertificate(1000);
+    const other = await sellCertificate(2000);
+    const paid = (await payService([{ code, amount: 1000 }], 2000)).json();
+    expect(await byCode(code)).toMatchObject({ status: 'used', balance: 0 });
+    await travelTo(Date.parse(YEAR_LATER) + 1);
+    expect((await api('POST', `/api/sales/${paid.id}/refund`, { reason: 'Отказ', restock: true })).statusCode).toBe(200);
+    const burnt = await byCode(code);
+    expect(burnt).toMatchObject({ status: 'expired', balance: 0 });
+    expect(burnt.operations.slice(-2).map((op: { type: string; amount: number }) => [op.type, op.amount])).toEqual([
+      ['refund', 1000],
+      ['expire', -1000],
+    ]);
+
+    // Past expiresAt before the hourly job: already expired, so the expiry cannot revive it.
+    expect(await byCode(other.code)).toMatchObject({ status: 'expired', balance: 2000 });
+    const late = await api('PATCH', `/api/certificates/${other.id}`, { expiresAt: '2028-12-31T00:00:00.000Z' });
+    expect(late.statusCode).toBe(409);
+    expect(late.json().error.message).toBe(`Сертификат ${other.code} уже не действует — срок изменить нельзя`);
+  });
+
   it('refunding the sale of an unspent certificate cancels it; a spent one blocks the refund', async () => {
     const unspent = await sellCertificate(5000);
     const res = await t.api('POST', `/api/sales/${unspent.sale.id}/refund`, { reason: 'Передумали', restock: true });
