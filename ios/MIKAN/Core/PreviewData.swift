@@ -55,7 +55,7 @@ enum PreviewData {
             ServiceVariant(name: "Один", price: 2500, durationMin: nil),
             ServiceVariant(name: "Два", price: 4000, durationMin: 60),
         ],
-        depositAmount: 1000, aftercareTemplateId: 2, active: true, sort: 2
+        depositAmount: 1000, aftercareTemplateId: 2, healingCheckDays: 7, jewelryChangeWeeks: 6, active: true, sort: 2
     )
     static let services = [lobe, tattoo, nipple]
 

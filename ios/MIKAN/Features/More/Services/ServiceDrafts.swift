@@ -268,6 +268,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
     var aftercareTemplateId: Int?
     /// «Свежий прокол» / «Свежее тату» (new services: on).
     var freshProcedure: Bool
+    /// «После визита»: the healing check-in and the jewelry change reminder.
+    var followUps: ServiceFollowUpDraft
     /// Compatible catalog jewelry, in the order staff linked it.
     var jewelryIds: [Int]
     /// Consumables one procedure uses.
@@ -293,6 +295,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
         deposit = ServiceDepositDraft(depositAmount: service?.depositAmount ?? 0)
         aftercareTemplateId = service?.aftercareTemplateId
         freshProcedure = service?.freshProcedure ?? true
+        followUps = service.map { ServiceFollowUpDraft(healingCheckDays: $0.healingCheckDays, jewelryChangeWeeks: $0.jewelryChangeWeeks) }
+            ?? .newService
         jewelryIds = service?.jewelryIds ?? []
         consumables = service?.consumables ?? []
         active = service?.active ?? true
@@ -343,6 +347,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
             depositAmount: deposit.amount,
             aftercareTemplateId: Nullable(aftercareTemplateId),
             freshProcedure: freshProcedure,
+            healingCheckDays: Nullable(followUps.healingCheckDays),
+            jewelryChangeWeeks: Nullable(followUps.jewelryChangeWeeks),
             jewelryIds: jewelryIds,
             consumables: consumables,
             active: active,
@@ -377,6 +383,8 @@ nonisolated extension ServiceBody {
             depositAmount: service.depositAmount,
             aftercareTemplateId: Nullable(service.aftercareTemplateId),
             freshProcedure: service.freshProcedure,
+            healingCheckDays: Nullable(service.healingCheckDays),
+            jewelryChangeWeeks: Nullable(service.jewelryChangeWeeks),
             jewelryIds: service.jewelryIds,
             consumables: service.consumables,
             active: service.active,

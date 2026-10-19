@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		004B75474DB5D88FF9F59F43 /* StockMovement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11EB4AA6AF40CDB0863357D7 /* StockMovement.swift */; };
+		00D102BAC218DD8F22F45C20 /* ServiceFollowUpTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5938251744528DD1BE904B95 /* ServiceFollowUpTests.swift */; };
 		013DDB4EF7422F71A5576C65 /* Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD9DE19F1FFCC9B1B0E8ECE /* Fixtures.swift */; };
 		0350E6B64A7D8F00128AEEF5 /* WorkdayHoursTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C453340EE1FAE5F40F269 /* WorkdayHoursTests.swift */; };
 		0382B40D0F1EBA3907FAFAF0 /* PreviewData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BF9373E58FF863F90BB2B98 /* PreviewData.swift */; };
@@ -135,6 +136,7 @@
 		726A671A70F69B19564065A4 /* MediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0765D3B62A5D27ACAC1448B4 /* MediaViews.swift */; };
 		753A857822C167F8EC540BA6 /* ServiceCardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 640DCF9373A3B925897F1920 /* ServiceCardTests.swift */; };
 		75FD9CBCDA58A62F0FDDE112 /* RevisionHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 448FC8CB58A020A6755E6CD7 /* RevisionHistoryView.swift */; };
+		7619011CF0F781F6E824A708 /* ServiceFollowUps.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE3FFDC4F0F823453643BCE8 /* ServiceFollowUps.swift */; };
 		76309DD8F4E8F5D8843615D0 /* ChatBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAE0D5C62902A35A20D7477 /* ChatBubble.swift */; };
 		76A5015B851E62281047F2C5 /* RevisionCountRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1E4E19427865D8DD005C22 /* RevisionCountRows.swift */; };
 		788AD97BF4F6E78828A6AD60 /* Money.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A106DB88A93BF6DCF2ACF6 /* Money.swift */; };
@@ -366,6 +368,7 @@
 		55EA606D5287AFE4C5786A4C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		56DBD63752B9BDABD10870A9 /* MIKANTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MIKANTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5871851D4120D23EDA8AAF38 /* AppointmentDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentDraft.swift; sourceTree = "<group>"; };
+		5938251744528DD1BE904B95 /* ServiceFollowUpTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceFollowUpTests.swift; sourceTree = "<group>"; };
 		59EADE92F3797CB9D21E6040 /* MovementsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovementsListView.swift; sourceTree = "<group>"; };
 		5A70038FE5344B9F7008237B /* POSGoodsCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = POSGoodsCatalog.swift; sourceTree = "<group>"; };
 		5B7767C91BBBB7C6A7AB5053 /* ProductDraftOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDraftOperations.swift; sourceTree = "<group>"; };
@@ -538,6 +541,7 @@
 		FAB11E834D5BB6685F4BD529 /* APIErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIErrorTests.swift; sourceTree = "<group>"; };
 		FD411C2856C98981DF049E55 /* RevisionCountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevisionCountView.swift; sourceTree = "<group>"; };
 		FD95B65A438B170A097431DD /* POSHubViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = POSHubViews.swift; sourceTree = "<group>"; };
+		FE3FFDC4F0F823453643BCE8 /* ServiceFollowUps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceFollowUps.swift; sourceTree = "<group>"; };
 		FE458943FE54B7DC52B9D5EC /* TextFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextFormatting.swift; sourceTree = "<group>"; };
 		FE769D54A2C3002367984A9F /* ClientChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientChatView.swift; sourceTree = "<group>"; };
 		FEB26573409FB3F7BE4BF3BB /* AppointmentCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentCard.swift; sourceTree = "<group>"; };
@@ -733,6 +737,7 @@
 				9831FCBCB339FBD60303DE53 /* ReminderScheduleTests.swift */,
 				ADA066BFD45074BEFCD1FE0A /* RevisionDraftTests.swift */,
 				640DCF9373A3B925897F1920 /* ServiceCardTests.swift */,
+				5938251744528DD1BE904B95 /* ServiceFollowUpTests.swift */,
 				87BE563101A8FCFD9AD2EF40 /* ServiceLinksTests.swift */,
 				B7376C571BFA57295D5F70F2 /* ServicePickingTests.swift */,
 				692FE5EDE09A9D59857A973F /* StaffBindingTests.swift */,
@@ -907,6 +912,7 @@
 				F985F915493E3CA5811D421A /* ServiceDetailView.swift */,
 				6A5A335B1A7DB0D58B1DEA64 /* ServiceDrafts.swift */,
 				F360E92B8751EDF8CCDBEADD /* ServiceEditorView.swift */,
+				FE3FFDC4F0F823453643BCE8 /* ServiceFollowUps.swift */,
 				28C988C6E050500E2F681698 /* ServiceImageGeneratorSheet.swift */,
 				D7851876100700CE8DAF7124 /* ServiceLinks.swift */,
 				54B46118C12CC4A410ABB552 /* ServiceLinksCardSections.swift */,
@@ -1360,6 +1366,7 @@
 				8397C9056B316234B38DB456 /* ServiceDetailView.swift in Sources */,
 				6C129D7AF1EE001CC0F2BCCB /* ServiceDrafts.swift in Sources */,
 				C80B650CEDE59649B5775FCD /* ServiceEditorView.swift in Sources */,
+				7619011CF0F781F6E824A708 /* ServiceFollowUps.swift in Sources */,
 				F040F8FF231CA0ADF26C50ED /* ServiceImageGeneratorSheet.swift in Sources */,
 				8F6C6E8D37D9571B03A95DEB /* ServiceLinks.swift in Sources */,
 				DD6AD6EA1A5A8367A94A5853 /* ServiceLinksCardSections.swift in Sources */,
@@ -1438,6 +1445,7 @@
 				7046838FD83C9557CF0A1A72 /* ReminderScheduleTests.swift in Sources */,
 				A5F2831F8E6529249D20EE53 /* RevisionDraftTests.swift in Sources */,
 				753A857822C167F8EC540BA6 /* ServiceCardTests.swift in Sources */,
+				00D102BAC218DD8F22F45C20 /* ServiceFollowUpTests.swift in Sources */,
 				AD1129526EB6ECE087C60034 /* ServiceLinksTests.swift in Sources */,
 				9D5F4A01038214199B77C9DA /* ServicePickingTests.swift in Sources */,
 				266CF5E2469904EEF102D8B6 /* StaffBindingTests.swift in Sources */,

@@ -146,6 +146,10 @@ struct ServiceDetailView: View {
         Section {
             LabeledContent(service.category.freshProcedureTitle, value: service.freshProcedure ? "Да" : "Нет")
             LabeledContent("Памятка", value: aftercareTitle)
+            LabeledContent("Спросить, как заживает", value: ServiceFollowUpText.healing(service.healingCheckDays))
+            if service.category == .piercing || service.jewelryChangeWeeks != nil {
+                LabeledContent("Замена украшения", value: ServiceFollowUpText.jewelryChange(service.jewelryChangeWeeks))
+            }
             LabeledContent("Статус", value: service.active ? "Активна" : "Скрыта")
             LabeledContent("Порядок в списке", value: "\(service.sort)")
         } footer: {

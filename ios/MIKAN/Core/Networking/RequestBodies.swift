@@ -76,6 +76,9 @@ nonisolated struct ServiceBody: Encodable, Sendable {
     var aftercareTemplateId: Nullable<Int>
     /// «Свежий прокол» / «Свежее тату»: aftercare memos are sent only for such services.
     var freshProcedure: Bool
+    /// Post-visit follow-ups of the bot: days until «Как заживает?», weeks until the jewelry change; `null` — never.
+    var healingCheckDays: Nullable<Int>
+    var jewelryChangeWeeks: Nullable<Int>
     /// Replace the compatible jewelry and the consumption norm.
     var jewelryIds: [Int] = []
     var consumables: [ServiceConsumable] = []
