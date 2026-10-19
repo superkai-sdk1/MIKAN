@@ -9,10 +9,11 @@ import {
   STEP_TITLES, applyPreselect, canProceed, createFlow, firstIncompleteStep, reduce, selectedLines, stepPosition,
   stepsFor, totalDuration,
 } from './lib/flow.js';
-import { deviceTimeZone, formatDateTime, formatDuration, plural, totalPriceText } from './lib/format.js';
+import { addDays, deviceTimeZone, formatDateTime, formatDuration, plural, todayIn, totalPriceText } from './lib/format.js';
 import { toE164 } from './lib/phone.js';
 import { bookingBody, bookingPagePath, bookingTokenFromPath, parsePreselect } from './lib/query.js';
 import { initTelegram } from './lib/telegram.js';
+import { applyWaitPreselect, parseWaitPreselect } from './lib/waitlist.js';
 import { renderBooking } from './views/booking.js';
 import { loadingBlock, messagePage } from './views/common.js';
 import { renderConfirm } from './views/confirm.js';
@@ -20,6 +21,7 @@ import { renderContacts } from './views/contacts.js';
 import { renderMaster } from './views/master.js';
 import { renderServices } from './views/services.js';
 import { renderTime } from './views/time.js';
+import { renderWaitlist, renderWaitlistDone } from './views/waitlist.js';
 
 const byId = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const root = byId('app');
@@ -144,6 +146,7 @@ function renderStep() {
         timeZone: data.timeZone,
         horizonDays: data.config.horizonDays ?? 60,
         durationMin: totalDuration(selectedLines(state, data.catalog)),
+        onWaitlist: openWaitlist,
       });
       break;
     case 'contacts':
@@ -213,6 +216,10 @@ function onPopState(event) {
     startFlow();
     return;
   }
+  if (event.state?.waitlist && !app.completed) {
+    showWaitlist(event.state.waitlist);
+    return;
+  }
   if (app.completed) {
     app.completed = false;
     resetFlow(null);
@@ -221,6 +228,39 @@ function onPopState(event) {
   const step = event.state?.step ?? stepsFor(app.state)[0];
   if (step === app.state.step && app.viewStep === step) return;
   showStep(step);
+}
+
+// ---- the waitlist (a busy day or strip on the time step) ----
+
+/** @param {{ from: string, to: string }} range */
+function openWaitlist(range) {
+  history.pushState({ step: app.state.step, waitlist: range }, '');
+  showWaitlist(range);
+}
+
+/** @param {{ from: string, to: string }} range */
+function showWaitlist(range) {
+  const data = /** @type {NonNullable<typeof app.data>} */ (app.data);
+  const today = todayIn(data.timeZone);
+  setView(renderWaitlist({
+    state: app.state, catalog: data.catalog, masters: data.masters, preset: range, today,
+    lastDate: addDays(today, Math.max(1, data.config.horizonDays ?? 60)), api: app.api, tg: app.tg,
+    onJoined: showWaitlistDone, onBack: goBack,
+  }));
+  app.tg.backButton.show(goBack);
+}
+
+function showWaitlistDone(entry) {
+  app.completed = true;
+  history.replaceState({ waitlistDone: true }, '');
+  setView(renderWaitlistDone({
+    entry, linked: app.state.linked, tg: app.tg,
+    onAgain: () => {
+      app.completed = false;
+      resetFlow(null);
+    },
+  }));
+  announce('Вы в листе ожидания');
 }
 
 // ---- booking ----
@@ -297,11 +337,13 @@ async function openBooking(token, booking) {
 
 // ---- start ----
 
-function resetFlow(preselect) {
-  const { catalog, masters, me } = /** @type {NonNullable<typeof app.data>} */ (app.data);
+/** `wait` — the waitlist's freed-time link (`?wait=…&start=…`): the flow opens on that time. */
+function resetFlow(preselect, wait = null) {
+  const { catalog, masters, me, timeZone } = /** @type {NonNullable<typeof app.data>} */ (app.data);
   let state = createFlow({ linked: Boolean(me) });
   if (!state.linked && app.tg.userFirstName) state = reduce(state, { type: 'setField', field: 'name', value: app.tg.userFirstName }, catalog);
-  if (preselect) state = applyPreselect(state, preselect, catalog, masters);
+  if (wait) state = applyWaitPreselect(state, wait, catalog, masters, timeZone);
+  else if (preselect) state = applyPreselect(state, preselect, catalog, masters);
   app.state = state;
   // One history entry per step up to where the flow starts, so «Назад» walks through them.
   const steps = stepsFor(state);
@@ -358,7 +400,7 @@ async function startFlow() {
     me: value(me),
     timeZone: value(config)?.studio?.timezone || deviceTimeZone(),
   };
-  resetFlow(parsePreselect(window.location.search));
+  resetFlow(parsePreselect(window.location.search), parseWaitPreselect(window.location.search));
 }
 
 async function boot() {

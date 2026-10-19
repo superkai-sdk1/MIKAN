@@ -6,6 +6,7 @@ import {
   addDays, dayChip, daysBetween, deviceTimeZone, formatDayLong, formatDuration, formatTime, groupSlotsByPartOfDay,
   monthTitle, timezoneHint, todayIn,
 } from '../lib/format.js';
+import { presetRange } from '../lib/waitlist.js';
 import { errorPanel, loadingBlock, stepHeading } from './common.js';
 
 /** The API returns at most 31 dates per request. */
@@ -13,9 +14,12 @@ const DAYS_PER_REQUEST = 31;
 /** Chunks loaded automatically while no day is free yet. */
 const AUTO_CHUNKS = 3;
 
+const capitalized = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
 /**
  * @param {{ state: any, api: any, timeZone: string, horizonDays: number, durationMin: number,
- *   dispatch: (action: any) => void, haptic: () => void }} ctx
+ *   dispatch: (action: any) => void, haptic: () => void, onWaitlist?: (range: { from: string, to: string }) => void }} ctx
+ *   `onWaitlist` — «Встать в лист ожидания» on a busy day or a busy strip.
  */
 export function renderTime(ctx) {
   const today = todayIn(ctx.timeZone);
@@ -33,10 +37,20 @@ export function renderTime(ctx) {
   const stripWrap = h('div', { class: 'day-strip-wrap' }, strip, moreButton);
   const daysStatus = h('div', { class: 'days-status' });
   const slotsBox = h('div', { class: 'slots', 'aria-live': 'polite' });
+  /** «Это время уже заняли» when the chosen time (e.g. from the waitlist's link) is gone. */
+  const takenNotice = h('p', { class: 'panel panel-accent panel-text', role: 'status', hidden: true }, 'Это время уже заняли — выберите другое.');
 
   const subtitle = [`Длительность: ${formatDuration(ctx.durationMin)}`, timezoneHint(ctx.timeZone, deviceTimeZone())]
     .filter(Boolean).join(' · ');
-  const node = h('section', { class: 'step' }, stepHeading('Выберите время', subtitle), month, stripWrap, daysStatus, slotsBox);
+  const node = h('section', { class: 'step' }, stepHeading('Выберите время', subtitle), month, stripWrap, daysStatus, takenNotice, slotsBox);
+
+  /** «Встать в лист ожидания», when the page offers it. */
+  function waitlistButton(date = null) {
+    if (!ctx.onWaitlist) return null;
+    const range = presetRange({ today, lastDate, date });
+    return h('div', { class: 'panel-actions' },
+      h('button', { type: 'button', class: 'btn', onClick: () => ctx.onWaitlist?.(range) }, 'Встать в лист ожидания'));
+  }
 
   function renderDays() {
     const selected = state.date;
@@ -44,7 +58,8 @@ export function renderTime(ctx) {
       const chip = dayChip(day.date);
       const radio = /** @type {HTMLInputElement} */ (h('input', {
         type: 'radio', name: 'day', value: day.date, class: 'sr-only',
-        checked: day.date === selected, disabled: !day.available,
+        // A busy day can be chosen too: it offers the waitlist.
+        checked: day.date === selected,
         'aria-label': `${formatDayLong(day.date)}${day.available ? '' : ', нет свободного времени'}`,
         onChange: () => selectDay(day.date),
       }));
@@ -98,7 +113,7 @@ export function renderTime(ctx) {
       do {
         if (!(await fetchChunk())) break;
         chunks += 1;
-      } while (!days.some((d) => d.available) && chunks < AUTO_CHUNKS && loadedTo < lastDate);
+      } while ((!days.some((d) => d.available) || (state.date && loadedTo < state.date)) && chunks < AUTO_CHUNKS && loadedTo < lastDate);
     } catch (error) {
       showDaysError(error, loadInitial);
       return;
@@ -106,13 +121,16 @@ export function renderTime(ctx) {
     mount(daysStatus);
     const keep = days.find((d) => d.date === state.date && d.available);
     const first = keep ?? days.find((d) => d.available);
+    // The chosen time's day is full now.
+    if (state.slot && !keep) takenNotice.hidden = false;
     renderDays();
     if (!first) {
       mount(slotsBox, h('div', { class: 'panel' },
         h('p', { class: 'panel-title' }, 'В ближайшие дни всё занято'),
         h('p', { class: 'panel-text' }, loadedTo && loadedTo < lastDate
-          ? 'Посмотрите дни дальше или выберите другого мастера.'
-          : 'Попробуйте выбрать другого мастера или напишите нам — подберём время.')));
+          ? 'Посмотрите дни дальше, выберите другого мастера или встаньте в лист ожидания — напишем, если время освободится.'
+          : 'Выберите другого мастера или встаньте в лист ожидания — напишем, если время освободится.'),
+        waitlistButton()));
       return;
     }
     selectDay(first.date, { quiet: true });
@@ -140,6 +158,11 @@ export function renderTime(ctx) {
     if (!quiet) ctx.haptic();
     ctx.dispatch({ type: 'setDate', date });
     markSelectedDay();
+    if (days.find((d) => d.date === date)?.available === false) {
+      slotsRequest += 1;
+      renderSlots(date, []);
+      return;
+    }
     loadSlots(date);
   }
 
@@ -160,14 +183,22 @@ export function renderTime(ctx) {
     slotsBox.removeAttribute('aria-busy');
     const slots = response.items ?? [];
     const chosen = state.slot ? slots.find((s) => s.startsAt === state.slot.startsAt) : undefined;
-    if (state.slot && !chosen) ctx.dispatch({ type: 'setSlot', slot: null });
+    if (state.slot && !chosen) {
+      ctx.dispatch({ type: 'setSlot', slot: null });
+      takenNotice.hidden = false;
+    }
     renderSlots(date, slots);
   }
 
   /** @param {string} date @param {Array<{ startsAt: string, masterIds?: number[] }>} slots */
   function renderSlots(date, slots) {
     if (slots.length === 0) {
-      mount(slotsBox, h('p', { class: 'empty' }, 'На этот день свободного времени нет — выберите другой.'));
+      mount(slotsBox, h('div', { class: 'panel' },
+        h('p', { class: 'panel-title' }, `${capitalized(formatDayLong(date))} — всё занято`),
+        h('p', { class: 'panel-text' }, ctx.onWaitlist
+          ? 'Выберите другой день или встаньте в лист ожидания — напишем, если время освободится.'
+          : 'На этот день свободного времени нет — выберите другой.'),
+        waitlistButton(date)));
       return;
     }
     mount(slotsBox,
@@ -191,6 +222,7 @@ export function renderTime(ctx) {
 
   function update(next) {
     state = next;
+    if (state.slot) takenNotice.hidden = true;
     slotsBox.querySelectorAll('input[name="slot"]').forEach((input) => {
       const radio = /** @type {HTMLInputElement} */ (input);
       radio.checked = state.slot?.startsAt === radio.value;

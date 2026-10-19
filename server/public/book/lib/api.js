@@ -102,6 +102,8 @@ export function createApi(options = {}) {
       request(API_BASE, { method: 'POST', body, telegram: true, timeout: bookTimeoutMs, idempotencyKey }),
     booking: (token) => request(bookingUrl(token)),
     cancel: (token) => request(`${bookingUrl(token)}/cancel`, { method: 'POST', body: {} }),
+    /** «Встать в лист ожидания»: `WaitlistEntryPublic` + `telegramLink`. */
+    joinWaitlist: (body) => request(`${API_BASE}/waitlist`, { method: 'POST', body, telegram: true }),
     /** Stops sending the init data (Telegram said it is invalid): the page then books like the website. */
     dropInitData: () => {
       initData = null;
