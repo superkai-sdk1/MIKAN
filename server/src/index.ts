@@ -5,6 +5,7 @@ import { APP_VERSION, buildApp } from './app.js';
 import { createAiClient } from './bot/ai.js';
 import { CAMPAIGN_TICK_MS, runCampaigns } from './bot/campaign-sender.js';
 import { BotController } from './bot/index.js';
+import { RETENTION_CHECK_INTERVAL_MS, sendDueRetention } from './bot/retention.js';
 import { processDueMessages, SENDER_INTERVAL_MS } from './bot/sender.js';
 import { loadConfig } from './config.js';
 import type { AppContext } from './context.js';
@@ -129,6 +130,19 @@ async function main(): Promise<void> {
       });
   }, CAMPAIGN_TICK_MS);
 
+  // Birthday greetings and win-back messages, each once (docs/API.md «Birthday and win-back»).
+  let retaining = false;
+  const retentionTimer = setInterval(() => {
+    if (retaining) return;
+    retaining = true;
+    sendDueRetention(ctx)
+      .then((run) => (run.birthday || run.winback) && log.info(run, 'retention messages sent'))
+      .catch((err) => log.error({ err: errorMessage(err) }, 'retention messages failed'))
+      .finally(() => {
+        retaining = false;
+      });
+  }, RETENTION_CHECK_INTERVAL_MS);
+
   const backupDir = path.join(config.dataDir, 'backups');
   // The daily copy, then its encrypted off-site copy; staff hear about failures (domain/alerts.ts).
   const copyOffsite = async (file: string) => {
@@ -192,6 +206,7 @@ async function main(): Promise<void> {
     clearInterval(holdTimer);
     clearInterval(digestTimer);
     clearInterval(campaignTimer);
+    clearInterval(retentionTimer);
     clearInterval(backupTimer);
     clearInterval(diskTimer);
     clearInterval(auditPruneTimer);

@@ -546,7 +546,7 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
 { "id": 1, "chatId": 123456789, "role": "user", "text": "Сколько стоит прокол хеликса?",
   "employee": { EmployeeRef } | null, "createdAt": "..." }
 ```
-`role`: `user` (client) | `assistant` (AI) | `staff` (sent from the app by an employee) | `system` (automatic: aftercare, reminders, campaigns).
+`role`: `user` (client) | `assistant` (AI) | `staff` (sent from the app by an employee) | `system` (automatic: aftercare, reminders, campaigns, birthday and win-back messages).
 
 ### ScheduledMessage
 ```json
@@ -1524,15 +1524,23 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
   «Осень» запущена: 130 получателей», «Рассылка «Осень» запланирована на 20 октября, 10:00».
 
 ### Birthday and win-back
-- **Birthday** (`birthday.enabled`): at `sendAt` studio time on the client's birthday (by `birthday`), once a year,
-  the bot sends the greeting to linked clients who did not opt out, with the gift line when there is one («Дарим 500
-  бонусов — они действуют до 2 ноября» / «Скидка 10% до 26 октября»), and credits the gift bonuses (`gift`, burning
-  after `bonusDays`). The discount itself is applied by staff at checkout from `loyalty.birthdayDiscount`; the morning
-  staff digest already names birthdays.
+- **Birthday** (`birthday.enabled`): at `sendAt` studio time on the client's birthday (by `birthday`; 29 February
+  counts on 28 February in other years), once a year, the bot sends the greeting to linked clients who did not opt out,
+  with the gift lines when there are any («🎁 Дарим 500 бонусов — они действуют до 2 ноября» / «💝 Скидка 10% до 26
+  октября», «💝 Сегодня — скидка 10%» when `discountDaysAfter` is 0), and credits the gift bonuses (`gift`, burning
+  after `bonusDays`: valid through that studio day). The discount itself is applied by staff at checkout from
+  `loyalty.birthdayDiscount`; the morning staff digest already names birthdays.
 - **Win-back** (`winback.enabled`): daily at `sendAt`, linked clients who did not opt out, whose last completed visit
-  was at least `afterMonths` ago and who have no future appointment get one message per absence (a new visit starts a
-  new period) with «📅 Записаться» and the optional gift bonuses; at most `dailyLimit` a day, the longest absent first.
-- Both are logged (`retention_sends`) so a restart never repeats them.
+  was at least `afterMonths` calendar months ago and who have no future `scheduled` / `confirmed` appointment get one
+  message per absence (a win-back sent after the last visit covers it; a new visit starts a new period) with
+  «📅 Записаться» (as in campaigns: the Mini App or the AI) and the optional gift bonuses («🎁 Дарим 300 бонусов — они
+  действуют до 18 ноября»); at most `dailyLimit` a day, the longest absent first.
+- Both messages carry «🔕 Не присылать новости» (see «Campaigns»), are stored in the chat as `system`, and go out from
+  `sendAt` until 6 hours after it on that studio day (e.g. after a restart). Gift bonuses (and their line) only while
+  `loyalty.enabled`; they are credited once the message is delivered.
+- Both are logged (`retention_sends`: the birthday by year, the win-back by the date of the last visit) before the
+  message goes out, so a restart never repeats them. A failed delivery is tried again the next minute (4 tries in all);
+  a client who blocked the bot is not tried again for that year / absence.
 
 ### Bot (Telegram + AI)
 | Method | Path | Body | Response |
