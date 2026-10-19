@@ -512,8 +512,9 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
                              "refunded": 0, "cashRefunded": 0, "retained": 0 } },
   "operations": [ CashOperation ] }
 ```
-- Sales part: `revenue` = totals of the shift's sales = `cash + card + transfer + qr + deposit` (`deposit` — the part
-  covered by prepayments received earlier).
+- Sales part: `revenue` = money of the shift's sales = `cash + card + transfer + qr + deposit` (`deposit` — the part
+  covered by prepayments received earlier): bonus and gift certificate payments are not money and stay out of it (a
+  certificate sold is money in). `refunds` — the same money of the sales refunded in the shift.
 - `deposits` — prepayment operations recorded while the shift was open: `received` (all methods) with its split by
   method, `refunded` (all methods) and `cashRefunded`, `retained`.
 - `expectedCash = openingCash + summary.cash − summary.cashRefunds + summary.deposits.cash − summary.deposits.cashRefunded
@@ -644,7 +645,7 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | Method | Path | Response |
 |---|---|---|
 | GET | `/badges` | `{ "unreadChats": 2, "needsAttention": 1, "newBookingRequests": 1, "lowStock": 3, "onlineAwaiting": 2 }` (the app polls every 30 s; `lowStock` — active products with at least one low size; `onlineAwaiting` — online bookings in the future waiting for staff confirmation) |
-| GET | `/dashboard` | `{ "date": "2026-10-15", "appointments": [Appointment] (today, studio tz, excl. cancelled), "revenueToday": 12000, "salesCountToday": 4, "openShift": CashShift \| null, "badges": {…same as /badges} }` |
+| GET | `/dashboard` | `{ "date": "2026-10-15", "appointments": [Appointment] (today, studio tz, excl. cancelled), "revenueToday": 12000 (revenue as in analytics: without bonus payments and certificates sold), "salesCountToday": 4, "openShift": CashShift \| null, "badges": {…same as /badges} }` |
 
 ### Employees
 | Method | Path | Body | Response |
@@ -1153,7 +1154,10 @@ sale refunded).
   "byMaster": [ { "employee": { EmployeeRef }, "appointmentsCompleted": 10, "revenue": 50000 } ],
   "newClients": 14, "appointmentsCompleted": 35, "noShows": 2 }
 ```
-Revenue excludes refunded sales. `byDay` uses the studio timezone and lists every day in range (zeros included).
+Revenue excludes refunded sales, bonus payments and gift certificates sold, like analytics (a sale's revenue is
+`total − payments.bonus − its certificate lines`; item revenue is split as in analytics and certificate lines are left
+out of the tops); `payments` keeps its older keys. `byDay` uses the studio timezone and lists every day in range
+(zeros included).
 `payments` splits `revenue` by how it was paid (`deposit` — covered by prepayments received earlier).
 `deposits` — prepayment operations in the period: `received` (+ by method), `applied` (counted in sales, net of
 sale refunds), `refunded`, `retained` (kept after cancellations / no-shows; not part of `revenue`); `held` — the total
@@ -1166,8 +1170,21 @@ splits each by size (current size name, `""` for a product without sizes), sorte
 #### Analytics
 Loyalty in analytics: `revenue` excludes bonus payments and certificate sales (see «Loyalty bonuses», «Gift
 certificates»); the response adds `"loyalty": { "bonusEarned", "bonusSpent", "bonusExpired", "bonusOutstanding",
-"certificatesSold", "certificatesRedeemed", "certificatesExpired", "certificatesOutstanding" }` for the period
-(outstanding = at the end of it), and `payments` gains `bonus` and `certificate`.
+"certificatesSold", "certificatesRedeemed", "certificatesExpired", "certificatesCancelled", "certificatesOutstanding" }`
+for the period (outstanding = at the end of it), and `payments` gains `bonus` and `certificate`.
+- A sale's **revenue** is `total − payments.bonus − its certificate lines` (paying with a certificate is revenue).
+  Every revenue figure below (`gross`, `refunds`, `kept`, days, weekdays, hours, masters, clients) uses it. Item
+  revenue splits the sale discount **and** the bonus payment across the lines that are not certificates
+  (`allocateDiscount`); certificate lines are left out of services and products. A sale that only sold a certificate
+  still counts as a receipt (`salesCount`) with revenue 0.
+- `loyalty` (ledger operations in `[from, to)`): `bonusEarned` — credited: cashback earned minus what refunds took
+  back, plus gifts and manual adjustments (signed); `bonusSpent` — paid with bonuses minus what refunds gave back;
+  `bonusExpired` — burnt; `bonusOutstanding` — on the clients' accounts at `to`. `certificatesSold` — nominals issued;
+  `certificatesRedeemed` — spent minus what refunds gave back; `certificatesExpired` — burnt at expiry;
+  `certificatesCancelled` — burnt by the owner or by refunding the sale that sold the certificate;
+  `certificatesOutstanding` — Σ balances at `to`. So `bonusOutstanding(to) = bonusOutstanding(from) + bonusEarned −
+  bonusSpent − bonusExpired`, and `certificatesOutstanding(to) = certificatesOutstanding(from) + certificatesSold −
+  certificatesRedeemed − certificatesExpired − certificatesCancelled`.
 
 `GET /reports/analytics?from=&to=` (instants, the app sends studio-local day boundaries) — the whole financial
 picture of `[from, to)` plus the headline numbers of the **previous period of the same length**
@@ -1183,7 +1200,7 @@ picture of `[from, to)` plus the headline numbers of the **previous period of th
   "previous": { …same keys as totals },
   "revenue": { "gross": 11680, "refunds": 1300, "refundsCount": 2, "net": 10380, "salesCount": 4, "averageCheck": 2920,
                "discounts": 420, "kept": 11180,
-               "payments": { "cash": 6180, "card": 0, "transfer": 5500, "qr": 0, "deposit": 0 } },
+               "payments": { "cash": 6180, "card": 0, "transfer": 5500, "qr": 0, "deposit": 0, "bonus": 0, "certificate": 0 } },
   "byDay": [ { "date": "2026-10-13", "gross": 3780, "refunds": 800, "net": 2980, "salesCount": 1 } ],
   "byWeekday": [ { "weekday": 1, "revenue": 0, "salesCount": 0 } ],
   "byHour": [ { "hour": 0, "revenue": 3780, "salesCount": 1 } ],
@@ -1213,7 +1230,10 @@ picture of `[from, to)` plus the headline numbers of the **previous period of th
                "returning": { "count": 2, "revenue": 6180 }, "anonymous": { "salesCount": 0, "revenue": 0 },
                "top": [ { "client": { ClientRef }, "revenue": 5000, "salesCount": 1, "visits": 0 } ] },
   "appointments": { "total": 4, "open": 1, "completed": 1, "cancelled": 1, "noShow": 1,
-                    "noShowLoss": 5000, "cancelledValue": 2000 } }
+                    "noShowLoss": 5000, "cancelledValue": 2000 },
+  "loyalty": { "bonusEarned": 180, "bonusSpent": 900, "bonusExpired": 200, "bonusOutstanding": 280,
+               "certificatesSold": 6000, "certificatesRedeemed": 0, "certificatesExpired": 0, "certificatesCancelled": 0,
+               "certificatesOutstanding": 6000 } }
 ```
 Which sales count where:
 - **Made** sales — created in the period, whatever their status now (a receipt refunded later was still made then).
@@ -1228,10 +1248,11 @@ Fields:
   `products.revenue`; `cogs`, `grossProfit`, `marginPercent` as in `products`; `stockExpenses` = `stock.expenses`;
   `newClients` as in `clients`; `appointmentsCompleted` / `noShows` / `noShowLoss` as in `appointments`;
   `depositsReceived` = `deposits.received`.
-- `revenue`: `gross` — Σ totals of made sales, `salesCount` — their number, `averageCheck = round(gross / salesCount)`
+- `revenue`: `gross` — Σ revenue of made sales, `salesCount` — their number, `averageCheck = round(gross / salesCount)`
   (`0` without sales), `discounts` — Σ their discounts; `refunds` / `refundsCount` — refunded in the period;
-  `net = gross − refunds` («Выручка»); `kept` — Σ totals of kept sales (= `services.revenue + products.revenue`);
-  `payments` — how the made sales were paid (sums to `gross`; `deposit` — covered by prepayments received earlier).
+  `net = gross − refunds` («Выручка»); `kept` — Σ revenue of kept sales (= `services.revenue + products.revenue`);
+  `payments` — how the made sales were paid, every way (`deposit` — covered by prepayments received earlier): it sums
+  to `gross + payments.bonus +` the certificates those sales sold.
 - `byDay` — every studio-local day of the range, zeros included: `gross` and `salesCount` of sales made that day,
   `refunds` made that day, `net = gross − refunds` (Σ `byDay.net` = `revenue.net`).
 - `byWeekday` — always 7 entries, `weekday` 1 = Monday … 7 = Sunday; `byHour` — always 24 entries, `hour` 0–23. Both

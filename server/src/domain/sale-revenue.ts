@@ -47,8 +47,11 @@ export function lineRevenues(
 export const certificateLinesTotal = (items: Array<Pick<SaleItemRow, 'type' | 'total'>>): number =>
   items.filter(isCertificateLine).reduce((sum, item) => sum + item.total, 0);
 
-/** SQL for a sale row's revenue: `total − payBonus − its certificate lines`. */
-export const saleRevenueSql = sql<number>`(${sales.total} - ${sales.payBonus} - coalesce((select sum(si.total) from sale_items si where si.sale_id = ${sales.id} and si.type = ${CERTIFICATE_LINE}), 0))`;
+/**
+ * SQL for a sale row's revenue: `total − payBonus − its certificate lines`. The subquery names `"sales"."id"` in full:
+ * drizzle leaves columns of a single-table select unqualified, and a bare `"id"` would mean the sale line's own id.
+ */
+export const saleRevenueSql = sql<number>`(${sales.total} - ${sales.payBonus} - coalesce((select sum(si.total) from sale_items si where si.sale_id = "sales"."id" and si.type = ${CERTIFICATE_LINE}), 0))`;
 
 /** SQL for the money a sale brought into the till now: everything except bonuses and certificate payments. */
 export const saleMoneySql = sql<number>`(${sales.total} - ${sales.payBonus} - ${sales.payCertificate})`;

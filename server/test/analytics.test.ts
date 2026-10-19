@@ -162,7 +162,7 @@ describe('GET /reports/analytics', () => {
       averageCheck: 2920,
       discounts: 420,
       kept: 11_180,
-      payments: { cash: 6180, card: 0, transfer: 5500, qr: 0, deposit: 0 },
+      payments: { cash: 6180, card: 0, transfer: 5500, qr: 0, deposit: 0, bonus: 0, certificate: 0 },
     });
     expect(r.totals).toEqual({
       net: 10_380,

@@ -8,6 +8,7 @@ import { getOpenShift, serializeShift } from '../domain/cash.js';
 import { serializeAppointments } from '../domain/refs.js';
 import { reportAnalytics } from '../domain/analytics.js';
 import { badges, reportSummary } from '../domain/reports.js';
+import { saleRevenueSql } from '../domain/sale-revenue.js';
 import { studioTimezone } from '../domain/settings.js';
 import { badRequest } from '../lib/errors.js';
 import { DAY_MS, localDayBounds } from '../lib/time.js';
@@ -38,7 +39,7 @@ export function dashboardRoutes(app: FastifyInstance, ctx: AppContext): void {
       statuses: ['scheduled', 'confirmed', 'completed', 'no_show'],
     });
     const salesToday = db
-      .select({ n: count(), revenue: sql<number>`coalesce(sum(${sales.total}), 0)` })
+      .select({ n: count(), revenue: sql<number>`coalesce(sum(${saleRevenueSql}), 0)` })
       .from(sales)
       .where(and(eq(sales.status, 'completed'), gte(sales.createdAt, day.start), lt(sales.createdAt, day.end)))
       .get();
