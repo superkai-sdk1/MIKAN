@@ -30,6 +30,7 @@ struct ClientDetailView: View {
                 ClientHeaderSection(client: current)
                 actionsSection(current)
                 ClientStatsSection(stats: current.stats)
+                ClientLoyaltySection(client: current) { await load() }
                 infoSection(current)
                 ClientHistorySection(history: history) { await loadHistory() }
                 AuditHistorySection(scope: .client(id: current.id))
@@ -182,7 +183,9 @@ struct ClientDetailView: View {
     }
 
     private func apply(_ updated: Client) {
-        let merged = updated.stats == nil ? withStats(updated, from: client.value) : updated
+        var merged = updated.stats == nil ? withStats(updated, from: client.value) : updated
+        // An edit answers without the bonuses: keep the ones shown.
+        if merged.loyalty == nil { merged.loyalty = client.value?.loyalty }
         client.set(merged)
         onChange?(merged)
     }
