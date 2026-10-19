@@ -85,6 +85,7 @@ struct ProductDetailView: View {
                         }
                     }
                     historyCard
+                    AuditHistoryCard(scope: .product(id: product.id))
                 }
                 .padding(.horizontal, 16)
             }

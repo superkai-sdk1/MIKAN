@@ -32,6 +32,7 @@ struct ClientDetailView: View {
                 ClientStatsSection(stats: current.stats)
                 infoSection(current)
                 ClientHistorySection(history: history) { await loadHistory() }
+                AuditHistorySection(scope: .client(id: current.id))
             }
         }
         .listSectionSpacing(.compact)

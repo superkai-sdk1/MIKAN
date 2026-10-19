@@ -44,6 +44,7 @@ struct AppointmentDetailView: View {
             if !actions.isEmpty {
                 actionsSection
             }
+            AuditHistorySection(scope: .appointment(id: appointment.id))
         }
         .navigationTitle("Запись")
         .navigationBarTitleDisplayMode(.inline)
