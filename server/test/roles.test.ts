@@ -329,15 +329,22 @@ describe('roles and permissions', () => {
       expect((await t.api('GET', `/api/appointments/${theirs.id}`)).json()).toMatchObject({ status: 'scheduled', master: { id: other.employee.id } });
       expect((await master.api('PATCH', '/api/appointments/999', { notes: 'x' })).statusCode).toBe(404);
 
-      expectForbidden(await master.api('POST', `/api/appointments/${theirs.id}/complete`, { sendAftercare: false }), OWN_ONLY);
-      const done = await master.api('POST', `/api/appointments/${mine.id}/complete`, { sendAftercare: false });
-      expect(done.statusCode).toBe(200);
-      expect(done.json().appointment.status).toBe('completed');
-
       // Owner and admin change anyone's appointments, reassigning them too.
       const reassigned = await admin.api('PATCH', `/api/appointments/${theirs.id}`, { masterId: master.employee.id });
       expect(reassigned.json().master.id).toBe(master.employee.id);
       expect((await t.api('PATCH', `/api/appointments/${theirs.id}`, { status: 'confirmed' })).json().status).toBe('confirmed');
+    });
+
+    it('completes any appointment: completing a visit is a till action', async () => {
+      const mine = await appointment(master.employee.id, 10);
+      const theirs = await appointment(other.employee.id, 12);
+      for (const id of [mine.id, theirs.id]) {
+        const done = await master.api('POST', `/api/appointments/${id}/complete`, { sendAftercare: false });
+        expect(done.statusCode).toBe(200);
+        expect(done.json().appointment.status).toBe('completed');
+      }
+      expect((await t.api('GET', `/api/appointments/${theirs.id}`)).json().master.id).toBe(other.employee.id);
+      expect((await master.api('POST', '/api/appointments/999/complete', { sendAftercare: false })).statusCode).toBe(404);
     });
 
     it('takes, refunds and retains prepayments only of their own appointments', async () => {

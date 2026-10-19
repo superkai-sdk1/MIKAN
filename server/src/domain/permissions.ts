@@ -74,13 +74,15 @@ const RESTRICTED_ROUTES: ReadonlyMap<string, readonly Role[]> = new Map([
   ['POST /bot/test', MANAGERS],
 ]);
 
-/** A master creates appointments only for themselves and changes only their own (and their prepayments). */
+/**
+ * A master creates appointments only for themselves and changes only their own (and their prepayments).
+ * `POST /appointments/:id/complete` is open to every role: completing a visit is a till action (checkout).
+ */
 const NEW_APPOINTMENT = 'POST /appointments';
 const EDIT_APPOINTMENT = 'PATCH /appointments/:id';
 const OWN_APPOINTMENT_ROUTES: ReadonlySet<string> = new Set([
   NEW_APPOINTMENT,
   EDIT_APPOINTMENT,
-  'POST /appointments/:id/complete',
   'POST /appointments/:id/deposit',
   'POST /appointments/:id/deposit/refund',
   'POST /appointments/:id/deposit/retain',

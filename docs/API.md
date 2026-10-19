@@ -54,20 +54,22 @@ Three roles; the server checks every request (the app only hides what a role can
 - `owner` — everything. The only role that manages employees (create, edit others, roles, deactivate), pay rules,
   payroll of others and adjustments, and reads the audit log.
 - `admin` — everything except what is owner-only above.
-- `master` — sees the whole calendar and all clients; creates, edits, moves, completes and cancels **only their own
+- `master` — sees the whole calendar and all clients; creates, edits, moves and cancels **only their own
   appointments** (`masterId` = themselves: creating for another master, editing another master's appointment or
   giving theirs to another master → `403` «Можно менять только свои записи»), and the prepayment operations of their
-  own appointments. Full POS and cash register (receipts, sales, refunds, shifts, cash operations, QR), the
-  dashboard, clients (read, create, edit, Telegram link), bot chats (read, reply, mark read, `needsAttention`),
-  scheduled messages and booking requests, their own staff code. Reads the catalog, products, stock and settings but
-  does not change them; no reports or analytics.
+  own appointments. Completes **any** appointment (`POST /appointments/:id/complete` — completing a visit is a till
+  action, e.g. at checkout, so the aftercare memo goes out). Full POS and cash register (receipts, sales, refunds,
+  shifts, cash operations, QR), the dashboard, clients (read, create, edit, Telegram link), bot chats (read, reply,
+  mark read, `needsAttention`), scheduled messages and booking requests, their own staff code. Reads the catalog,
+  products, stock and settings but does not change them; no reports or analytics.
 
 | Area | owner | admin | master |
 |---|---|---|---|
 | Employees: list | ✓ | ✓ | ✓ |
 | Employees: create, edit others, role, active | ✓ | — | — |
 | Own profile: name, phone, color, password (`PATCH /employees/:me`) | ✓ | ✓ | ✓ |
-| Appointments & prepayments | ✓ | ✓ | own only |
+| Appointments (create, edit, move, cancel) & prepayments | ✓ | ✓ | own only |
+| Completing a visit (`POST /appointments/:id/complete`, e.g. at checkout) | ✓ | ✓ | ✓ |
 | POS, sales, refunds, cash, QR, dashboard | ✓ | ✓ | ✓ |
 | Clients, history | ✓ | ✓ | ✓ |
 | Services, products, categories, aftercare templates, stock movements, purchases, revisions, image generation: write | ✓ | ✓ | — |
@@ -830,7 +832,7 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 - The studio's working hours (`StudioSettings.workdayStart` / `workdayEnd`) do not restrict `startsAt` / `endsAt`:
   appointments before opening or after closing are accepted. A master's own work schedule does (see
   «WorkSchedule»): outside it → `409 schedule_conflict` unless `force: true`.
-- A master may create and change only their own appointments (see «Roles»).
+- A master may create and change only their own appointments (see «Roles»); completing is open to every role.
 - `notifyClient: true` on a PATCH that changes `startsAt` (a move: drag in the calendar or the edit form): when the
   client has Telegram linked and `botEnabled`, the server queues a `reschedule_notice` scheduled message sent at once
   (the sender delivers it within 30 s, with retries) with the «✅ Приду» / «🔁 Перенести» buttons:
