@@ -1634,6 +1634,10 @@ answer from the app (`POST /bot/chats/:chatId/messages`). Client tools:
   overlap check applies (`schedule_conflict` → the model offers another time), pending reminders are rebuilt and the
   staff chat gets «🔁 Клиент … перенёс запись №…» (before → after). The model calls it only after the client chose a
   time. Cancellations are handed to staff.
+- `certificate_balance { code }` — a gift certificate by its code (case, dashes and spaces ignored): what is left of it
+  and until when it is valid, or that it is used / expired / cancelled / unknown — never the buyer. Read-only.
+- The client context names the linked client's bonuses while loyalty is on: «Бонусы клиента: 1 200 (1 бонус = 1 ₽,
+  ими можно оплатить до 30% чека в студии); 200 сгорят 2 ноября.» The model speaks of bonuses only from it.
 - `/bot/test` runs these tools without writing anything (no booking, no reschedule, no messages) and lists what would
   have happened.
 

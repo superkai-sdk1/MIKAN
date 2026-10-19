@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { services } from '../db/schema.js';
+import { certificateBalanceText } from '../domain/certificate-views.js';
 import { bookableMasters, freeSlots } from '../domain/free-slots.js';
 import { findClientByChat } from '../domain/clients.js';
 import { serviceIdsByProduct } from '../domain/products.js';
@@ -37,6 +38,7 @@ const slotsInput = z.object({
   masterId: z.number().int().positive().nullish(),
 });
 const rescheduleInput = z.object({ appointmentId: z.number().int().positive(), startsAt: z.string().trim().min(10).max(40) });
+const certificateInput = z.object({ code: z.string().trim().min(1).max(40) });
 
 const error = (content: string): ToolResult => ({ content, isError: true });
 
@@ -52,6 +54,14 @@ export function buildClientToolHandlers(ctx: AppContext, scope: ToolScope, sink:
    */
   const linkedClientId = (): number | null => (scope.chatId === null ? null : (findClientByChat(db, scope.chatId)?.id ?? null));
   return {
+    // Read-only, so the test mode answers exactly like a live chat.
+    certificate_balance: async (raw) => {
+      const parsed = certificateInput.safeParse(raw);
+      if (!parsed.success) return error('Некорректные данные: передай код сертификата, как его написал клиент.');
+      const answer = certificateBalanceText(db, parsed.data.code);
+      return answer.found ? { content: answer.text } : error(answer.text);
+    },
+
     show_jewelry_for_service: async (raw) => {
       const parsed = serviceInput.safeParse(raw);
       if (!parsed.success) return error('Некорректные данные: нужен id услуги из раздела «Услуги и цены».');

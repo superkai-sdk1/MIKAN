@@ -99,13 +99,32 @@ export function listBonusOperations(db: DbOrTx, clientId: number, page: { limit:
   return { balance: bonusBalance(db, clientId), items: serializeBonusOperations(db, rows), total };
 }
 
+/** «14 ноября» in the studio timezone, with the year when it is not the current one. */
+function burnDate(ms: number, tz: string, now: number): string {
+  const at = DateTime.fromMillis(ms, { zone: tz }).setLocale('ru');
+  const sameYear = at.year === DateTime.fromMillis(now, { zone: tz }).year;
+  return at.toFormat(sameYear ? 'd MMMM' : 'd MMMM yyyy');
+}
+
 /** «Спасибо за покупку! 🎁 +75 бонусов, на счёте 1 275 — начисленные сгорят 14 ноября». */
 export function bonusEarnedText(earned: BonusRow, balance: number, tz: string, now: number): string {
   const base = `Спасибо за покупку! 🎁 +${bonusesText(earned.amount)}, на счёте ${formatAmount(balance)}`;
-  if (earned.expiresAt == null) return base;
-  const at = DateTime.fromMillis(earned.expiresAt, { zone: tz }).setLocale('ru');
-  const sameYear = at.year === DateTime.fromMillis(now, { zone: tz }).year;
-  return `${base} — начисленные сгорят ${at.toFormat(sameYear ? 'd MMMM' : 'd MMMM yyyy')}`;
+  return earned.expiresAt == null ? base : `${base} — начисленные сгорят ${burnDate(earned.expiresAt, tz, now)}`;
+}
+
+/**
+ * The bot's line about the client's bonuses (the AI context), null while loyalty is off: «Бонусы клиента: 1 200
+ * (1 бонус = 1 ₽, ими можно оплатить до 30% чека в студии); 200 сгорят 2 ноября.»
+ */
+export function bonusContextLine(db: DbOrTx, clientId: number, now: number, tz: string): string | null {
+  const loyalty = getRetentionSettings(db).loyalty;
+  if (!loyalty.enabled) return null;
+  const expiring = nearestExpiring(db, clientId, now);
+  const burning = expiring ? `; ${formatAmount(expiring.amount)} сгорят ${burnDate(expiring.at, tz, now)}` : '';
+  return (
+    `Бонусы клиента: ${formatAmount(bonusBalance(db, clientId, now))} (1 бонус = 1 ₽, ими можно оплатить до ` +
+    `${loyalty.maxPaymentPercent}% чека в студии)${burning}.`
+  );
 }
 
 /**
