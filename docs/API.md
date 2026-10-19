@@ -1997,7 +1997,9 @@ Most cards have no birthday, so greetings rarely go out. The birthday is collect
 - **Cabinet:** «Добавьте дату рождения — пришлём подарок» while it is empty (`Cabinet.client.birthday` is `null`),
   `POST /public/cabinet/birthday { birthday }` (only when empty; `409` otherwise); then «Записали! В день рождения
   пришлём подарок 🎁».
-- **App:** the client card shows a hint while the birthday is empty.
+- **App:** the client card shows a hint while the birthday is empty («Дата рождения не указана», opens the editor);
+  the birthday picker has «Без года» (day and month only, sent with the year 1900) and such a date is shown without the
+  year everywhere («12 апреля»).
 - The year 1900 is «year unknown» everywhere: birthday greetings, the birthday discount window, the morning digest's
   birthdays, the campaign `birthdayMonth`, the staff bot («День рождения: 12 апреля») and the app use only the day and
   the month (29 February counts on 28 February in other years); no age is computed from it. Staff may save it too
