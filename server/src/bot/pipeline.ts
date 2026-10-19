@@ -295,7 +295,7 @@ export class BotPipeline {
       setup = {
         system: buildSystem(buildStaffStablePrompt(ctx.db), buildStaffContext(ctx.db, now, employee)),
         tools: STAFF_TOOLS,
-        handlers: buildStaffToolHandlers(ctx),
+        handlers: buildStaffToolHandlers(ctx, employee),
       };
     } else {
       const client = chat.clientId != null ? (ctx.db.select().from(clients).where(eq(clients.id, chat.clientId)).get() ?? null) : null;

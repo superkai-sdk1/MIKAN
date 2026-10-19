@@ -606,6 +606,11 @@ The token lives 90 days. On first start, if there are no employees, the server c
 | POST | `/employees` | `{ name, login, password (≥6), phone?, color?, isMaster, role? }` | `Employee` · owner · `409 conflict` if login taken |
 | PATCH | `/employees/:id` | any of `{ name, login, password, phone, color, isMaster, role, active }` | `Employee` · owner; anyone for themselves: `name`, `phone`, `color`, `password` only · cannot deactivate yourself or change your own role (`400`) |
 
+- A field sent with its current value counts as unchanged (the app sends the whole card): a master saving their own
+  card with the same `login`, `isMaster`, `role` and `active: true` gets `200`; a changed one → `403` «Это доступно
+  владельцу студии». Changing your own role → `400` «Нельзя изменить собственную роль»; deactivating yourself →
+  `400` «Нельзя отключить собственную учётную запись».
+
 ### Work schedules
 | Method | Path | Body | Response |
 |---|---|---|---|
