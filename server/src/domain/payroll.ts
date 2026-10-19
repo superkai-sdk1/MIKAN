@@ -7,7 +7,7 @@ import { localDate } from '../lib/time.js';
 import { adjustmentsInPeriod, adjustmentsOut, type AdjustmentRow } from './payroll-adjustments.js';
 import { loadPayrollData, type PayrollData, type PayrollVisit } from './payroll-data.js';
 import { ruleVersionsByEmployee, rulesOn, type PayRules, type RuleVersion } from './payroll-rules.js';
-import { allocateDiscount } from './reports.js';
+import { lineRevenues } from './sale-revenue.js';
 import { studioTimezone } from './settings.js';
 
 /**
@@ -80,14 +80,17 @@ function servicePercent(rules: PayRules | null, category: string): number {
   return (rules.categoryPercent as Record<string, number | null>)[category] ?? rules.servicePercent;
 }
 
-/** Service lines of one visit: its sales' service items after the discount, minus the visit's materials. */
+/**
+ * Service lines of one visit: its sales' service items after the discount and the bonuses paid (a discount too),
+ * minus the visit's materials. Gift certificate lines are neither services nor products.
+ */
 function visitLines(data: PayrollData, visit: PayrollVisit, versions: RuleVersion[], tz: string): SortedLine[] {
   const date = localDate(visit.startsAt, tz);
   const rules = rulesOn(versions, date);
   const served: Array<{ saleId: number; item: SaleItemRow; revenue: number }> = [];
   for (const sale of data.visitSales.get(visit.id) ?? []) {
     const items = data.visitItems.get(sale.id) ?? [];
-    const net = allocateDiscount(items, sale.discount);
+    const net = lineRevenues(sale, items);
     items.forEach((item, i) => {
       if (item.type === 'service') served.push({ saleId: sale.id, item, revenue: net[i] ?? 0 });
     });
@@ -116,7 +119,7 @@ function productLines(data: PayrollData, employeeId: number, versions: RuleVersi
     const date = localDate(sale.createdAt, tz);
     const percent = rulesOn(versions, date)?.productPercent ?? 0;
     const items = data.sales.itemsBySale.get(sale.id) ?? [];
-    const net = allocateDiscount(items, sale.discount);
+    const net = lineRevenues(sale, items);
     items.forEach((item, i) => {
       if (item.type !== 'product') return;
       const revenue = net[i] ?? 0;

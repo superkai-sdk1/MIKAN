@@ -3,15 +3,20 @@ import type { DbOrTx } from '../db/client.js';
 import { appointments, saleItems, sales } from '../db/schema.js';
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
 import { localDate, localDatesInRange, localWeekdayHour } from '../lib/time.js';
+import { saleRevenueSql } from './sale-revenue.js';
 
 /**
  * Sales of an analytics period. Revenue counts every sale made in the period and subtracts refunds made in it
  * (cash basis, like a shift); the breakdowns (items, masters, clients, hours) count only the sales that were not
- * refunded, so a returned receipt never inflates tops or margins.
+ * refunded, so a returned receipt never inflates tops or margins. A sale's revenue leaves out bonuses paid and gift
+ * certificates sold (see sale-revenue.ts).
  */
 
+/** A sale with its revenue. */
+export type RevenueSale = SaleRow & { revenue: number };
+
 /** A sale with the master of the appointment it paid for (`null` when not linked to an appointment). */
-export type PeriodSale = SaleRow & { masterId: number | null };
+export type PeriodSale = RevenueSale & { masterId: number | null };
 
 export interface PeriodSales {
   /** Every sale made in the period, refunded later or not. */
@@ -19,21 +24,21 @@ export interface PeriodSales {
   /** The made sales that are still `completed`. */
   kept: PeriodSale[];
   /** Sales refunded during the period, whenever they were made. */
-  refunded: SaleRow[];
+  refunded: RevenueSale[];
   /** Items of the kept sales, by sale, ordered by id. */
   itemsBySale: Map<number, SaleItemRow[]>;
 }
 
 export function loadPeriodSales(db: DbOrTx, from: number, to: number): PeriodSales {
   const made = db
-    .select({ ...getTableColumns(sales), masterId: appointments.masterId })
+    .select({ ...getTableColumns(sales), masterId: appointments.masterId, revenue: saleRevenueSql })
     .from(sales)
     .leftJoin(appointments, eq(sales.appointmentId, appointments.id))
     .where(and(gte(sales.createdAt, from), lt(sales.createdAt, to)))
     .orderBy(asc(sales.id))
     .all();
   const refunded = db
-    .select()
+    .select({ ...getTableColumns(sales), revenue: saleRevenueSql })
     .from(sales)
     .where(and(eq(sales.status, 'refunded'), gte(sales.refundedAt, from), lt(sales.refundedAt, to)))
     .orderBy(asc(sales.id))
@@ -54,8 +59,8 @@ export function loadPeriodSales(db: DbOrTx, from: number, to: number): PeriodSal
 const sumOf = <T>(list: readonly T[], pick: (x: T) => number) => list.reduce((s, x) => s + pick(x), 0);
 
 export function revenueSection(s: PeriodSales) {
-  const gross = sumOf(s.made, (x) => x.total);
-  const refunds = sumOf(s.refunded, (x) => x.total);
+  const gross = sumOf(s.made, (x) => x.revenue);
+  const refunds = sumOf(s.refunded, (x) => x.revenue);
   return {
     gross,
     refunds,
@@ -64,13 +69,16 @@ export function revenueSection(s: PeriodSales) {
     salesCount: s.made.length,
     averageCheck: s.made.length ? Math.round(gross / s.made.length) : 0,
     discounts: sumOf(s.made, (x) => x.discount),
-    kept: sumOf(s.kept, (x) => x.total),
+    kept: sumOf(s.kept, (x) => x.revenue),
+    // Every way the made sales were paid: Σ = gross + bonus + the certificates they sold.
     payments: {
       cash: sumOf(s.made, (x) => x.payCash),
       card: sumOf(s.made, (x) => x.payCard),
       transfer: sumOf(s.made, (x) => x.payTransfer),
       qr: sumOf(s.made, (x) => x.payQr),
       deposit: sumOf(s.made, (x) => x.payDeposit),
+      bonus: sumOf(s.made, (x) => x.payBonus),
+      certificate: sumOf(s.made, (x) => x.payCertificate),
     },
   };
 }
@@ -89,12 +97,12 @@ export function timeSeries(s: PeriodSales, from: number, to: number, tz: string)
   for (const sale of s.made) {
     const day = days.get(localDate(sale.createdAt, tz));
     if (!day) continue;
-    day.gross += sale.total;
+    day.gross += sale.revenue;
     day.salesCount += 1;
   }
   for (const sale of s.refunded) {
     const day = sale.refundedAt != null ? days.get(localDate(sale.refundedAt, tz)) : undefined;
-    if (day) day.refunds += sale.total;
+    if (day) day.refunds += sale.revenue;
   }
   const byWeekday = WEEKDAYS.map((weekday) => ({ weekday, revenue: 0, salesCount: 0 }));
   const byHour = HOURS.map((hour) => ({ hour, revenue: 0, salesCount: 0 }));
@@ -102,7 +110,7 @@ export function timeSeries(s: PeriodSales, from: number, to: number, tz: string)
     const { weekday, hour } = localWeekdayHour(sale.createdAt, tz);
     for (const bucket of [byWeekday[weekday - 1], byHour[hour]]) {
       if (!bucket) continue;
-      bucket.revenue += sale.total;
+      bucket.revenue += sale.revenue;
       bucket.salesCount += 1;
     }
   }

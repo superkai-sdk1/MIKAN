@@ -2,11 +2,12 @@ import type { DbOrTx } from '../db/client.js';
 import type { ProductRow, SaleItemRow, VariantRow } from '../lib/serialize.js';
 import type { PeriodSales } from './analytics-sales.js';
 import { productsByIds, servicesByIds, variantsByIds } from './refs.js';
-import { allocateDiscount } from './reports.js';
+import { isCertificateLine, lineRevenues } from './sale-revenue.js';
 
 /**
  * Item-level breakdown of the kept sales: services by category, products by kind with cost of goods sold and margin,
- * and the tops. Item revenue is net of the sale discount (`allocateDiscount`).
+ * and the tops. Item revenue is net of the sale discount and the bonuses paid (`lineRevenues`); gift certificate lines
+ * are not revenue and are left out.
  */
 
 export const ANALYTICS_TOP_LIMIT = 20;
@@ -111,9 +112,10 @@ export function itemBreakdown(db: DbOrTx, s: PeriodSales) {
 
   for (const sale of s.kept) {
     const items = s.itemsBySale.get(sale.id) ?? [];
-    const net = allocateDiscount(items, sale.discount);
+    const net = lineRevenues(sale, items);
     items.forEach((item, index) => {
       const value = net[index] ?? 0;
+      if (isCertificateLine(item)) return;
       if (item.type === 'product') {
         const product = item.productId != null ? lookups.products.get(item.productId) : undefined;
         const kind = product?.kind ?? FALLBACK_KIND;

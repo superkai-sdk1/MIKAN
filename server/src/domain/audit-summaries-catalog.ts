@@ -56,7 +56,7 @@ const CLIENT_LABELS: Record<string, string> = {
 const CLIENT_DETAILS: Record<string, ChangeDetail> = {
   marketingOptOut: (_from, to) => (to === true ? 'новости и предложения отключены' : 'новости и предложения снова включены'),
 };
-const CLIENT_IGNORE = ['stats', 'telegramLinked', 'telegramUsername'];
+const CLIENT_IGNORE = ['stats', 'loyalty', 'telegramLinked', 'telegramUsername'];
 const clientCard = (client: unknown) => `Карточка клиента ${quote(personName(client as { name?: unknown } | null))}`;
 
 function clientCreate(c: SummaryContext): AuditDraft {

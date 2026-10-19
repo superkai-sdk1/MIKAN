@@ -84,7 +84,14 @@ export const clientRef = (c: ClientRow): ClientRef => ({
   telegramLinked: c.telegramChatId != null,
 });
 
-export const clientOut = (c: ClientRow, stats: ClientStats | null = null) => ({
+/** `Client.loyalty` of the client card (domain/loyalty.ts); `null` in lists. */
+export interface ClientLoyalty {
+  bonusBalance: number;
+  expiring: { amount: number; at: string } | null;
+  birthdayDiscount: { percent: number; until: string } | null;
+}
+
+export const clientOut = (c: ClientRow, stats: ClientStats | null = null, loyalty: ClientLoyalty | null = null) => ({
   id: c.id,
   name: c.name,
   lastName: c.lastName,
@@ -102,6 +109,7 @@ export const clientOut = (c: ClientRow, stats: ClientStats | null = null) => ({
   updatedAt: toIso(c.updatedAt),
   marketingOptOut: c.marketingOptOut,
   stats,
+  loyalty,
 });
 
 export const serviceRef = (sv: ServiceRow): ServiceRef => ({ id: sv.id, name: sv.name, category: sv.category });
@@ -341,31 +349,55 @@ function onlineOut(a: AppointmentRow): { onlineState: string | null; holdUntil: 
   return { onlineState, holdUntil: onlineState === 'awaiting_payment' ? toIso(a.holdUntil) : null };
 }
 
-export const saleItemOut = (i: SaleItemRow) => ({
+/**
+ * A sale line on the wire. A gift certificate line is stored as `certificate` and sent as `service` with
+ * `certificateId` and `certificateCode` (older builds know only `product` | `service`).
+ */
+export const saleItemOut = (i: SaleItemRow, certificateCode: string | null = null) => ({
   id: i.id,
-  type: i.type,
+  type: i.type === 'certificate' ? 'service' : i.type,
   productId: i.productId,
   variantId: i.variantId,
   variantName: i.variantName,
   serviceId: i.serviceId,
+  certificateId: i.certificateId,
+  certificateCode,
   name: i.name,
   quantity: i.quantity,
   price: i.price,
   total: i.total,
 });
 
-export const saleOut = (sale: SaleRow, items: SaleItemRow[], client: ClientRef | null, employee: EmployeeRef) => ({
+export const saleOut = (
+  sale: SaleRow,
+  items: SaleItemRow[],
+  client: ClientRef | null,
+  employee: EmployeeRef,
+  /** Bonuses credited for the sale (0 when none). */
+  bonusEarned = 0,
+  /** Codes of the certificates its lines sold, by certificate id. */
+  certificateCodes: ReadonlyMap<number, string> = new Map(),
+) => ({
   id: sale.id,
   number: sale.number,
   client,
   employee,
   appointmentId: sale.appointmentId,
   shiftId: sale.shiftId,
-  items: items.map(saleItemOut),
+  items: items.map((i) => saleItemOut(i, i.certificateId != null ? (certificateCodes.get(i.certificateId) ?? null) : null)),
   subtotal: sale.subtotal,
   discount: sale.discount,
   total: sale.total,
-  payments: { cash: sale.payCash, card: sale.payCard, transfer: sale.payTransfer, qr: sale.payQr, deposit: sale.payDeposit },
+  payments: {
+    cash: sale.payCash,
+    card: sale.payCard,
+    transfer: sale.payTransfer,
+    qr: sale.payQr,
+    deposit: sale.payDeposit,
+    bonus: sale.payBonus,
+    certificate: sale.payCertificate,
+  },
+  bonusEarned,
   status: sale.status,
   note: sale.note,
   refundedAt: toIso(sale.refundedAt),

@@ -1,10 +1,11 @@
-import { and, count, eq, gt, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, getTableColumns, gt, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, botChats, bookingRequests, clients, depositOperations, products, saleItems, sales } from '../db/schema.js';
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
 import { localDate, localDatesInRange, toIso } from '../lib/time.js';
 import { hasLowStock } from './products.js';
 import { employeeRefOrMissing, employeesByIds, productsByIds, variantsByIds } from './refs.js';
+import { isCertificateLine, lineRevenues, saleRevenueSql } from './sale-revenue.js';
 import { studioTimezone } from './settings.js';
 
 const TOP_LIMIT = 10;
@@ -57,20 +58,10 @@ export function reportDeposits(db: DbOrTx, from: number, to: number): ReportDepo
   };
 }
 
-/**
- * Splits the sale discount across items proportionally to their totals (whole rubles);
- * the rounding remainder goes to the last item so item revenues sum exactly to the sale total.
- */
-export function allocateDiscount(items: Array<Pick<SaleItemRow, 'total'>>, discount: number): number[] {
-  const subtotal = items.reduce((s, i) => s + i.total, 0);
-  if (subtotal === 0 || discount === 0) return items.map((i) => i.total);
-  let allocated = 0;
-  return items.map((item, index) => {
-    const share = index === items.length - 1 ? discount - allocated : Math.round((discount * item.total) / subtotal);
-    allocated += share;
-    return item.total - share;
-  });
-}
+export { allocateDiscount } from './sale-revenue.js';
+
+/** A sale with its revenue (`total − bonuses − certificate lines`, see sale-revenue.ts). */
+type RevenueSale = SaleRow & { revenue: number };
 
 interface TopEntry {
   id: number | null;
@@ -94,12 +85,12 @@ const topOf = (map: Map<string, TopEntry>) => [...map.values()].sort(byRevenue).
 
 export function reportSummary(db: DbOrTx, from: number, to: number) {
   const tz = studioTimezone(db);
-  const rangeSales = db
-    .select()
+  const rangeSales: RevenueSale[] = db
+    .select({ ...getTableColumns(sales), revenue: saleRevenueSql })
     .from(sales)
     .where(and(gte(sales.createdAt, from), lt(sales.createdAt, to), eq(sales.status, 'completed')))
     .all();
-  const revenue = rangeSales.reduce((s, x) => s + x.total, 0);
+  const revenue = rangeSales.reduce((s, x) => s + x.revenue, 0);
   const payments = {
     cash: rangeSales.reduce((s, x) => s + x.payCash, 0),
     card: rangeSales.reduce((s, x) => s + x.payCard, 0),
@@ -109,7 +100,7 @@ export function reportSummary(db: DbOrTx, from: number, to: number) {
   };
   const refunds =
     db
-      .select({ v: sql<number>`coalesce(sum(${sales.total}), 0)` })
+      .select({ v: sql<number>`coalesce(sum(${saleRevenueSql}), 0)` })
       .from(sales)
       .where(and(eq(sales.status, 'refunded'), gte(sales.refundedAt, from), lt(sales.refundedAt, to)))
       .get()?.v ?? 0;
@@ -118,7 +109,7 @@ export function reportSummary(db: DbOrTx, from: number, to: number) {
   for (const sale of rangeSales) {
     const day = byDayMap.get(localDate(sale.createdAt, tz));
     if (day) {
-      day.revenue += sale.total;
+      day.revenue += sale.revenue;
       day.salesCount += 1;
     }
   }
@@ -162,7 +153,7 @@ export function reportSummary(db: DbOrTx, from: number, to: number) {
   };
 }
 
-function itemBreakdown(db: DbOrTx, rangeSales: SaleRow[]) {
+function itemBreakdown(db: DbOrTx, rangeSales: RevenueSale[]) {
   let servicesRevenue = 0;
   let productsRevenue = 0;
   const productTop = new Map<string, TopEntry>();
@@ -179,9 +170,10 @@ function itemBreakdown(db: DbOrTx, rangeSales: SaleRow[]) {
   for (const item of items) bySale.set(item.saleId, [...(bySale.get(item.saleId) ?? []), item]);
   for (const sale of rangeSales) {
     const saleItemsList = (bySale.get(sale.id) ?? []).sort((a, b) => a.id - b.id);
-    const net = allocateDiscount(saleItemsList, sale.discount);
+    const net = lineRevenues(sale, saleItemsList);
     saleItemsList.forEach((item, i) => {
       const value = net[i] ?? 0;
+      if (isCertificateLine(item)) return;
       if (item.type === 'product') {
         productsRevenue += value;
         const name = (item.productId != null ? productNames.get(item.productId)?.name : undefined) ?? item.name;
@@ -200,7 +192,7 @@ function itemBreakdown(db: DbOrTx, rangeSales: SaleRow[]) {
   return { servicesRevenue, productsRevenue, topProducts: topOf(productTop), topServices: topOf(serviceTop) };
 }
 
-function masterBreakdown(db: DbOrTx, rangeSales: SaleRow[], from: number, to: number) {
+function masterBreakdown(db: DbOrTx, rangeSales: RevenueSale[], from: number, to: number) {
   const completed = db
     .select({ masterId: appointments.masterId, n: count() })
     .from(appointments)
@@ -221,7 +213,7 @@ function masterBreakdown(db: DbOrTx, rangeSales: SaleRow[], from: number, to: nu
   for (const c of completed) entry(c.masterId).appointmentsCompleted = c.n;
   for (const sale of rangeSales) {
     const masterId = sale.appointmentId != null ? masterOfAppointment.get(sale.appointmentId) : undefined;
-    if (masterId !== undefined) entry(masterId).revenue += sale.total;
+    if (masterId !== undefined) entry(masterId).revenue += sale.revenue;
   }
   const emps = employeesByIds(db, [...stats.keys()]);
   return [...stats.entries()]
