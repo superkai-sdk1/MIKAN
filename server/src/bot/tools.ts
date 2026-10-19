@@ -3,6 +3,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { bookingRequests, botMessages, products, services } from '../db/schema.js';
+import { auditBookingRequest } from '../domain/audit-events.js';
 import { findChat, updateChatFlags } from '../domain/bot-chats.js';
 import { hasSizeInStock } from '../domain/products.js';
 import { normalizePhone, isPlausiblePhone } from '../lib/phone.js';
@@ -248,6 +249,7 @@ export function buildToolHandlers(ctx: AppContext, scope: ToolScope, sink: ToolS
         })
         .returning()
         .get();
+      auditBookingRequest(ctx, row);
       await notifyStaff(
         ctx,
         [

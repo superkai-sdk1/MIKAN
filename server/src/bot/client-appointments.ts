@@ -4,6 +4,7 @@ import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, clients } from '../db/schema.js';
 import { updateAppointment } from '../domain/appointments.js';
+import { auditClientConfirm, auditClientReschedule } from '../domain/audit-events.js';
 import { SLOT_HORIZON_DAYS, SLOT_LEAD_MIN, withinWorkingHours } from '../domain/free-slots.js';
 import { employeesByIds, serviceLinesByAppointment, servicesByIds } from '../domain/refs.js';
 import { ACTIVE_APPOINTMENT_STATUSES } from '../domain/scheduling.js';
@@ -133,6 +134,7 @@ export async function rescheduleForClient(
     }
     throw err;
   }
+  auditClientReschedule(ctx, current, moved);
   const client = db.select().from(clients).where(eq(clients.id, current.clientId)).get();
   const master = employeesByIds(db, [moved.masterId]).get(moved.masterId);
   const what = appointmentWhat(db, [moved]).get(moved.id);
@@ -152,6 +154,7 @@ export async function confirmForClient(ctx: AppContext, clientId: number, appoin
   const when = formatHumanDateTime(own.appointment.startsAt, tz);
   if (own.appointment.status === 'confirmed') return { ok: true, appointment: own.appointment, text: `Запись уже подтверждена — ждём вас ${when} ✨` };
   const row = updateAppointment(ctx.db, appointmentId, { status: 'confirmed' });
+  auditClientConfirm(ctx, own.appointment, row);
   const client = ctx.db.select().from(clients).where(eq(clients.id, clientId)).get();
   const master = employeesByIds(ctx.db, [row.masterId]).get(row.masterId);
   await notifyStaff(
