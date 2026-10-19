@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import { errorMessage } from './errors.js';
 
 /**
  * A minimal S3-compatible client (Yandex Object Storage, Selectel, Cloudflare R2, MinIO, AWS): put (a large file in
@@ -161,8 +162,13 @@ export async function putFile(config: S3Config, key: string, file: string, opts:
     if (code) throw new S3Error(`S3 POST ${objectUrl(config, key).pathname}: ${code}`, 200);
     return { parts: etags.length };
   } catch (err) {
-    await send(config, 'DELETE', withQuery(config, key, query), undefined, fetchImpl, clock()).catch(() => undefined);
-    throw err;
+    const abortFailure = await send(config, 'DELETE', withQuery(config, key, query), undefined, fetchImpl, clock()).then(
+      () => null,
+      (abortErr: unknown) => abortErr,
+    );
+    if (!abortFailure) throw err;
+    // The uploaded parts stay in the bucket (until its lifecycle rule removes them): say so with the cause.
+    throw new S3Error(`${errorMessage(err)}; отменить загрузку частей не удалось: ${errorMessage(abortFailure)}`, err instanceof S3Error ? err.status : 0);
   }
 }
 
@@ -179,8 +185,9 @@ async function putParts(
   try {
     for (let offset = 0; offset < size; offset += opts.partBytes) {
       const part = Buffer.alloc(Math.min(opts.partBytes, size - offset));
-      await handle.read(part, 0, part.length, offset);
       const number = etags.length + 1;
+      const { bytesRead } = await handle.read(part, 0, part.length, offset);
+      if (bytesRead !== part.length) throw new Error(`Файл ${file} изменился во время выгрузки (часть ${number})`);
       const url = withQuery(config, key, `partNumber=${number}&uploadId=${encode(opts.uploadId)}`);
       const res = await send(config, 'PUT', url, part, opts.fetchImpl, opts.clock());
       const etag = res.headers.get('etag');

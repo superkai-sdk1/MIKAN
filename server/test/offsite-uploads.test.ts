@@ -72,6 +72,8 @@ describe('streaming encryption of large backups', () => {
     const out = path.join(dir, 'a.tar');
     expect(await decryptFile(enc, out, key)).toBe(Buffer.concat(parts).length);
     expect(fs.readFileSync(out).equals(Buffer.concat(parts))).toBe(true);
+    expect(fs.statSync(out).mode & 0o777).toBe(0o600); // client data: readable by the owner only
+    expect(fs.statSync(enc).mode & 0o777).toBe(0o600);
   });
 
   it('refuses a wrong key or a damaged file and leaves no half-written output', async () => {
@@ -138,6 +140,12 @@ describe('S3 upload of a file', () => {
     const failing = fakeStorage([], (c) => (c.url.searchParams.get('partNumber') === '2' ? new Response('<Error><Code>InternalError</Code></Error>', { status: 500 }) : null));
     await expect(putFile(config, 'mikan/large.bin', file, { fetchImpl: failing.fetchImpl, clock, partBytes: 1024 })).rejects.toThrow('HTTP 500 InternalError');
     expect(failing.calls.map(describeCall).at(-1)).toBe('DELETE /mikan-backups/mikan/large.bin?uploadId=UP-1');
+
+    // The abort failing too is told, not lost (the parts stay in the bucket until its lifecycle rule removes them).
+    const stuck = fakeStorage([], (c) => (c.method === 'PUT' || c.method === 'DELETE' ? new Response('<Error><Code>ServiceUnavailable</Code></Error>', { status: 503 }) : null));
+    await expect(putFile(config, 'mikan/large.bin', file, { fetchImpl: stuck.fetchImpl, clock, partBytes: 1024 })).rejects.toThrow(
+      /HTTP 503 ServiceUnavailable; отменить загрузку частей не удалось: S3 DELETE .*HTTP 503/,
+    );
 
     const quirky = fakeStorage([], (c) =>
       c.method === 'POST' && c.url.searchParams.has('uploadId') ? new Response('<Error><Code>SlowDown</Code></Error>', { status: 200 }) : null,
@@ -211,6 +219,7 @@ describe('the photo archive', () => {
     ]);
     expect(getOffsiteUploads(handle.db)).toEqual({
       hash: uploadsManifest(uploads).hash,
+      target: expect.stringMatching(/^[0-9a-f]{64}$/),
       key: 'mikan/mikan-uploads-2026-10-19.tar.enc',
       files: 2,
       uploadedAt: NOW,
@@ -235,6 +244,30 @@ describe('the photo archive', () => {
 
     const forced = fakeStorage();
     expect(await run(forced.fetchImpl, { date: '2026-10-21', force: true })).toMatchObject({ status: 'uploaded', files: 3 });
+  });
+
+  it('uploads again when the storage or the encryption key changed, even with the same photos', async () => {
+    await run(fakeStorage().fetchImpl);
+    expect(await run(fakeStorage().fetchImpl)).toMatchObject({ status: 'unchanged' });
+    config = { ...config, s3: { ...config.s3, bucket: 'new-bucket' } };
+    expect(await run(fakeStorage().fetchImpl)).toMatchObject({ status: 'uploaded' });
+    config = { ...config, prefix: 'studio/' };
+    expect(await run(fakeStorage().fetchImpl)).toMatchObject({ status: 'uploaded', key: 'studio/mikan-uploads-2026-10-19.tar.enc' });
+    config = { ...config, key: crypto.randomBytes(32) };
+    expect(await run(fakeStorage().fetchImpl)).toMatchObject({ status: 'uploaded' });
+    expect(await run(fakeStorage().fetchImpl)).toMatchObject({ status: 'unchanged' });
+    expect(JSON.stringify(getOffsiteUploads(handle.db))).not.toContain(config.key.toString('base64')); // only a fingerprint
+  });
+
+  it('removes archives left half-written by a crash a day ago, and leaves one another run is writing', async () => {
+    const stale = path.join(work, 'mikan-uploads-2026-10-17.tar.enc.1a2b3c4d.part');
+    const fresh = path.join(work, 'mikan-uploads-2026-10-19.tar.enc.5e6f7a8b.part');
+    const unrelated = path.join(work, 'mikan-2026-10-18.db');
+    for (const file of [stale, fresh, unrelated]) fs.writeFileSync(file, 'x');
+    const dayAgo = new Date(Date.now() - 25 * 60 * 60_000);
+    fs.utimesSync(stale, dayAgo, dayAgo);
+    await run(fakeStorage().fetchImpl);
+    expect(fs.readdirSync(work).sort()).toEqual([path.basename(unrelated), path.basename(fresh)].sort());
   });
 
   it('a failed upload is retried next time: nothing is remembered and the local archive is removed', async () => {

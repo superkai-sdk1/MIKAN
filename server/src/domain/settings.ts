@@ -341,6 +341,8 @@ export function writeWaitlistFreed(db: DbOrTx, value: unknown): void {
 /** The last photo archive sent off-site (domain/offsite-uploads.ts): the manifest hash of its file set. */
 export interface OffsiteUploadsState {
   hash: string;
+  /** A fingerprint of the storage (endpoint, bucket, prefix) and the encryption key it was sent to and with. */
+  target: string;
   key: string;
   files: number;
   uploadedAt: number;

@@ -48,20 +48,27 @@ export async function encryptToFile(chunks: Iterable<Buffer> | AsyncIterable<Buf
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const out = await fs.promises.open(file, 'w', 0o600);
   try {
-    await out.write(Buffer.concat([MAGIC, iv, Buffer.alloc(TAG_BYTES)]));
+    await writeAll(out, Buffer.concat([MAGIC, iv, Buffer.alloc(TAG_BYTES)]));
     let bytes = HEADER_BYTES;
     for await (const chunk of chunks) {
       const encrypted = cipher.update(chunk);
-      if (encrypted.length > 0) await out.write(encrypted);
+      await writeAll(out, encrypted);
       bytes += encrypted.length;
     }
     const last = cipher.final();
-    if (last.length > 0) await out.write(last);
-    await out.write(cipher.getAuthTag(), 0, TAG_BYTES, MAGIC.length + IV_BYTES);
+    await writeAll(out, last);
+    await writeAll(out, cipher.getAuthTag(), MAGIC.length + IV_BYTES);
     return bytes + last.length;
   } finally {
     await out.close();
   }
+}
+
+/** A short write (a full disk) must fail the copy, not leave a cut ciphertext behind a valid header. */
+async function writeAll(out: fs.promises.FileHandle, data: Buffer, position: number | null = null): Promise<void> {
+  if (data.length === 0) return;
+  const { bytesWritten } = await out.write(data, 0, data.length, position);
+  if (bytesWritten !== data.length) throw new Error(`Копия записана не целиком (${bytesWritten} из ${data.length} байт) — мало места на диске?`);
 }
 
 /**
@@ -80,7 +87,8 @@ export async function decryptFile(input: string, output: string, key: Buffer): P
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, header.subarray(MAGIC.length, MAGIC.length + IV_BYTES));
   decipher.setAuthTag(header.subarray(MAGIC.length + IV_BYTES));
   try {
-    await pipeline(fs.createReadStream(input, { start: HEADER_BYTES }), decipher, fs.createWriteStream(output));
+    // Client data: readable by the owner only.
+    await pipeline(fs.createReadStream(input, { start: HEADER_BYTES }), decipher, fs.createWriteStream(output, { mode: 0o600 }));
   } catch (err) {
     fs.rmSync(output, { force: true });
     // GCM's own words («Unsupported state or unable to authenticate data») say nothing to a person.

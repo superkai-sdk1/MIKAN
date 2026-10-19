@@ -7,6 +7,7 @@ import type { DbOrTx } from '../db/client.js';
 import { errorMessage } from '../lib/errors.js';
 import { putFile, type Fetch } from '../lib/s3.js';
 import { tarChunks, ustarFits, type TarEntry } from '../lib/tar.js';
+import { DAY_MS } from '../lib/time.js';
 import { raiseAlert, resolveAlerts } from './alerts.js';
 import { encryptToFile, pruneCopies } from './offsite-backup.js';
 import { getOffsiteUploads, setOffsiteUploads } from './settings.js';
@@ -23,6 +24,9 @@ export const UPLOADS_KEEP = 7;
 export const UPLOADS_COPY_RE = /mikan-uploads-\d{4}-\d{2}-\d{2}\.tar\.enc$/;
 /** Entries are stored under this folder: `tar -xf … -C DATA_DIR` restores `DATA_DIR/uploads`. */
 const ARCHIVE_ROOT = 'uploads';
+/** A local archive this old was left by a crash (a run takes minutes): removed by the next run. */
+const STALE_PART_MS = DAY_MS;
+const PART_FILE_RE = /^mikan-uploads-.+\.part$/;
 
 export const uploadsArchiveName = (date: string): string => `mikan-uploads-${date}.tar.enc`;
 
@@ -73,6 +77,26 @@ async function* entriesOf(dir: string, files: ManifestFile[], archived: { count:
   }
 }
 
+/**
+ * Where and with what key the archive goes: another bucket, prefix or key means the photos are not there yet. Only a
+ * hash is stored (never the key).
+ */
+function targetOf(config: OffsiteBackupConfig): string {
+  return crypto
+    .createHash('sha256')
+    .update([config.s3.endpoint, config.s3.bucket, config.prefix, ''].join('\n'))
+    .update(config.key)
+    .digest('hex');
+}
+
+/** Local archives a crashed run left behind (an archive being written now is fresh and stays). */
+function removeStaleParts(workDir: string, now: number): void {
+  for (const name of fs.readdirSync(workDir)) {
+    const file = path.join(workDir, name);
+    if (PART_FILE_RE.test(name) && fs.statSync(file).mtimeMs < now - STALE_PART_MS) fs.rmSync(file, { force: true });
+  }
+}
+
 export interface UploadsArchiveOptions {
   uploadsDir: string;
   /** Where the encrypted archive is written before the upload (removed afterwards). */
@@ -95,7 +119,9 @@ export async function uploadUploadsOffsite(db: DbOrTx, config: OffsiteBackupConf
   const clock = opts.clock ?? Date.now;
   const manifest = uploadsManifest(opts.uploadsDir);
   if (manifest.files.length === 0) return { status: 'empty', files: 0 };
-  if (!opts.force && getOffsiteUploads(db)?.hash === manifest.hash) return { status: 'unchanged', files: manifest.files.length };
+  const target = targetOf(config);
+  const last = getOffsiteUploads(db);
+  if (!opts.force && last?.hash === manifest.hash && last.target === target) return { status: 'unchanged', files: manifest.files.length };
 
   // A path ustar cannot hold (never one the server names itself) must not stop the rest from being saved.
   const skipped = manifest.files.filter((f) => !ustarFits(`${ARCHIVE_ROOT}/${f.name}`)).map((f) => f.name);
@@ -103,13 +129,15 @@ export async function uploadUploadsOffsite(db: DbOrTx, config: OffsiteBackupConf
   const name = uploadsArchiveName(opts.date);
   const key = `${config.prefix}${name}`;
   fs.mkdirSync(opts.workDir, { recursive: true });
-  const local = path.join(opts.workDir, `${name}.part`);
+  removeStaleParts(opts.workDir, Date.now());
+  // Its own name: a manual `upload-uploads` may run while the daily one does.
+  const local = path.join(opts.workDir, `${name}.${crypto.randomBytes(4).toString('hex')}.part`);
   const archived = { count: 0 };
   try {
     const bytes = await encryptToFile(tarChunks(entriesOf(opts.uploadsDir, files, archived)), local, config.key);
     await putFile(config.s3, key, local, { fetchImpl: opts.fetchImpl, clock, partBytes: opts.partBytes });
     // Remembered once the archive is stored: a failed clean-up below must not send the same photos again.
-    setOffsiteUploads(db, { hash: manifest.hash, key, files: archived.count, uploadedAt: clock() });
+    setOffsiteUploads(db, { hash: manifest.hash, target, key, files: archived.count, uploadedAt: clock() });
     const pruned = await pruneCopies(config, UPLOADS_COPY_RE, UPLOADS_KEEP, opts.fetchImpl, clock());
     return { status: 'uploaded', key, bytes, files: archived.count, skipped, pruned };
   } finally {
