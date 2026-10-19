@@ -108,6 +108,9 @@ curl https://95-170-124-192.sslip.io/api/health
    docker compose exec api node dist/scripts/offsite-backup.js upload
    ```
 
+Вместе с базой раз в день уходит и архив загруженных фото (`data/uploads`): `mikan-uploads-ГГГГ-ММ-ДД.tar.enc`, тем же
+ключом, только если с прошлого раза что-то изменилось; хранятся последние 7 архивов.
+
 Расшифровать скачанную копию (на сервере или у себя, с тем же ключом):
 
 ```bash

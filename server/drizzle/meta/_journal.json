@@ -134,6 +134,13 @@
       "when": 1792444177700,
       "tag": "0019_client_cabinet",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792447105758,
+      "tag": "0020_birthday_asked",
+      "breakpoints": true
     }
   ]
 }

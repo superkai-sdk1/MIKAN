@@ -594,14 +594,18 @@ carry the inline buttons «✅ Приду» and «🔁 Перенести» (see
   "cancellation": { "freeHours": 24, "lateRetainPercent": 100, "noShowRetainPercent": 100, "autoRetain": false },
   "reviewLinks": { "yandex": "https://yandex.ru/maps/org/…", "twogis": "", "google": "" },
   "onlineBooking": { "enabled": true, "leadMinutes": 120, "horizonDays": 60, "holdMinutes": 15, "stepMinutes": 30,
-                     "note": "" } }
+                     "note": "", "confirmationHours": 24 } }
 ```
 - `onlineBooking` — the client-facing booking (bot, Mini App, booking page; see «Online booking»): `enabled` (default
   `true`; `false` → the booking page says «Онлайн-запись временно недоступна» and the bot falls back to booking
   requests); `leadMinutes` (0…2880, default 120) — the earliest start from now; `horizonDays` (1…180, default 60) — how
   far ahead; `holdMinutes` (5…60, default 15) — time to pay the prepayment; `stepMinutes` (15 | 30 | 60, default 30) —
   the grid of offered starts from the beginning of the master's working day; `note` (≤ 500) — shown to clients on the
-  booking page («Возьмите с собой паспорт»). On PUT omitted = unchanged.
+  booking page («Возьмите с собой паспорт»); `confirmationHours` (1…168 or `null` = never, default 24) — an online
+  booking still `awaiting_confirmation` that long after it was made, or 2 hours before its start if that comes first,
+  is rejected by itself with the reason «Студия не успела подтвердить запись — выберите, пожалуйста, другое время»
+  (the client is told with the booking link, staff see it in the staff chat; audited as `system`; checked every
+  minute). On PUT omitted = unchanged.
 - `cancellation` — the studio's prepayment rules, told to clients and applied when a visit that holds a prepayment is
   cancelled or missed:
   - `freeHours` (0…336) — a cancellation at least this many hours before the start is free (the whole prepayment can
@@ -1960,6 +1964,20 @@ failed, blocked, pending }, createdBy: EmployeeRef, createdAt, updatedAt }`. `st
 - Audit (`campaign`): `campaign.create`, `.update`, `.schedule`, `.send`, `.test`, `.cancel`, `.delete` — «Рассылка
   «Осень» запущена: 130 получателей», «Рассылка «Осень» запланирована на 20 октября, 10:00».
 
+### Collecting birthdays
+Most cards have no birthday, so greetings rarely go out. The birthday is collected gently, never required:
+- **Bot:** right after a chat shares its phone (or links a card) and the card has no birthday and was never asked
+  (`birthdayAskedAt` is null), the bot asks once: «Подскажите дату рождения — в этот день пришлём подарок 🎁» with
+  «Пропустить». A reply like «12.04.1995», «12 апреля», «12/04», «12 апреля 1995» is saved (`YYYY-MM-DD`; a year-less
+  date is stored with year 1900 and shown without the year); anything else gets one gentle retry, then the bot moves
+  on. `birthdayAskedAt` is set when it asks, so it never asks again.
+- **Booking page / Mini App:** an optional «Дата рождения» on the contacts step for a new client (`birthday` in
+  `POST /public/booking`); the engine fills it in when the card has none.
+- **Cabinet:** «Добавьте дату рождения — пришлём подарок» while it is empty, `POST /public/cabinet/birthday
+  { birthday }` (only when empty; `409` otherwise).
+- **App:** the client card shows a hint while the birthday is empty.
+- Birthday greetings and the birthday discount ignore the year 1900 placeholder correctly (only day and month count).
+
 ### Birthday and win-back
 - **Birthday** (`birthday.enabled`): at `sendAt` studio time on the client's birthday (by `birthday`; 29 February
   counts on 28 February in other years), once a year, the bot sends the greeting to linked clients who did not opt out,
@@ -2158,7 +2176,7 @@ without the AI (no AI cost), personalised with the employee's name (their own ap
   (yesterday's left open / none open), clients with a birthday among today's visits — or «Всё спокойно»; tomorrow's
   count and first appointment.
 - **Evening** (`eveningDigestAt`): revenue of the day with the number of sales, the average check and the payment
-  split, refunds; visits done / no-shows / cancelled; today's visits left unpaid; open receipts; the open cash shift
+  split (with bonuses and gift certificates when there were any), certificates sold, refunds; visits done / no-shows / cancelled; today's visits left unpaid; open receipts; the open cash shift
   with the expected cash («не забудьте закрыть»); tomorrow's appointments and prepayments still awaited for them.
 Each digest is sent once per studio day when its time comes (not later than 3 hours after it, e.g. after a server
 restart), only while the bot is running; it is stored in the chat as an `assistant` message.

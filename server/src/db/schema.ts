@@ -50,6 +50,8 @@ export const clients = sqliteTable(
     botEnabled: bool('bot_enabled').notNull().default(true),
     /** The client asked for no news and offers (campaigns, birthday, win-back); service messages still go. */
     marketingOptOut: bool('marketing_opt_out').notNull().default(false),
+    /** When the bot asked this client for the birthday (asked once; null — not yet). */
+    birthdayAskedAt: ms('birthday_asked_at'),
     archived: bool('archived').notNull().default(false),
     linkToken: text('link_token').unique(),
     searchText: text('search_text').notNull().default(''),
