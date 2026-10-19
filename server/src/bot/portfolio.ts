@@ -116,7 +116,12 @@ function shotsOf(ctx: AppContext, rows: PortfolioRow[], masters: Map<number, Emp
   const serviceIds = [...new Set(rows.map((r) => r.serviceId).filter((id): id is number => id !== null))];
   const names = new Map(
     serviceIds.length
-      ? ctx.db.select({ id: services.id, name: services.name }).from(services).where(inArray(services.id, serviceIds)).all().map((s) => [s.id, s.name])
+      ? ctx.db
+          .select({ id: services.id, name: services.name })
+          .from(services)
+          .where(and(inArray(services.id, serviceIds), eq(services.active, true)))
+          .all()
+          .map((s) => [s.id, s.name])
       : [],
   );
   return rows.flatMap((r) => {
@@ -153,7 +158,10 @@ export function buildPortfolioToolHandler(ctx: AppContext, scope: ToolScope, sin
     const selection = select(ctx.db, [...masters.keys()], { masterId, serviceId });
     const readable = shotsOf(ctx, selection.rows, masters);
     if (readable.length === 0) return { content: nothingText(master, selection.fellBack ? null : service) };
-    const fresh = readable.filter((shot) => !sink.portfolio.some((queued) => queued.id === shot.id)).slice(0, MAX_PORTFOLIO_SHOTS);
+    // At most MAX_PORTFOLIO_SHOTS photos follow one answer, however many calls asked for them.
+    const room = MAX_PORTFOLIO_SHOTS - sink.portfolio.length;
+    if (room <= 0) return { content: `После этого ответа уже уйдут ${MAX_PORTFOLIO_SHOTS} фото — больше за один ответ не отправляю.` };
+    const fresh = readable.filter((shot) => !sink.portfolio.some((queued) => queued.id === shot.id)).slice(0, room);
     if (fresh.length === 0) return { content: 'Эти фото уже будут отправлены клиенту после твоего ответа — не вызывай show_portfolio повторно.' };
     sink.portfolio.push(...fresh);
     const who = [...new Set(fresh.map((s) => s.masterName))].join(', ');

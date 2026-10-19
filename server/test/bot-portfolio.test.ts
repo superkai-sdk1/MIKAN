@@ -128,6 +128,14 @@ describe('bot: show_portfolio', () => {
     expect(t.gateway.photos).toEqual([]);
   });
 
+  it('does not name a hidden service in the caption', async () => {
+    await photo(fatima.id, 'a', { serviceId: helix.id });
+    await t.api('PATCH', `/api/services/${helix.id}`, { active: false });
+    ai.push(message([toolUse('p1', 'show_portfolio', { masterId: fatima.id })], 'tool_use'), message([text('Вот.')]));
+    await say('Работы Фатимы?');
+    expect(t.gateway.photos.map((p) => p.caption)).toEqual(['Мастер: **Фатима**']);
+  });
+
   it('skips pictures Telegram cannot get and does not send the same photo twice in one answer', async () => {
     await make(t, '/api/portfolio', { employeeId: fatima.id, imageUrl: '/uploads/missing.jpg' });
     await photo(fatima.id, 'ok');
@@ -137,6 +145,19 @@ describe('bot: show_portfolio', () => {
     );
     await say('Работы Фатимы?');
     expect(t.gateway.photos.map((p) => p.photo)).toEqual([{ kind: 'file', path: fileOf('ok') }]);
+  });
+
+  it('sends at most 5 photos after one answer, however many calls ask for them', async () => {
+    for (const n of [1, 2, 3, 4]) await photo(fatima.id, `f${n}`);
+    for (const n of [1, 2, 3]) await photo(owner.id, `o${n}`);
+    ai.push(
+      message([toolUse('a', 'show_portfolio', { masterId: fatima.id }), toolUse('b', 'show_portfolio', { masterId: owner.id }), toolUse('c', 'show_portfolio', {})], 'tool_use'),
+      message([text('Вот работы обоих мастеров.')]),
+    );
+    await say('Покажите работы всех мастеров');
+    expect(t.gateway.photos.map((p) => p.photo)).toEqual(['f1', 'f2', 'f3', 'f4', 'o1'].map((n) => ({ kind: 'file', path: fileOf(n) })));
+    expect(String(toolResults(1)[1]!.content)).toContain('Фото работ (1 из 3)');
+    expect(String(toolResults(1)[2]!.content)).toContain('больше за один ответ не отправляю');
   });
 
   it('the bot test only says what it would have sent', async () => {

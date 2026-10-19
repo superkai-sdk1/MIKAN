@@ -1585,7 +1585,8 @@ Photos of each master's work, optionally tied to a service. Masters manage their
   портфолио». `PUT /portfolio/order` without every photo of the master (or with another master's) → `400` «Перечислите
   все фото мастера», a repeated id → `400` «Фото указано дважды». Unknown photo → `404` «Фото не найдено». Deleting a
   photo leaves the uploaded file in place.
-- Public: only working masters (active, `isMaster`) — another id → `404` «Мастер не найден»; both routes answer while
+- Public: only working masters (active, `isMaster`) — another id → `404` «Мастер не найден»; a hidden service is not
+  named (`service: null`) and `?serviceId=` of one answers no photos; both routes answer while
   online booking is off and are rate-limited like the other public reads. `GET /public/booking/masters` items gain
   `photos` (count) and `cover` (the first photo's URL or `null`); `PublicService` gains `portfolio` — how many photos of
   that service working masters have (the page shows «Работы мастеров» when > 0).
@@ -1601,7 +1602,8 @@ Photos of each master's work, optionally tied to a service. Masters manage their
   `show_portfolio { masterId?, serviceId? }` sends up to 5 photos after the reply, each with a short caption
   «Мастер: **Фатима** · Хеликс» and the photo's own caption: a master's in their order (of that service when given;
   none of it → the master's other works, and the model says so), else every working master's of the service, else the
-  studio's newest. HEIC pictures and missing files are skipped. Nothing to show → the model says so in words.
+  studio's newest; at most 5 photos follow one answer however many calls ask, and a hidden service is not named. HEIC
+  pictures and missing files are skipped. Nothing to show → the model says so in words.
 - App: «Портфолио» on a master's employee card, «Моё портфолио» in More for a master, «Портфолио мастеров» in More for
   owner and admin: a grid; several photos added at once (compressed to ≤ 2048 px JPEG, uploaded, then
   `POST /portfolio`), caption and service per photo, drag to reorder (`PUT /portfolio/order`), delete with

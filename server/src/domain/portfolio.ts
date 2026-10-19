@@ -168,12 +168,14 @@ function publicItems(db: DbOrTx, rows: PortfolioRow[], masters: Map<number, Empl
   return rows.flatMap((r) => {
     const master = masters.get(r.employeeId);
     if (!master) return [];
+    // A hidden service is not in the public catalog, so clients do not see its name either.
     const service: ServiceRow | undefined = r.serviceId == null ? undefined : serviceRows.get(r.serviceId);
+    const shown = service?.active ? service : undefined;
     return [
       {
         imageUrl: r.imageUrl,
         caption: r.caption,
-        service: service ? { id: service.id, name: service.name } : null,
+        service: shown ? { id: shown.id, name: shown.name } : null,
         master: { id: master.id, name: master.name },
       },
     ];
@@ -189,10 +191,11 @@ export function publicMasterPortfolio(db: DbOrTx, masterId: number): PublicPortf
   return publicItems(db, masterRows(db, masterId), masters);
 }
 
-/** Photos of a service by every working master, newest first. */
+/** Photos of an active service by every working master, newest first. */
 export function publicServicePortfolio(db: DbOrTx, serviceId: number, limit = PUBLIC_SERVICE_PORTFOLIO_LIMIT): PublicPortfolioItem[] {
   const masters = workingMasters(db);
-  if (masters.size === 0) return [];
+  const service = db.select({ active: services.active }).from(services).where(eq(services.id, serviceId)).get();
+  if (masters.size === 0 || !service?.active) return [];
   const rows = db
     .select()
     .from(portfolioPhotos)

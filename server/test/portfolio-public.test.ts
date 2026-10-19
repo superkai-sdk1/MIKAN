@@ -94,6 +94,14 @@ describe('portfolio on the booking page (public)', () => {
     expect((await pub(t, 'GET', '/portfolio?serviceId=9999')).json().items).toEqual([]);
   });
 
+  it('a hidden service is neither named nor listed', async () => {
+    await add(fatima.id, 'a', { serviceId: helix.id, caption: 'Хеликс' });
+    await t.api('PATCH', `/api/services/${helix.id}`, { active: false });
+    const items = (await pub(t, 'GET', `/masters/${fatima.id}/portfolio`)).json().items as Json[];
+    expect(items).toEqual([{ imageUrl: '/uploads/a.jpg', caption: 'Хеликс', service: null, master: { id: fatima.id, name: 'Фатима' } }]);
+    expect((await pub(t, 'GET', `/portfolio?serviceId=${helix.id}`)).json().items).toEqual([]);
+  });
+
   it('services carry the number of works from working masters', async () => {
     await add(fatima.id, 'a', { serviceId: helix.id });
     await add(owner.id, 'b', { serviceId: helix.id });

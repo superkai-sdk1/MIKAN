@@ -199,6 +199,7 @@ export function openGallery({ title, load, showMaster = false, tg, onClosed }) {
 
   /** Our own history entry goes too, so «Назад» afterwards leaves the step as usual. */
   function close() {
+    if (closed) return;
     const ours = pushed && history.state?.gallery === titleId;
     teardown();
     if (ours) history.back();
