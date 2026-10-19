@@ -65,7 +65,9 @@ export function splitByWeight(amount: number, weights: number[]): number[] {
   let given = 0;
   return weights.map((weight, index) => {
     const isLast = index === weights.length - 1;
-    const share = isLast ? amount - given : total > 0 ? Math.round((amount * weight) / total) : 0;
+    // Rounded-up shares never take more than is left, so the last one never goes negative.
+    const rounded = total > 0 ? Math.min(Math.round((amount * weight) / total), amount - given) : 0;
+    const share = isLast ? amount - given : Math.max(0, rounded);
     given += share;
     return share;
   });

@@ -11,6 +11,8 @@ describe('splitByWeight', () => {
     expect(splitByWeight(100, [0, 0])).toEqual([0, 100]);
     expect(splitByWeight(0, [1, 2])).toEqual([0, 0]);
     expect(splitByWeight(10, [])).toEqual([]);
+    // Shares rounded up never take more than is left, so the last one never goes negative.
+    expect(splitByWeight(2, [1, 1, 1, 1])).toEqual([1, 1, 0, 0]);
   });
 });
 
