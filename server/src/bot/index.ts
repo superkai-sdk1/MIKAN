@@ -2,7 +2,7 @@ import { Bot, GrammyError, InputFile } from 'grammy';
 import type { InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup } from 'grammy/types';
 import type { AppContext } from '../context.js';
 import { BOOKING_MENU_TEXT, bookingWebAppUrl } from '../domain/online-booking-links.js';
-import { getBotSettings, getCachedBotUsername, setCachedBotUsername } from '../domain/settings.js';
+import { getBotSettings, getCachedBotUsername, getStudioSettings, setCachedBotUsername } from '../domain/settings.js';
 import { errorMessage } from '../lib/errors.js';
 import { toPlainText, toTelegramHtml } from '../lib/telegram-format.js';
 import { splitMessage, TELEGRAM_MAX_CAPTION, TELEGRAM_MAX_MESSAGE, truncate } from '../lib/text.js';
@@ -237,17 +237,23 @@ export class BotController implements BotGateway {
   }
 
   /**
-   * The chat menu button opens the booking Mini App («📅 Записаться», docs/API.md «Online booking»); without an
-   * `https://` PUBLIC_URL the default menu stays. A failure is only logged.
+   * The chat menu button opens the booking Mini App («📅 Записаться», docs/API.md «Online booking») while online
+   * booking is on; off, or without an `https://` PUBLIC_URL, the default menu. A failure is only logged.
    */
   private async setBookingMenuButton(bot: Bot): Promise<void> {
     const url = bookingWebAppUrl(this.ctx.config);
-    if (!url) return;
+    const on = url !== null && getStudioSettings(this.ctx.db).onlineBooking.enabled;
     try {
-      await bot.api.setChatMenuButton({ menu_button: { type: 'web_app', text: BOOKING_MENU_TEXT, web_app: { url } } });
+      await bot.api.setChatMenuButton({
+        menu_button: on ? { type: 'web_app', text: BOOKING_MENU_TEXT, web_app: { url: url! } } : { type: 'default' },
+      });
     } catch (err) {
       this.ctx.log.warn({ err: errorMessage(err) }, 'bot menu button not set');
     }
+  }
+
+  async refreshBookingMenu(): Promise<void> {
+    if (this.bot && this.polling) await this.setBookingMenuButton(this.bot);
   }
 
   private requireBot(): Bot {

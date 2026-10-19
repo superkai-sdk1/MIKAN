@@ -53,6 +53,8 @@ export interface BotGateway {
   editKeyboard(chatId: number, messageId: number, keyboard: InlineKeyboard | null): Promise<void>;
   deleteMessage(chatId: number, messageId: number): Promise<void>;
   sendTyping(chatId: number): Promise<void>;
+  /** Points the chat menu button at the booking Mini App while online booking is on, else the default menu. */
+  refreshBookingMenu?(): Promise<void>;
 }
 
 export class BotUnavailableError extends Error {

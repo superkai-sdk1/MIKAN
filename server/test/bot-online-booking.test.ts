@@ -285,10 +285,27 @@ describe('BotController: the booking menu button and web app buttons', () => {
     await failing.controller.stop();
     await failing.t.close();
 
+    // No https PUBLIC_URL: the default menu (resets a booking button left from before).
     const none: unknown[] = [];
     const without = await controllerWith({}, async (args) => none.push(args));
-    expect(none).toEqual([]); // no PUBLIC_URL: the default menu stays
+    expect(none).toEqual([{ menu_button: { type: 'default' } }]);
     await without.controller.stop();
     await without.t.close();
+  });
+
+  it('shows the default menu while online booking is off and the Mini App once it is back on', async () => {
+    const calls: unknown[] = [];
+    const { t, controller } = await controllerWith({ PUBLIC_URL }, async (args) => calls.push(args));
+    // The app talks to the fake gateway; hand the menu refresh to the real controller under test.
+    t.gateway.refreshBookingMenu = () => controller.refreshBookingMenu();
+    calls.length = 0;
+    expect((await t.api('PUT', '/api/settings/studio', { onlineBooking: { enabled: false } })).statusCode).toBe(200);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls).toEqual([{ menu_button: { type: 'default' } }]);
+    expect((await t.api('PUT', '/api/settings/studio', { onlineBooking: { enabled: true } })).statusCode).toBe(200);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls.at(-1)).toEqual({ menu_button: { type: 'web_app', text: '📅 Записаться', web_app: { url: `${PUBLIC_URL}/book` } } });
+    await controller.stop();
+    await t.close();
   });
 });

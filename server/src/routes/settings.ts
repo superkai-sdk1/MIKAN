@@ -174,7 +174,10 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (parseTimeOfDay(next.workdayEnd)! <= parseTimeOfDay(next.workdayStart)!) {
       throw badRequest(`Конец рабочего дня (${next.workdayEnd}) должен быть позже начала (${next.workdayStart})`);
     }
-    return saveStudioSettings(db, next);
+    const saved = saveStudioSettings(db, next);
+    // The bot's menu button follows the online booking switch (a failure is only logged inside).
+    if (next.onlineBooking.enabled !== current.onlineBooking.enabled) void ctx.gateway.refreshBookingMenu?.();
+    return saved;
   });
 
   app.get('/settings/bot', async () => botSettingsOut(ctx));
