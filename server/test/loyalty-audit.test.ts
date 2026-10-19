@@ -31,6 +31,20 @@ describe('audit log of loyalty writes', () => {
     ]);
   });
 
+  it('keeps the marketing opt-out on the card', async () => {
+    const res = await t.api('PATCH', `/api/clients/${client.id}`, { marketingOptOut: true });
+    expect(res.json()).toMatchObject({ marketingOptOut: true, loyalty: { bonusBalance: 0, expiring: null, birthdayDiscount: null } });
+    expect((await t.api('GET', `/api/clients/${client.id}`)).json().marketingOptOut).toBe(true);
+    const [entry] = await entries(`entity=client&entityId=${client.id}`);
+    expect(entry).toMatchObject({
+      action: 'client.update',
+      summary: 'Карточка клиента «Анна Иванова» изменена: новости и предложения',
+      changes: { marketingOptOut: { from: false, to: true } },
+    });
+    const created = await make(t, '/api/clients', { name: 'Олег', phone: '+79990003344', marketingOptOut: true });
+    expect(created.marketingOptOut).toBe(true);
+  });
+
   it('names bonus and certificate payments in the sale entry and logs certificate management', async () => {
     await make(t, `/api/clients/${client.id}/bonuses`, { amount: 300, note: 'Старт' });
     const sold = await make(t, '/api/sales', {

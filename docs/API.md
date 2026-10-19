@@ -1476,14 +1476,15 @@ the sale discount).
 saleId, saleNumber, note, employee: EmployeeRef | null, createdAt }`.
 - `amount` is signed (credits > 0, debits < 0); `remaining` — the unspent rest of a credit (`0` for debits);
   `expiresAt` — when that rest burns (`null` — never; always `null` on debits). `balance` = Σ `remaining` of credits
-  that have not burnt: a lot past `expiresAt` leaves the balance at once, its `expire` operation (one per lot) is
-  written by the hourly job.
+  that have not burnt: a lot past `expiresAt` leaves the balance at once, its `expire` operation (one per lot, with the
+  `saleId` of the sale that earned it) is written by the hourly job.
 - `earn` — the cashback of a sale (burns after `loyalty.expiryDays`, never when `null`); `spend` — paid in a sale;
   `gift` — birthday and win-back gifts; `adjust` — by staff: `note` is required, a credit burns at `expiresAt` when
   given (in the future, else `400` «Срок сгорания должен быть в будущем»), a debit takes from the oldest lots.
 - Refund of a sale (`reverse`, with the sale and a note): the bonuses paid in it come back first, as a new lot that
-  burns like newly earned ones; then the bonuses it earned are taken back — from its own lot first, then the oldest,
-  never below 0. Refunds work with loyalty off too.
+  burns like newly earned ones; then the bonuses it earned are taken back, except what of them has already burnt — the
+  unspent rest of its own lot, then (for what the client spent of them) from the oldest lots, never below 0. Refunds
+  work with loyalty off too.
 - After a paid sale that earned bonuses (`POST /sales`, a confirmed QR code) the bot tells the client in the
   **linked** Telegram chat, when `loyalty.notifyClient`, the client's `botEnabled` and the card is not archived:
   «Спасибо за покупку! 🎁 +75 бонусов, на счёте 1 275» (+ « — начисленные сгорят 14 ноября» when they burn). An

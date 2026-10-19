@@ -53,12 +53,9 @@ export function nearestExpiring(db: DbOrTx, clientId: number, now = Date.now()):
   return { amount, at };
 }
 
-/**
- * Takes `amount` from the live lots — `firstLotId` first when given, then the oldest — and returns how much it took
- * (less than `amount` only when the lots run out).
- */
-function drawFromLots(db: DbOrTx, clientId: number, amount: number, now: number, firstLotId?: number): number {
-  const lots = liveLots(db, clientId, now).sort((a, b) => Number(b.id === firstLotId) - Number(a.id === firstLotId));
+/** Takes `amount` from the live lots, oldest first, and returns how much it took (less only when they run out). */
+function drawFromLots(db: DbOrTx, clientId: number, amount: number, now: number): number {
+  const lots = liveLots(db, clientId, now);
   let left = amount;
   for (const lot of lots) {
     if (left === 0) break;
@@ -151,7 +148,8 @@ export function earnBonuses(db: DbOrTx, sale: SaleRow, base: number, employeeId:
 
 /**
  * A refunded sale: the bonuses paid in it come back first (a new lot that burns like newly earned ones), then the
- * bonuses it earned are taken back — from its own lot first, never below 0. Works with loyalty off too.
+ * bonuses it earned are taken back, except what of them has burnt: the unspent rest of its own lot (burnt by now or
+ * not), then — for what the client has spent of them — from the other lots, never below 0. Works with loyalty off too.
  */
 export function reverseSaleBonuses(db: DbOrTx, sale: SaleRow, employeeId: number | null, now: number): void {
   if (sale.clientId == null) return;
@@ -171,7 +169,13 @@ export function reverseSaleBonuses(db: DbOrTx, sale: SaleRow, employeeId: number
     });
   }
   if (!earnLot) return;
-  const taken = drawFromLots(db, sale.clientId, earnLot.amount, now, earnLot.id);
+  const burnt = -ops.filter((op) => op.type === 'expire').reduce((sum, op) => sum + op.amount, 0);
+  const owed = Math.max(0, earnLot.amount - burnt);
+  const fromOwnLot = Math.min(earnLot.remaining, owed);
+  if (fromOwnLot > 0) {
+    db.update(bonusOperations).set({ remaining: earnLot.remaining - fromOwnLot }).where(eq(bonusOperations.id, earnLot.id)).run();
+  }
+  const taken = fromOwnLot + drawFromLots(db, sale.clientId, owed - fromOwnLot, now);
   if (taken <= 0) return;
   insertOperation(db, {
     clientId: sale.clientId,
@@ -232,7 +236,8 @@ export function expireBonusLots(db: DbOrTx, now = Date.now()): { lots: number; a
       .all();
     for (const lot of due) {
       tx.update(bonusOperations).set({ remaining: 0 }).where(eq(bonusOperations.id, lot.id)).run();
-      insertOperation(tx, { clientId: lot.clientId, type: 'expire', amount: -lot.remaining, createdAt: now });
+      // The sale that earned the lot (if any) stays on its expiry, so a later refund knows what already burnt.
+      insertOperation(tx, { clientId: lot.clientId, type: 'expire', amount: -lot.remaining, saleId: lot.saleId, createdAt: now });
     }
     return { lots: due.length, amount: due.reduce((sum, lot) => sum + lot.remaining, 0) };
   });

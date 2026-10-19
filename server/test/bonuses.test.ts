@@ -195,6 +195,27 @@ describe('loyalty bonuses', () => {
     expect(list.items[0]).toMatchObject({ type: 'reverse', amount: -20 });
   });
 
+  it('does not take back earned bonuses that have already burnt', async () => {
+    await setLoyalty({ expiryDays: 30 });
+    await t.api('POST', '/api/cash/shift/open', { openingCash: 0 });
+    await adjust({ amount: 500, note: 'Старт' });
+    const burnt = await sold({ cash: 3000 }); // +150, burning in 30 days
+    vi.setSystemTime(NOW + 2 * DAY_MS);
+    const pending = await sold({ cash: 3000 }); // +150 more, burning 2 days later
+    vi.setSystemTime(NOW + 31 * DAY_MS);
+    expect(expireBonusLots(t.ctx.db, Date.now())).toEqual({ lots: 1, amount: 150 });
+    const expired = (await ledger()).items.find((o: { type: string; saleId: number }) => o.type === 'expire' && o.saleId === burnt.id);
+    expect(expired).toMatchObject({ amount: -150, saleNumber: burnt.number });
+    expect((await t.api('POST', `/api/sales/${burnt.id}/refund`, { reason: 'Возврат', restock: true })).statusCode).toBe(200);
+    expect((await ledger()).balance).toBe(650); // nothing taken: its 150 burnt (the other sale's 150 still live)
+    // A lot past its expiry the hourly job has not reached yet is taken back as it is — once.
+    vi.setSystemTime(NOW + 33 * DAY_MS);
+    expect((await t.api('POST', `/api/sales/${pending.id}/refund`, { reason: 'Возврат', restock: true })).statusCode).toBe(200);
+    expect((await ledger()).items[0]).toMatchObject({ type: 'reverse', amount: -150, saleId: pending.id });
+    expect(expireBonusLots(t.ctx.db, Date.now())).toEqual({ lots: 0, amount: 0 });
+    expect((await ledger()).balance).toBe(500);
+  });
+
   it('adjusts by hand for owners and admins only, never below zero', async () => {
     const credit = await adjust({ amount: 300, note: 'Компенсация', expiresAt: new Date(NOW + 10 * DAY_MS).toISOString() });
     expect(credit).toMatchObject({ type: 'adjust', amount: 300, remaining: 300, note: 'Компенсация', saleId: null, saleNumber: null });
@@ -319,6 +340,30 @@ describe('loyalty bonuses', () => {
       payments: { qr: 2000, bonus: 1000 },
     });
     expect(overLimit.statusCode).toBe(400);
+  });
+
+  it('pays an open receipt with bonuses and closes it', async () => {
+    await adjust({ amount: 500, note: 'Старт' });
+    const receipt = (await t.api('POST', '/api/receipts', { clientId: client.id, items: [{ type: 'service', serviceId: service.id, quantity: 1 }] })).json();
+    const sale = await sold({ cash: 2500, bonus: 500 }, { receiptId: receipt.id });
+    expect(sale.payments).toMatchObject({ cash: 2500, bonus: 500 });
+    expect((await t.api('GET', `/api/receipts/${receipt.id}`)).statusCode).toBe(404);
+    expect((await ledger()).balance).toBe(125);
+  });
+
+  it('flags a QR payment for staff when the bonuses are gone by the time the bank confirms', async () => {
+    await adjust({ amount: 500, note: 'Старт' });
+    const created = (await t.api('POST', '/api/qr-payments', {
+      clientId: client.id,
+      items: [{ type: 'service', serviceId: service.id, quantity: 1 }],
+      discount: 0,
+      payments: { qr: 2600, bonus: 400 },
+    })).json();
+    await adjust({ amount: -300, note: 'Списание' });
+    bank.statuses.set('QR1', 'paid');
+    const paid = (await t.api('GET', `/api/qr-payments/${created.id}`)).json();
+    expect(paid).toMatchObject({ status: 'paid', sale: null, error: 'Оплата 2 600 ₽ получена, но продажа не проведена: На счёте 200 бонусов' });
+    expect((await ledger()).balance).toBe(200);
   });
 
   it('tells the linked client what was credited after a paid sale', async () => {
