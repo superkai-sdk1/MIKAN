@@ -36,6 +36,7 @@ import { payrollRoutes } from './routes/payroll.js';
 import { productRoutes } from './routes/products.js';
 import { onlineBookingRoutes } from './routes/online-bookings.js';
 import { publicBookingRoutes } from './routes/public-booking.js';
+import { publicCabinetRoutes } from './routes/public-cabinet.js';
 import { qrPaymentRoutes } from './routes/qr-payments.js';
 import { receiptRoutes } from './routes/receipts.js';
 import { salesRoutes } from './routes/sales.js';
@@ -174,6 +175,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
       publicAuthRoutes(api, ctx);
       // The booking page and the Mini App: no auth, rate-limited per IP.
       await api.register(async (open) => publicBookingRoutes(open, ctx), { prefix: '/public/booking' });
+      await api.register(async (open) => publicCabinetRoutes(open, ctx), { prefix: '/public/cabinet' });
       await api.register(async (secured) => {
         secured.addHook('onRequest', authenticate(ctx));
         secured.addHook('preHandler', authorize(ctx.db));

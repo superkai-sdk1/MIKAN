@@ -34,6 +34,7 @@ export const REPLIES = {
   rescheduled: 'Готово! Запись перенесена — напоминание придёт заранее 🙌',
   onlineBooked: 'Готово! Время за вами 🙌 Студия подтвердит запись в ближайшее время.',
   onlineBookedPay: 'Готово! Время за вами 🙌 Осталось внести предоплату — кнопка в следующем сообщении.',
+  cabinet: 'Вот ваш личный кабинет: записи, бонусы и памятки по уходу 👇',
   staffUnavailable: 'ИИ-помощник сейчас недоступен (выключен в настройках бота или исчерпан лимит ответов). Данные можно посмотреть в приложении MIKAN.',
   staffError: 'Не получилось подготовить ответ — попробуйте переформулировать вопрос или посмотрите данные в приложении MIKAN.',
 };
@@ -324,7 +325,8 @@ export class BotPipeline {
     // The model may finish with no text after a successful action — confirm the action instead of an error.
     const confirmation = result.outcome !== 'ok' ? '' :
       sink.done.has('online_booking') ? (sink.after.length ? REPLIES.onlineBookedPay : REPLIES.onlineBooked) :
-      sink.done.has('booking') ? REPLIES.booked : sink.done.has('handoff') ? REPLIES.handedOff : sink.done.has('reschedule') ? REPLIES.rescheduled : '';
+      sink.done.has('booking') ? REPLIES.booked : sink.done.has('handoff') ? REPLIES.handedOff : sink.done.has('reschedule') ? REPLIES.rescheduled :
+      sink.done.has('cabinet') ? REPLIES.cabinet : '';
     const text = result.text || confirmation;
     if (result.outcome === 'ok' && (text || sink.products.length || sink.services.length || sink.carousels.length)) {
       if (text && !(await this.deliver(chatId, text))) {

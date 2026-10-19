@@ -2,6 +2,7 @@ import type { Bot, Context, Keyboard } from 'grammy';
 import type { AppContext } from '../context.js';
 import { errorMessage } from '../lib/errors.js';
 import { sendBookingOffer } from './booking-start.js';
+import { isCabinetStart, sendCabinetLink } from './cabinet.js';
 import { handleCallback } from './callbacks.js';
 import { jewelryCategoriesMenu, sendMenu, serviceSectionsMenu } from './catalog.js';
 import { BUTTONS, mainKeyboard, staffKeyboard } from './keyboards.js';
@@ -78,9 +79,12 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
   const pm = bot.chatType('private');
 
   pm.command('start', async (c) => {
-    const reply = handleStart(ctx, sender(c), String(c.match ?? ''));
+    const payload = String(c.match ?? '');
+    const reply = handleStart(ctx, sender(c), payload);
     await c.reply(reply.text, { reply_markup: keyboardFor(reply) });
-    await sendBookingOffer(ctx, c.chat.id, reply);
+    // `/start me` (the cabinet page's «get a link»): the sign-in buttons instead of the booking offer.
+    if (isCabinetStart(payload) && reply.linked && !reply.staff) await sendCabinetLink(ctx, c.chat.id);
+    else await sendBookingOffer(ctx, c.chat.id, reply);
   });
 
   pm.on('message:contact', async (c) => {
@@ -118,6 +122,14 @@ export function registerHandlers(bot: Bot, deps: HandlerDeps): void {
   });
   pm.hears(BUTTONS.services, async (c) => {
     await openCatalog(deps, sender(c), BUTTONS.services, 'services');
+  });
+
+  // The client cabinet: the sign-in buttons without the AI (an unlinked chat was asked for the phone above).
+  pm.command('me', async (c) => {
+    await pipeline.receiveHandled(sender(c), c.message.text, () => sendCabinetLink(ctx, c.chat.id));
+  });
+  pm.hears(BUTTONS.cabinet, async (c) => {
+    await pipeline.receiveHandled(sender(c), BUTTONS.cabinet, () => sendCabinetLink(ctx, c.chat.id));
   });
 
   pm.on('callback_query:data', async (c) => {
