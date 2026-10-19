@@ -33,6 +33,10 @@ final class AppState {
     let push: PushCenter
     /// The Face ID lock over the signed-in app.
     let lock: AppLock
+    /// Network state of the offline mode (`AppState+Offline`).
+    let connectivity: Connectivity
+    /// The phone's copy of the main data for working offline.
+    let offlineCache: OfflineCache
 
     private(set) var phase: Phase
     private(set) var employee: Employee?
@@ -47,10 +51,17 @@ final class AppState {
 
     @ObservationIgnored private let logger = Logger(subsystem: "com.mikanstudio.crm", category: "session")
 
-    init(api: APIClient, employee: Employee?, phase: Phase, push: PushCenter = PushCenter(), lock: AppLock = AppLock()) {
+    init(
+        api: APIClient, employee: Employee?, phase: Phase, push: PushCenter = PushCenter(), lock: AppLock = AppLock(),
+        connectivity: Connectivity = Connectivity(), offlineCache: OfflineCache = OfflineCache()
+    ) {
         self.api = api
         self.push = push
         self.lock = lock
+        self.connectivity = connectivity
+        self.offlineCache = offlineCache
+        api.connectivity = connectivity
+        api.offlineCache = offlineCache
         self.shift = ShiftStore(api: api)
         let cart = CartStore()
         self.cart = cart
@@ -83,6 +94,8 @@ final class AppState {
         api.updateServer(url)
         let response = try await api.login(login.trimmed, password: password)
         ServerConfig.save(url)
+        // Nothing saved by a previous session on this phone is shown to the new one.
+        await offlineCache.wipe()
         Keychain.set(response.token, for: Keychain.tokenAccount)
         api.updateToken(response.token)
         employee = response.employee
@@ -110,6 +123,7 @@ final class AppState {
         schedule.reset()
         reference.reset()
         workSchedules.reset()
+        clearOfflineData()
         signOutNotice = notice
         phase = .signedOut
     }

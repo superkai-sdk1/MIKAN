@@ -103,9 +103,13 @@ struct CheckoutView: View {
         }
         .loadsCheckoutLoyalty()
         .safeAreaBar(edge: .bottom) {
-            submitButton
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+            VStack(spacing: 8) {
+                // Offline the cart stays as it is; only paying waits for the network.
+                OfflinePaymentNote()
+                submitButton
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
         .overlay {
             if cart.isEmpty {
@@ -139,6 +143,7 @@ struct CheckoutView: View {
         .buttonStyle(.glassProminent)
         .controlSize(.large)
         .disabled(!cart.canSubmit || isSubmitting)
+        .needsConnection()
         .accessibilityHint(submitHint)
     }
 

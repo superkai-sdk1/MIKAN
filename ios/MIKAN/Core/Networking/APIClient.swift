@@ -18,6 +18,10 @@ final class APIClient {
     @ObservationIgnored private(set) var token: String?
     /// Called on any 401 for an authenticated request (session expired or employee deactivated).
     @ObservationIgnored var onUnauthorized: (() -> Void)?
+    /// The offline mode: hears whether each request got an answer; while offline, writes are refused unsent.
+    @ObservationIgnored var connectivity: Connectivity?
+    /// The phone's copy of the main data, served by some GETs while offline (`APIClient+Offline`).
+    @ObservationIgnored var offlineCache: OfflineCache?
 
     @ObservationIgnored private let session: URLSession
     @ObservationIgnored private let encoder = JSONCoding.makeEncoder()
@@ -107,6 +111,7 @@ final class APIClient {
         idempotencyKey: UUID? = nil,
         headers: [String: String] = [:]
     ) async throws -> Data {
+        try OfflineWriteGuard.check(method, path: path, isOnline: connectivity?.isOnline ?? true)
         let request = try makeRequest(
             method, path, query: query, body: body,
             contentType: contentType, timeout: timeout, idempotencyKey: idempotencyKey, headers: headers
@@ -114,6 +119,11 @@ final class APIClient {
         let (data, response) = try await perform(request)
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport(message: "Некорректный ответ сервера.")
+        }
+        if OfflineWriteGuard.isUnreachable(status: http.statusCode, body: data) {
+            connectivity?.serverUnreachable()
+        } else {
+            connectivity?.serverAnswered()
         }
         guard (200..<300).contains(http.statusCode) else {
             let error = APIError.from(status: http.statusCode, data: data)
@@ -132,6 +142,7 @@ final class APIClient {
         } catch let error as URLError {
             if error.code == .cancelled { throw CancellationError() }
             logger.error("Network error: \(error.localizedDescription, privacy: .public)")
+            if OfflineWriteGuard.isUnreachable(error.code) { connectivity?.serverUnreachable() }
             throw APIError.from(error)
         }
     }
