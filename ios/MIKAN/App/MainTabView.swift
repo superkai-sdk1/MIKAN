@@ -37,6 +37,15 @@ struct MainTabView: View {
         .sheet(item: $appState.pushRoute) { route in
             PushRouteView(route: route)
         }
+        // The cart's receipt turned out paid or deleted on another phone while it was not on screen.
+        .errorAlert(receiptGoneNotice, title: "Чек закрыт")
+    }
+
+    private var receiptGoneNotice: Binding<String?> {
+        Binding(
+            get: { appState.isReceiptOpen ? nil : appState.receipts.goneNotice },
+            set: { appState.receipts.goneNotice = $0 }
+        )
     }
 }
 

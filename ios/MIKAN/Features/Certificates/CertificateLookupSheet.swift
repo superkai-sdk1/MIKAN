@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// «Оплатить сертификатом»: type or paste the code, look it up (`GET /certificates/code/:code`), see its balance and
-/// choose how much of it pays this receipt.
+/// choose how much of it pays this receipt. Opened with the code of a certificate already paying the receipt, it looks
+/// it up at once to change the amount.
 struct CertificateLookupSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
@@ -15,6 +16,10 @@ struct CertificateLookupSheet: View {
     /// The code of the last lookup, so a complete code is looked up once while typing.
     @State private var lookedUp: String?
     @FocusState private var focusesCode: Bool
+
+    init(initialCode: String = "") {
+        _code = State(initialValue: initialCode)
+    }
 
     private var unavailableReason: String? { certificate.flatMap { CertificateText.unavailableReason($0) } }
     private var maxAmount: Int {
@@ -50,7 +55,9 @@ struct CertificateLookupSheet: View {
                 }
             }
             .errorAlert($errorMessage, title: "Сертификат не найден")
-            .onAppear { focusesCode = true }
+            .onAppear {
+                if CertificateCode.isComplete(code) { lookup() } else { focusesCode = true }
+            }
             .onChange(of: code) { _, newValue in
                 if CertificateCode.isComplete(newValue), CertificateCode.normalize(newValue) != lookedUp { lookup() }
             }
