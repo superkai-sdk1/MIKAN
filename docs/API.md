@@ -834,8 +834,9 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   `settings`, `bot`, `campaign`, `certificate`, `waitlist`, `portfolio`. A manual bonus adjustment is `client.bonus_adjust` on the client
   («Начислено 500 бонусов клиенту «Анна Иванова»: Компенсация»); certificates log `certificate.update` /
   `certificate.cancel` / `certificate.send`; a sale paid with bonuses or certificates says so («… Оплачено бонусами
-  300 ₽, сертификатом 1 000 ₽»); a delivery is `stock.delivery` («Поставка №4 от Industrial Strength: 3 позиции,
-  14 шт, 12 400 ₽»). `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
+  300 ₽, сертификатом 1 000 ₽»); a receipt sent by staff is `sale.send` («Чек №17 отправлен клиенту в Telegram»), a
+  delivery `stock.delivery` («Поставка №4 от Industrial Strength: 3 позиции, 14 шт, 12 400 ₽»). `action` is
+  `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
 - `entityId` is the id of what the entry is about: `deposit` — the appointment; `stock` — the product (`null` for a
   stock count or a delivery); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
   the booking request or the scheduled message; `sale` — the sale (`null` for a QR code not yet paid); `settings` and
@@ -1331,13 +1332,16 @@ the background.
   receipt sent it is part of it and no separate «Спасибо за покупку!» message goes; with `sendReceipt` off the separate
   notice goes as before.
 - `POST /sales/:id/send` `{ chatId? }` — staff send (or resend) the receipt: to `chatId` (a bot chat) or the client's
-  chat (the linked one, else the latest chat attributed to them). Without the bonus line. `409` «У клиента нет
-  Telegram — отправить чек некуда» / «Бот выключен» / the delivery problem («Клиент заблокировал бота»); a sale without
-  a client and no `chatId` → `409` «В чеке нет клиента». A refunded sale's receipt can be sent too (it shows the
-  refunds). Open to every role.
+  chat (the linked one, else the latest chat attributed to them). Without the bonus line. `400` «Чат Telegram не
+  найден»; `409` «У клиента нет Telegram — отправить чек некуда» / «Telegram-бот выключен — чек не отправлен» / the
+  delivery problem («Клиент заблокировал бота — сообщение не доставлено»); a sale without a client and no `chatId` →
+  `409` «В чеке нет клиента». A refunded sale's receipt can be sent too: after the payment line each refund reads
+  «↩️ Возврат 21 октября: −1 350 ₽ (Лабрет — 8 мм)». Open to every role; audited («Чек №17 отправлен клиенту в
+  Telegram»).
 - After a refund the client (same conditions, `sendReceipt` on) gets: «↩️ Возврат по чеку №17\nЛабрет — 8 мм — 1 350 ₽
   \nВернули: наличными 1 350 ₽» (+ «Бонусы: −67» when some were taken back, «Бонусы вернули: +300» when bonuses paid
-  came back).
+  came back). «Вернули» names the money parts that are not 0: «наличными», «на карту», «переводом», «по СБП», «в
+  предоплату записи», «на сертификат».
 
 ### QR payments (SBP via Tochka Bank)
 | Method | Path | Body | Response |

@@ -10,9 +10,9 @@ import { QrProviderError, type CreatedQr, type QrBankStatus, type QrProvider } f
 import { auditQrPaid } from './audit-events.js';
 import { announceQrDeposit } from './deposit-messages.js';
 import { recordQrDeposit } from './deposits.js';
-import { announceBonusEarned } from './loyalty.js';
 import { announceHoldPaid, awaitsPayment, holdSettled, settlePaidHold } from './online-booking-lifecycle.js';
 import { getSaleRow, serializeSale } from './refs.js';
+import { sendSaleReceipt } from './sale-messages.js';
 import { assertShiftOpen, createSale, prepareSale, type SaleInput } from './sales.js';
 import { getStudioSettings } from './settings.js';
 
@@ -214,8 +214,8 @@ async function checkBank(ctx: AppContext, id: number, force: boolean): Promise<Q
     if (updated.error) await alertStaff(ctx, updated);
     if (holdWaiting && holdSettled(ctx.db, updated)) await announceHoldPaid(ctx, updated.appointmentId!, updated.amount);
     else if (updated.kind === 'deposit') await announceQrDeposit(ctx, updated);
-    // The poll that found the payment does not wait for Telegram (announceBonusEarned never throws).
-    if (updated.saleId != null) void announceBonusEarned(ctx, updated.saleId);
+    // The poll that found the payment does not wait for Telegram (sendSaleReceipt never throws).
+    if (updated.saleId != null) void sendSaleReceipt(ctx, updated.saleId);
   }
   return updated;
 }

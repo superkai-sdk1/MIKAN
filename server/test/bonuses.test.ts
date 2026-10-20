@@ -378,7 +378,8 @@ describe('loyalty bonuses', () => {
     expect((await ledger()).balance).toBe(200);
   });
 
-  it('tells the linked client what was credited after a paid sale', async () => {
+  it('tells the linked client what was credited after a paid sale when the receipt is not sent', async () => {
+    await t.api('PUT', '/api/settings/studio', { pos: { sendReceipt: false } });
     linkTelegram(t.ctx.db, client.id, CHAT, 'anna');
     await adjust({ amount: 1125, note: 'Старт' });
     await sold({ cash: 3000 });

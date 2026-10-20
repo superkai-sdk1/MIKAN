@@ -119,6 +119,8 @@ const FIELD_LABELS: Record<string, string> = {
   supplier: 'Поставщик',
   unitCost: 'Цена закупки за штуку',
   search: 'Поиск',
+  pos: 'Касса',
+  sendReceipt: 'Отправлять чек клиенту в Telegram',
   size: 'Размер',
   serviceIds: 'Подходящие услуги',
   variantId: 'Размер',

@@ -403,6 +403,7 @@ export const saleOut = (
   note: sale.note,
   refundedAt: toIso(sale.refundedAt),
   refundReason: sale.refundReason,
+  receiptSentAt: toIso(sale.receiptSentAt),
   createdAt: toIso(sale.createdAt),
 });
 export type SaleOut = ReturnType<typeof saleOut>;

@@ -255,6 +255,13 @@ function qrCancel(c: SummaryContext): AuditDraft {
   return { action: 'sale.qr_cancel', entity: 'sale', entityId: q.sale?.id ?? null, summary: `QR-код на оплату №${q.id} ${outcome}`, changes: null };
 }
 
+/** «Чек №17 отправлен клиенту в Telegram» (or «в чат …» when staff picked one). */
+function saleSend(c: SummaryContext): AuditDraft {
+  const s = entityOf<SaleOut>(c.result);
+  const where = typeof c.body.chatId === 'number' ? `в Telegram, в чат ${c.body.chatId}` : 'клиенту в Telegram';
+  return { action: 'sale.send', entity: 'sale', entityId: s.id, summary: `Чек №${s.number} отправлен ${where}`, changes: null };
+}
+
 // ---------- open receipts ----------
 
 function receiptLabel(r: Pick<ReceiptOut, 'id' | 'client' | 'appointment'>): string {
@@ -345,4 +352,5 @@ export const visitSummaries: Record<string, SummaryBuilder> = {
   'POST /cash/shift/open': shiftOpen,
   'POST /cash/shift/close': shiftClose,
   'POST /cash/operations': cashOperation,
+  'POST /sales/:id/send': saleSend,
 };

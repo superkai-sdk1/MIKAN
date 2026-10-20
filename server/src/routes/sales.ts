@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
-import { announceBonusEarned } from '../domain/loyalty.js';
 import { getSaleRow, serializeSale } from '../domain/refs.js';
+import { sendReceiptByStaff, sendSaleReceipt } from '../domain/sale-messages.js';
 import { assertShiftOpen, createSale, listSales, refundSale, type SaleInput } from '../domain/sales.js';
 import { badRequest } from '../lib/errors.js';
 import { idempotent, REPLAYED_HEADER } from '../lib/idempotency.js';
@@ -69,6 +69,7 @@ export function saleInputOf(input: SaleBody): SaleInput {
 
 const refundBody = z.object({ reason: requiredText(500), restock: nonNull(z.boolean()) });
 const listQuery = pagination.extend({ from: queryInstant, to: queryInstant, clientId: queryId, search: z.string().trim().max(100).optional() });
+const sendBody = z.object({ chatId: z.number().int().refine(Number.isSafeInteger).nullish() });
 
 export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { db } = ctx;
@@ -91,9 +92,15 @@ export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
       assertShiftOpen(tx);
       return serializeSale(tx, createSale(tx, input, request.employee.id));
     });
-    // The client hears about the credited bonuses once (not on a replay); the reply does not wait for Telegram.
-    if (reply.getHeader(REPLAYED_HEADER) === undefined) void announceBonusEarned(ctx, sale.id);
+    // The client gets the receipt once (not on a replay); the reply does not wait for Telegram.
+    if (reply.getHeader(REPLAYED_HEADER) === undefined) void sendSaleReceipt(ctx, sale.id);
     return sale;
+  });
+
+  app.post('/sales/:id/send', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
+    const { id } = parse(idParams, request.params);
+    const input = parse(sendBody, request.body);
+    return serializeSale(db, await sendReceiptByStaff(ctx, id, input.chatId ?? null));
   });
 
   app.post('/sales/:id/refund', async (request, reply) => {

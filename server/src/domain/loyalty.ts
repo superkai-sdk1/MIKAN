@@ -106,10 +106,30 @@ function lastValidDay(ms: number, tz: string, now: number): string {
   return at.toFormat(sameYear ? 'd MMMM' : 'd MMMM yyyy');
 }
 
+/** «🎁 +75 бонусов, на счёте 1 275 — начисленные действуют до 14 ноября». */
+export function bonusEarnedLine(earned: BonusRow, balance: number, tz: string, now: number): string {
+  const base = `🎁 +${bonusesText(earned.amount)}, на счёте ${formatAmount(balance)}`;
+  return earned.expiresAt == null ? base : `${base} — начисленные действуют до ${lastValidDay(earned.expiresAt, tz, now)}`;
+}
+
 /** «Спасибо за покупку! 🎁 +75 бонусов, на счёте 1 275 — начисленные действуют до 14 ноября». */
 export function bonusEarnedText(earned: BonusRow, balance: number, tz: string, now: number): string {
-  const base = `Спасибо за покупку! 🎁 +${bonusesText(earned.amount)}, на счёте ${formatAmount(balance)}`;
-  return earned.expiresAt == null ? base : `${base} — начисленные действуют до ${lastValidDay(earned.expiresAt, tz, now)}`;
+  return `Спасибо за покупку! ${bonusEarnedLine(earned, balance, tz, now)}`;
+}
+
+/** The bonuses a sale earned (its `earn` lot), if any. */
+function earnedBy(db: DbOrTx, saleId: number): BonusRow | undefined {
+  return db.select().from(bonusOperations).where(eq(bonusOperations.saleId, saleId)).all().find((op) => op.type === 'earn');
+}
+
+/**
+ * The loyalty notice of a sale as a line of its receipt (docs/API.md «Receipt in Telegram»); null when it earned
+ * nothing or `loyalty.notifyClient` is off.
+ */
+export function saleBonusLine(db: DbOrTx, saleId: number, now = Date.now()): string | null {
+  const earned = earnedBy(db, saleId);
+  if (!earned || !getRetentionSettings(db).loyalty.notifyClient) return null;
+  return bonusEarnedLine(earned, bonusBalance(db, earned.clientId, now), studioTimezone(db), now);
 }
 
 /**
@@ -134,7 +154,7 @@ export function bonusContextLine(db: DbOrTx, clientId: number, now: number, tz: 
 export async function announceBonusEarned(ctx: AppContext, saleId: number): Promise<void> {
   try {
     const { db } = ctx;
-    const earned = db.select().from(bonusOperations).where(eq(bonusOperations.saleId, saleId)).all().find((op) => op.type === 'earn');
+    const earned = earnedBy(db, saleId);
     if (!earned || !getRetentionSettings(db).loyalty.notifyClient || !ctx.gateway.isRunning()) return;
     const client = getClientRow(db, earned.clientId);
     if (client.telegramChatId == null || !client.botEnabled || client.archived) return;
