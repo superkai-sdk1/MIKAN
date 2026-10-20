@@ -42,8 +42,10 @@ final class AppState {
     private(set) var employee: Employee?
     private(set) var badges = Badges.zero
     var selectedTab: AppTab = .schedule
-    /// Navigation inside «Касса»: other tabs land on the receipt screen by setting it.
+    /// Navigation inside «Касса» (sales and shift history).
     var posPath: [POSRoute] = []
+    /// The cart's receipt is on screen (`ReceiptFlowView`): alerts about it show there, not over the tabs.
+    var isReceiptOpen = false
     /// Shown on the login screen after a forced sign-out.
     var signOutNotice: String?
     /// The screen of a tapped push notification, shown over the tabs.
@@ -117,7 +119,6 @@ final class AppState {
         badges = .zero
         receipts.reset()
         cart.clear()
-        cart.isCheckoutPresented = false
         posPath = []
         shift.reset()
         schedule.reset()
@@ -187,21 +188,19 @@ final class AppState {
     }
 
     /// «Начать визит», «Открыть чек» or «Принять оплату» for an appointment: its open receipt — with the services,
-    /// client and prepayment, or the one another device already opened — in «Касса», where jewelry can still be
-    /// added before paying.
+    /// client and prepayment, or the one another device already opened — goes into the cart. The caller then shows it
+    /// (`receiptFlow`), right where the cashier is; jewelry can still be added before paying.
     func startCheckout(for appointment: Appointment) async throws {
         let receipt = try await receipts.startVisit(appointment)
         if var started = receipt.appointment {
             started.receiptId = receipt.id
             schedule.upsert(started)
         }
-        showReceipt()
     }
 
-    /// «Продать» in the client card: a new receipt for the client in «Касса».
+    /// «Продать» in the client card: a new receipt for the client in the cart (the caller shows it).
     func startSale(for client: ClientRef) async throws {
         try await receipts.openNew(for: client)
-        showReceipt()
     }
 
     /// Deletes an open receipt; its appointment, if any, is back among the unpaid ones in the schedule.
@@ -210,23 +209,10 @@ final class AppState {
         if hasAppointment { await schedule.refreshVisible() }
     }
 
-    /// Cancelling an appointment or marking a no-show deletes its open receipt on the server: the cart lets it go.
+    /// Cancelling an appointment or marking a no-show deletes its open receipt on the server: the cart lets it go
+    /// (a receipt on screen then closes by itself).
     func appointmentClosed(_ appointment: Appointment) {
         guard !appointment.isActive else { return }
-        if cart.appointmentId == appointment.id { closeReceipt() }
         receipts.forgetReceipt(ofAppointment: appointment.id)
-    }
-
-    /// The cart's receipt on the «Касса» tab (not in checkout).
-    func showReceipt() {
-        pushRoute = nil
-        cart.isCheckoutPresented = false
-        selectedTab = .pos
-        posPath = [.receipt]
-    }
-
-    /// Back to the POS hub (after a sale or a deletion).
-    func closeReceipt() {
-        posPath = []
     }
 }

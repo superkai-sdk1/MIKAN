@@ -22,6 +22,8 @@ struct ClientDetailView: View {
     @State private var isWorking = false
     @State private var errorMessage: String?
     @State private var showsMerge = false
+    /// «Продать»: the client's new receipt, shown over the card.
+    @State private var showsReceipt = false
     @State private var mergedAway = false
 
     init(
@@ -64,6 +66,9 @@ struct ClientDetailView: View {
         .task { await load() }
         .remoteErrorAlert(client)
         .errorAlert($errorMessage)
+        .receiptFlow(isPresented: $showsReceipt) {
+            Task { await loadHistory() }
+        }
         .navigationDestination(isPresented: $showsChat) {
             if let current = client.value {
                 ClientChatView(client: current.ref)
@@ -237,13 +242,14 @@ struct ClientDetailView: View {
         Task { await loadHistory() }
     }
 
-    /// «Продать»: a new open receipt for the client in «Касса».
+    /// «Продать»: a new open receipt for the client, shown over the card.
     private func startSale(for client: ClientRef) {
         isWorking = true
         Task {
             defer { isWorking = false }
             do {
                 try await appState.startSale(for: client)
+                showsReceipt = true
             } catch {
                 errorMessage = error.userMessage
             }

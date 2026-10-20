@@ -259,7 +259,6 @@ final class OpenReceiptsStore {
         guard cart.receiptId == id, closingId != id else { return }
         forget()
         cart.clear()
-        cart.isCheckoutPresented = false
         goneNotice = Self.goneMessage
     }
 

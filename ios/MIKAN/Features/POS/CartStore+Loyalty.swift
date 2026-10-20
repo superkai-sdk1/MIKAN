@@ -63,8 +63,11 @@ extension CartStore {
         return CheckoutCredits.suggestedAmount(balance: balance, unpaid: amountDue + own)
     }
 
-    func spendMaxBonuses() {
-        bonusRequested = bonusLimit
+    /// «Списать N бонусов»: on asks for the whole balance, so the receipt always takes the most it may
+    /// (`bonusLimit` follows the lines and the discount); off spends none.
+    var spendsBonuses: Bool {
+        get { bonusRequested > 0 }
+        set { bonusRequested = newValue ? bonusBalance : 0 }
     }
 
     // MARK: Birthday discount

@@ -15,6 +15,8 @@ struct AppointmentDetailView: View {
     @State private var editorDraft: AppointmentDraft?
     @State private var showsComplete = false
     @State private var pendingCheckout: Appointment?
+    /// The visit's receipt, shown over this card.
+    @State private var showsReceipt = false
     @State private var confirmsCancel = false
     @State private var confirmsNoShow = false
     @State private var showsChat = false
@@ -114,6 +116,10 @@ struct AppointmentDetailView: View {
             if let rule = DepositRules.closingNote(appointment, becoming: .noShow) {
                 Text(rule)
             }
+        }
+        .receiptFlow(isPresented: $showsReceipt) {
+            // Paid, completed or still open: the card shows where the visit is now.
+            Task { await reload() }
         }
         .errorAlert($errorMessage)
         .sensoryFeedback(.success, trigger: successCount)
@@ -353,7 +359,8 @@ struct AppointmentDetailView: View {
         startCheckout(completed)
     }
 
-    /// Opens the visit's receipt in «Касса» (creating it with the services, client and prepayment if needed).
+    /// Opens the visit's receipt over this card (creating it with the services, client and prepayment if needed):
+    /// jewelry is added and the visit paid right here, without switching to «Касса».
     private func startCheckout(_ target: Appointment) {
         isWorking = true
         isStartingCheckout = true
@@ -364,6 +371,7 @@ struct AppointmentDetailView: View {
             }
             do {
                 try await appState.startCheckout(for: target)
+                showsReceipt = true
             } catch {
                 errorMessage = error.userMessage
             }

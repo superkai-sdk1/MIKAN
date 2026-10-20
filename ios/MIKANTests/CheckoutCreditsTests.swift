@@ -95,7 +95,7 @@ struct CheckoutCreditsTests {
     @Test("Credits covering everything leave nothing for the methods, and the sale can go")
     func paidInFullByCredits() throws {
         let cart = try loyalCart()
-        cart.spendMaxBonuses()
+        cart.spendsBonuses = true
         cart.addCertificateCharge(Self.certificate("MIKAN-7K3Q-9F2D", balance: 10_000), amount: 10_000)
 
         #expect(cart.bonusApplied == 1_500)
@@ -107,6 +107,26 @@ struct CheckoutCreditsTests {
         #expect(cart.payments.total == 5_000)
         #expect(cart.canSubmit)
         #expect(CheckoutPaidText.fullyPaid(deposit: 0, bonus: 1_500, certificate: 3_500) == "Чек полностью оплачен бонусами и сертификатом")
+    }
+
+    @Test("«Списать N бонусов» takes the most the receipt allows, follows the lines and spends none when off")
+    func bonusToggle() throws {
+        let cart = try loyalCart()
+        #expect(!cart.spendsBonuses)
+
+        cart.spendsBonuses = true
+        #expect(cart.spendsBonuses)
+        #expect(cart.bonusApplied == 1_500, "30% of 5 000, below the 2 000 balance")
+
+        cart.addCustomService(name: "Мочка", price: 1_000)
+        #expect(cart.bonusApplied == 1_800, "the limit grows with the receipt")
+        cart.discount = 6_000
+        #expect(cart.bonusApplied == 0, "nothing is left to pay")
+
+        cart.spendsBonuses = false
+        cart.discount = 0
+        #expect(cart.bonusRequested == 0)
+        #expect(cart.bonusApplied == 0)
     }
 
     @Test("A manual split must cover only what is left after the credits")
@@ -245,9 +265,8 @@ struct CheckoutCreditsTests {
     func certificateCharges() throws {
         let cart = try loyalCart()
         let certificate = Self.certificate("MIKAN-7K3Q-9F2D", balance: 2_000)
-        cart.addCertificateCharge(certificate, amount: 1_000)
-        cart.setCertificateAmount(9_000, code: certificate.code)
-        #expect(cart.certificateCharges.map(\.amount) == [9_000], "what was typed is kept")
+        cart.addCertificateCharge(certificate, amount: 9_000)
+        #expect(cart.certificateCharges.map(\.amount) == [9_000], "what was asked is kept")
         #expect(cart.certificateAmounts == [2_000], "only the balance is spent")
 
         #expect(cart.suggestedCertificateAmount(balance: 2_000, code: certificate.code) == 2_000)

@@ -146,3 +146,16 @@ nonisolated enum BonusText {
         "\(count(expiring.amount)) \(Plural.word(expiring.amount, one: "сгорит", few: "сгорят", many: "сгорят")) \(DateText.dayMonth(expiring.at))"
     }
 }
+
+/// «Чек полностью оплачен предоплатой и бонусами» when nothing is left for the payment methods.
+nonisolated enum CheckoutPaidText {
+    static func fullyPaid(deposit: Int, bonus: Int, certificate: Int) -> String {
+        let parts = [
+            deposit > 0 ? "предоплатой" : nil,
+            bonus > 0 ? "бонусами" : nil,
+            certificate > 0 ? "сертификатом" : nil,
+        ].compactMap { $0 }
+        guard !parts.isEmpty else { return "Чек полностью оплачен" }
+        return "Чек полностью оплачен " + parts.formatted(.list(type: .and).locale(.app))
+    }
+}
