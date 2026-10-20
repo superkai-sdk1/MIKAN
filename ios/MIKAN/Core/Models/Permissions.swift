@@ -19,7 +19,8 @@ nonisolated struct Permissions: Equatable, Sendable {
 
     /// Create employees, edit others, roles and access.
     var managesEmployees: Bool { role == .owner }
-    /// Services, products, categories, aftercare templates, stock movements, purchases, revisions, image generation.
+    /// Services, products, categories, aftercare templates, stock movements, purchases, revisions, deliveries, image
+    /// generation. Every role reads deliveries.
     var editsCatalog: Bool { role != .master }
     /// Reports and analytics.
     var seesReports: Bool { role != .master }
