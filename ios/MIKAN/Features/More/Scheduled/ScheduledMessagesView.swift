@@ -4,6 +4,8 @@ import SwiftUI
 struct ScheduledMessagesView: View {
     @Environment(APIClient.self) private var api
     @State private var status: ScheduledStatus = .pending
+    /// The filter on screen: cleared only for another one, not when the screen reappears after a swipe back.
+    @State private var shownStatus: ScheduledStatus?
     @State private var messages = Remote<[ScheduledMessage]>()
     @State private var pendingCancel: ScheduledMessage?
     @State private var errorMessage: String?
@@ -57,7 +59,8 @@ struct ScheduledMessagesView: View {
         }
         .refreshable { await load() }
         .task(id: status) {
-            messages.reset()
+            if shownStatus != status { messages.reset() }
+            shownStatus = status
             await load()
         }
         .remoteErrorAlert(messages)

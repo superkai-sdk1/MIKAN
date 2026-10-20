@@ -123,6 +123,7 @@
 		3F58FBA4023FC13223536669 /* Payroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB1F0A87BFF4D3395325F37 /* Payroll.swift */; };
 		3F88109173635F879778F2FE /* NumberField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74D0D86DB71C6C4DF9D782E4 /* NumberField.swift */; };
 		3FBEFF314DABAD638A13063D /* OnlineBookingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54FC9858278286F77E5128C7 /* OnlineBookingTests.swift */; };
+		3FDAE1EEC668941C0CDD1756 /* PayRulesQuickSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4699592E17415A38D02A491 /* PayRulesQuickSetup.swift */; };
 		4006DD886E853163DEBD37E5 /* TelegramMessagePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9487359362CA8AEB3D7832ED /* TelegramMessagePreview.swift */; };
 		40AB2715781E2B99D8AC97A8 /* AnalyticsMarginCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A4F86AE8BD474A35F37BEA /* AnalyticsMarginCard.swift */; };
 		411B8490148FEC83DB1715DB /* ImagePreparer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E91FD698B24533B48C28D6 /* ImagePreparer.swift */; };
@@ -241,6 +242,7 @@
 		82CF2948DF15563FD6BDBAB2 /* Endpoints+Catalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2845D12869F764947E4EAE9B /* Endpoints+Catalog.swift */; };
 		8397C9056B316234B38DB456 /* ServiceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F985F915493E3CA5811D421A /* ServiceDetailView.swift */; };
 		8467AB003262A0E141C2760B /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3192E6BD1F94E3689FF1D90C /* MainTabView.swift */; };
+		849291F0D516F7F678E3AA38 /* PayRulesQuickSetupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625A89E6F2B4BC9BD6262BFC /* PayRulesQuickSetupTests.swift */; };
 		84D47A3B5B46AE4A01470119 /* PreviewData+Growth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293F5260DFC602616C805B15 /* PreviewData+Growth.swift */; };
 		8751E2C91191E75DFA1EAB7C /* POSGoodsCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CA163F30E275FD613FC0B67 /* POSGoodsCatalogTests.swift */; };
 		8759C654CBB9D24B5DE14C6C /* ShiftBreakdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 806C8FD8DE9F085AFCEEC8AB /* ShiftBreakdown.swift */; };
@@ -361,6 +363,7 @@
 		C2F682CA0E52480666326052 /* Endpoints+Sessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B64221328425A42694964A9 /* Endpoints+Sessions.swift */; };
 		C3A3F23A0C0782391B9A4FE3 /* AppointmentDragPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E56CDBE503E21E686C91CF /* AppointmentDragPlan.swift */; };
 		C3BD68831E741882329EA5F3 /* ReceiptSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54927AFEDBC899FA87058CC /* ReceiptSections.swift */; };
+		C460D5AA966FFC394C0324F8 /* PayRulesQuickSetupSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E5023FDAA7B60B55BF38DC3 /* PayRulesQuickSetupSheet.swift */; };
 		C57525FED971738F2FA633C0 /* AnalyticsSplitCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5BEB86644F6A5B2B39AA34F /* AnalyticsSplitCards.swift */; };
 		C5FBA0266ABC6EDEEE3481FA /* ProductDetailCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD067D1BCF2FF1C579248D4 /* ProductDetailCards.swift */; };
 		C683EE6C4567C7378AFB0735 /* CampaignDetailSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = E172111CADDF7799972F14E3 /* CampaignDetailSections.swift */; };
@@ -441,6 +444,7 @@
 		EFF659649A6212E1D25DAFD4 /* WorkTimeText.swift in Sources */ = {isa = PBXBuildFile; fileRef = F78870887D232429708286E7 /* WorkTimeText.swift */; };
 		F040F8FF231CA0ADF26C50ED /* ServiceImageGeneratorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28C988C6E050500E2F681698 /* ServiceImageGeneratorSheet.swift */; };
 		F295CD11AE9B396D884BAF77 /* InventoryFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10600C3F87F484E7121B5DEC /* InventoryFilterTests.swift */; };
+		F349F1EACDA4993F9E17DF83 /* PayRulesOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5F0459734226C9ED88EBCB1 /* PayRulesOverviewView.swift */; };
 		F34CD475EDA3E05E96CACE0A /* ProductCardText.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8ADD0517AA589E9C35201E7 /* ProductCardText.swift */; };
 		F548DC59C5CB026E779974F3 /* AppointmentDragController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DE7D2D4C4F5177CDD86F4EF /* AppointmentDragController.swift */; };
 		F6757158354DFB6D43066F13 /* ClientDuplicates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0677D8092869EC028B7203 /* ClientDuplicates.swift */; };
@@ -555,6 +559,7 @@
 		2E0AA56926D7FD20A7F1D858 /* Endpoints+Waitlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Endpoints+Waitlist.swift"; sourceTree = "<group>"; };
 		2E29973317489C64BE9FF765 /* AppState+Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppState+Push.swift"; sourceTree = "<group>"; };
 		2E3883445BA4BD7D21F5AA4D /* CheckoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckoutView.swift; sourceTree = "<group>"; };
+		2E5023FDAA7B60B55BF38DC3 /* PayRulesQuickSetupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayRulesQuickSetupSheet.swift; sourceTree = "<group>"; };
 		2EF2B69CC60FFD9AA74F14C2 /* StockBatchDraftTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockBatchDraftTests.swift; sourceTree = "<group>"; };
 		3192E6BD1F94E3689FF1D90C /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		31A94E2938811D082BAD0CC9 /* AnalyticsExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsExport.swift; sourceTree = "<group>"; };
@@ -635,6 +640,7 @@
 		5F22074F86AA94D0A8E8386C /* WaitlistDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaitlistDraft.swift; sourceTree = "<group>"; };
 		5F2C8181B94F86AF2F921292 /* DepositCollectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositCollectView.swift; sourceTree = "<group>"; };
 		5F5BE31C742F5DC36E85AD4B /* AppointmentServicesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentServicesSection.swift; sourceTree = "<group>"; };
+		625A89E6F2B4BC9BD6262BFC /* PayRulesQuickSetupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayRulesQuickSetupTests.swift; sourceTree = "<group>"; };
 		62A63772ABF0BBC897C410AC /* StaffDigestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffDigestTests.swift; sourceTree = "<group>"; };
 		62C5E64C1AE8475764D3AC90 /* AnalyticsDelta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsDelta.swift; sourceTree = "<group>"; };
 		6366CBA7544C22C932871225 /* AppointmentStatus+UI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppointmentStatus+UI.swift"; sourceTree = "<group>"; };
@@ -781,6 +787,7 @@
 		B053924DF1EBF1D121C5DD49 /* BonusAdjustSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonusAdjustSheet.swift; sourceTree = "<group>"; };
 		B2854EAFD96902EB07822A2A /* CampaignTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CampaignTests.swift; sourceTree = "<group>"; };
 		B34C7659E09EE1277D09AFBD /* DepositRetainSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositRetainSheet.swift; sourceTree = "<group>"; };
+		B4699592E17415A38D02A491 /* PayRulesQuickSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayRulesQuickSetup.swift; sourceTree = "<group>"; };
 		B4A21C479E1D00CD88174D96 /* ServiceProductPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceProductPicker.swift; sourceTree = "<group>"; };
 		B51ECA162A390E784B7685FF /* Bot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bot.swift; sourceTree = "<group>"; };
 		B64DCC2C0B3204B305023435 /* ReceiptDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptDraft.swift; sourceTree = "<group>"; };
@@ -892,6 +899,7 @@
 		F3978E49CF74DEF6ECE07A09 /* ProductServicesPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductServicesPicker.swift; sourceTree = "<group>"; };
 		F498EE4CE44C49F3DDBB2B08 /* IdempotencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdempotencyTests.swift; sourceTree = "<group>"; };
 		F570F0AE8CBD75361C25A644 /* OfflineModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineModeTests.swift; sourceTree = "<group>"; };
+		F5F0459734226C9ED88EBCB1 /* PayRulesOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayRulesOverviewView.swift; sourceTree = "<group>"; };
 		F64EE04B6EFEC683AD963D98 /* BookingRequestsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookingRequestsView.swift; sourceTree = "<group>"; };
 		F71781FD96A7025755A6A201 /* OpenReceiptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenReceiptTests.swift; sourceTree = "<group>"; };
 		F78870887D232429708286E7 /* WorkTimeText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkTimeText.swift; sourceTree = "<group>"; };
@@ -1184,6 +1192,7 @@
 				F71781FD96A7025755A6A201 /* OpenReceiptTests.swift */,
 				9609329DD2C1DFAED71C56E8 /* PaymentSplitTests.swift */,
 				EED08CDD3EFA4E388388FD95 /* PayrollTests.swift */,
+				625A89E6F2B4BC9BD6262BFC /* PayRulesQuickSetupTests.swift */,
 				AE5CA08FADB7557BFF0368A5 /* PermissionsTests.swift */,
 				1427BF9E77297ECB3CDFD2F5 /* PortfolioTests.swift */,
 				4CA163F30E275FD613FC0B67 /* POSGoodsCatalogTests.swift */,
@@ -1506,6 +1515,9 @@
 				F9100402338837A75D1DDA2E /* PayrollText.swift */,
 				485A78916D7903E96130DD0F /* PayrollView.swift */,
 				C36B728D0F352183CA86BA45 /* PayRulesEditorView.swift */,
+				F5F0459734226C9ED88EBCB1 /* PayRulesOverviewView.swift */,
+				B4699592E17415A38D02A491 /* PayRulesQuickSetup.swift */,
+				2E5023FDAA7B60B55BF38DC3 /* PayRulesQuickSetupSheet.swift */,
 				E0989F07B0BFD5CDDE727A68 /* PayRulesSection.swift */,
 				3D31ECB84AFDD6104429C9A4 /* PayRulesView.swift */,
 			);
@@ -2117,6 +2129,9 @@
 				1E094868B83F94329D627BA5 /* POSHubViews.swift in Sources */,
 				FFFFC646C27DE1309E7D030E /* POSView.swift in Sources */,
 				B65EFDA4FE18B5A33EFF94DC /* PayRulesEditorView.swift in Sources */,
+				F349F1EACDA4993F9E17DF83 /* PayRulesOverviewView.swift in Sources */,
+				3FDAE1EEC668941C0CDD1756 /* PayRulesQuickSetup.swift in Sources */,
+				C460D5AA966FFC394C0324F8 /* PayRulesQuickSetupSheet.swift in Sources */,
 				7AC1E8E33172CEA40680BB1F /* PayRulesSection.swift in Sources */,
 				6091BCB69F8ACDB87D24ED67 /* PayRulesView.swift in Sources */,
 				2A97CAB3F32269F452AEE750 /* PaymentLines.swift in Sources */,
@@ -2321,6 +2336,7 @@
 				8751E2C91191E75DFA1EAB7C /* POSGoodsCatalogTests.swift in Sources */,
 				B9713C72CACAEA8A9A0AFBB9 /* POSProductSizesTests.swift in Sources */,
 				17A8C3854DD054EF9A89058C /* POSReceiptTests.swift in Sources */,
+				849291F0D516F7F678E3AA38 /* PayRulesQuickSetupTests.swift in Sources */,
 				B093AFBDD6C9987914D5D4A8 /* PaymentSplitTests.swift in Sources */,
 				4CE01C5EBE98108967DB461D /* PayrollTests.swift in Sources */,
 				A35ABF3EDBA3D45EBFFD1A6B /* PermissionsTests.swift in Sources */,

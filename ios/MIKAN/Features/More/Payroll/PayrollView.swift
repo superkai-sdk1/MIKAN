@@ -22,6 +22,9 @@ private struct PayrollListView: View {
     @Environment(APIClient.self) private var api
     @State private var selection = PayrollPeriodSelection()
     @State private var list = Remote<PayrollList>()
+    /// The period on screen. The task runs again whenever the screen reappears (a swipe back from a statement): the
+    /// rows are cleared only for another period, otherwise they stay while the list quietly refreshes.
+    @State private var shownRange: PayrollRange?
 
     private var range: PayrollRange { selection.range() }
 
@@ -43,23 +46,41 @@ private struct PayrollListView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         .refreshable { await load() }
         .task(id: range) {
-            list.reset()
+            if shownRange != range { list.reset() }
+            shownRange = range
             await load()
         }
         .remoteErrorAlert(list)
         .navigationTitle("Зарплата")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    PayRulesOverviewView()
+                } label: {
+                    Label("Правила", systemImage: "slider.horizontal.3")
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private func content(_ items: [PayrollStatement]) -> some View {
         if items.isEmpty {
-            ContentUnavailableView(
-                "Начислений нет",
-                systemImage: "banknote",
-                description: Text("Настройте правила зарплаты в карточке сотрудника: Ещё → Сотрудники.")
-            )
+            ContentUnavailableView {
+                Label("Начислений нет", systemImage: "banknote")
+            } description: {
+                Text("Задайте, как платить мастерам — например, 60 на 40, — и зарплата посчитается сама.")
+            } actions: {
+                NavigationLink {
+                    PayRulesOverviewView()
+                } label: {
+                    Text("Настроить зарплату")
+                }
+                .buttonStyle(.borderedProminent)
+            }
         } else {
+            rulesHint
             totals(items)
             ForEach(items) { statement in
                 NavigationLink {
@@ -70,6 +91,26 @@ private struct PayrollListView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    /// Above the list: where the rules live, so the owner never has to look for them in the employee cards.
+    private var rulesHint: some View {
+        NavigationLink {
+            PayRulesOverviewView()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "slider.horizontal.3").foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Правила зарплаты").font(.subheadline.weight(.semibold))
+                    Text("Доля мастера, оклад, оплата за день").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .cardStyle(padding: 14)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
     }
 
     private func totals(_ items: [PayrollStatement]) -> some View {

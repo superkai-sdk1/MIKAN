@@ -12,6 +12,8 @@ struct PayrollStatementView: View {
     @State private var addsAdjustment = false
     @State private var deleting: PayrollAdjustment?
     @State private var errorMessage: String?
+    /// The period on screen: cleared only for another period, not when the screen reappears (see PayrollListView).
+    @State private var shownRange: PayrollRange?
 
     init(employee: EmployeeRef, selection: PayrollPeriodSelection) {
         self.employee = employee
@@ -46,7 +48,8 @@ struct PayrollStatementView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         .refreshable { await load() }
         .task(id: range) {
-            statement.reset()
+            if shownRange != range { statement.reset() }
+            shownRange = range
             await load()
         }
         .remoteErrorAlert(statement)

@@ -5,6 +5,8 @@ import SwiftUI
 struct ReportsView: View {
     @Environment(APIClient.self) private var api
     @State private var period: ReportPeriod = .month
+    /// The period on screen: cleared only for another one, not when the screen reappears after a swipe back.
+    @State private var shownPeriodKey: String?
     @State private var customFrom = Calendar.app.date(byAdding: .day, value: -6, to: .now) ?? .now
     @State private var customTo = Date.now
     @State private var analytics = Remote<ReportAnalytics>()
@@ -46,8 +48,11 @@ struct ReportsView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         .refreshable { await load() }
         .task(id: periodKey) {
-            analytics.reset()
-            growth.reset()
+            if shownPeriodKey != periodKey {
+                analytics.reset()
+                growth.reset()
+            }
+            shownPeriodKey = periodKey
             await load()
         }
         .onChange(of: section) {
