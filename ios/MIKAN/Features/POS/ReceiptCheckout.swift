@@ -55,6 +55,10 @@ final class ReceiptCheckout {
         return false
     }
 
+    /// Being paid: the sale or the QR code is on its way, a QR code waits for the bank, or a lost answer waits for
+    /// «Повторить». The receipt is neither re-read nor changed meanwhile.
+    var isPaying: Bool { isSubmitting || qrPayment != nil || retryMessage != nil }
+
     // MARK: Paying
 
     func submit() {

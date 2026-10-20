@@ -335,6 +335,21 @@ struct OpenReceiptTests {
         #expect(!PaymentDueList.offersScope(to: nil))
     }
 
+    @Test("The hub waits for both lists, then shows what loaded with the other one's failure")
+    func paymentDueLoadState() {
+        #expect(PaymentDueLoadState(receipts: (hasValue: true, failure: nil), visits: (hasValue: false, failure: nil)) == .loading)
+        #expect(PaymentDueLoadState(receipts: (hasValue: true, failure: nil), visits: (hasValue: true, failure: nil)) == .loaded(problem: nil))
+        #expect(
+            PaymentDueLoadState(receipts: (hasValue: true, failure: nil), visits: (hasValue: false, failure: "Нет сети"))
+                == .loaded(problem: "Нет сети"),
+            "open receipts still show when the visits did not load"
+        )
+        #expect(
+            PaymentDueLoadState(receipts: (hasValue: false, failure: "Ошибка"), visits: (hasValue: false, failure: "Нет сети"))
+                == .failed("Ошибка")
+        )
+    }
+
     @Test("Card texts: the client, what is paid for, the time and master")
     func paymentDueTexts() throws {
         var utc = Calendar(identifier: .gregorian)

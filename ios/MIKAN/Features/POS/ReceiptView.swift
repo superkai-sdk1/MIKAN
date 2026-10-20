@@ -38,6 +38,8 @@ struct ReceiptView: View {
                 ReceiptVisitSection()
             }
         }
+        // Nothing changes while the sale is on its way: it was built from the cart as it was.
+        .disabled(checkout.isSubmitting)
         .listSectionSpacing(.compact)
         .auraBackground()
         .scrollDismissesKeyboard(.interactively)
@@ -56,7 +58,11 @@ struct ReceiptView: View {
         }
         .receiptDeletionDialog($deletion, onDelete: delete)
         .errorAlert($deleteError, title: "Чек не удалён")
-        .errorAlert(Binding(get: { checkout.errorMessage }, set: { checkout.errorMessage = $0 }), title: checkout.errorTitle)
+        // While the QR code is up its sheet shows the errors.
+        .errorAlert(
+            Binding(get: { checkout.qrPayment == nil ? checkout.errorMessage : nil }, set: { checkout.errorMessage = $0 }),
+            title: checkout.errorTitle
+        )
         .retryAlert(
             Binding(get: { checkout.retryMessage }, set: { checkout.retryMessage = $0 }),
             title: "Продажа могла пройти",
@@ -65,6 +71,10 @@ struct ReceiptView: View {
         // The catalog sheet refreshes it each time it opens; here it only gets ready.
         .task { if catalog.value == nil { await loadCatalog() } }
         .task { await loadReference() }
+        .onChange(of: cart.receiptId) { _, id in
+            // Paid or deleted elsewhere: the sheets go, so the notice can show.
+            if id == nil { sheet = nil }
+        }
     }
 
     @ToolbarContentBuilder

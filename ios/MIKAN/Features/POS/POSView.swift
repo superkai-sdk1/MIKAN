@@ -25,10 +25,12 @@ struct POSView: View {
         PaymentDueList.items(receipts: receipts.list.value ?? [], visits: queue.value ?? [])
     }
 
+    /// A spinner until both lists have answered; then what loaded, with a retry row for a list that failed.
     private var loadState: PaymentDueLoadState {
-        if receipts.list.value != nil || queue.value != nil { return .loaded }
-        if let failure = receipts.list.failure ?? queue.failure { return .failed(failure) }
-        return .loading
+        PaymentDueLoadState(
+            receipts: (receipts.list.value != nil, receipts.list.failure),
+            visits: (queue.value != nil, queue.failure)
+        )
     }
 
     var body: some View {

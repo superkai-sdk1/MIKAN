@@ -36,6 +36,7 @@ struct ReceiptFlowView: View {
             QRPaymentSheet(payment: payment, checkout: checkout)
         }
         .errorAlert(goneNotice, title: "Чек закрыт")
+        .sensoryFeedback(.success, trigger: checkout.isSold) { _, isSold in isSold }
         .task(id: checkout.isSold) {
             guard !checkout.isSold else { return }
             await syncWhileEditing()
@@ -44,7 +45,11 @@ struct ReceiptFlowView: View {
             // Deleted here, or let go because its appointment was cancelled: nothing is left to show.
             if id == nil, !checkout.isSold, receipts.goneNotice == nil { dismiss() }
         }
-        .onAppear { appState.isReceiptOpen = true }
+        .onAppear {
+            appState.isReceiptOpen = true
+            // A notice about an earlier receipt that could not be shown is out of date now.
+            if cart.receiptId != nil { receipts.goneNotice = nil }
+        }
         .onDisappear {
             appState.isReceiptOpen = false
             if checkout.isSold { cart.clear() }
@@ -69,7 +74,9 @@ struct ReceiptFlowView: View {
 
     private func syncWhileEditing() async {
         while !Task.isCancelled {
-            await receipts.syncCart()
+            // Not while it is being paid: a QR code paid or a sale that went through deletes the receipt on the server,
+            // and the cart must stay as it is until the outcome is known.
+            if !checkout.isPaying { await receipts.syncCart() }
             try? await Task.sleep(for: Self.syncInterval)
         }
     }
@@ -105,6 +112,7 @@ private struct QRPaymentSheet: View {
     let checkout: ReceiptCheckout
 
     var body: some View {
+        @Bindable var checkout = checkout
         NavigationStack {
             QRPaymentView(
                 payment: payment,
@@ -117,6 +125,8 @@ private struct QRPaymentSheet: View {
             .id(payment.id)
             .navigationTitle("Оплата по QR")
             .navigationBarTitleDisplayMode(.inline)
+            // A new code that could not be created is reported here, over the receipt.
+            .errorAlert($checkout.errorMessage, title: checkout.errorTitle)
         }
         .interactiveDismissDisabled()
     }

@@ -24,7 +24,6 @@ struct SaleSuccessView: View {
         .navigationTitle("Продажа проведена")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaBar(edge: .bottom) { buttons }
-        .sensoryFeedback(.success, trigger: sale.id)
         .errorAlert($errorMessage, title: "Чек не открыт")
     }
 
@@ -73,6 +72,7 @@ struct SaleSuccessView: View {
                     .padding(.vertical, 4)
             }
             .buttonStyle(.glassProminent)
+            .disabled(isStartingNewSale)
         }
         .controlSize(.large)
         .padding(.horizontal, 16)
@@ -97,13 +97,16 @@ private struct SaleSuccessHero: View {
     let sale: Sale
     let cashChange: Int?
 
+    @State private var bounces = false
+
     var body: some View {
         Section {
             VStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(.green)
-                    .symbolEffect(.bounce, value: sale.id)
+                    .symbolEffect(.bounce, value: bounces)
+                    .onAppear { bounces = true }
                     .accessibilityHidden(true)
                 Text("Продажа №\(sale.number)").font(.title3.weight(.semibold))
                 MoneyText(sale.total).font(.system(.largeTitle, design: .rounded).weight(.bold))

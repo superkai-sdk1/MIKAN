@@ -7,8 +7,16 @@ struct SaleReceiptDeliverySection: View {
     @Environment(APIClient.self) private var api
     let sale: Sale
 
+    /// `nil` until the studio's setting is known.
     @State private var state: SaleReceiptDeliveryState?
     @State private var errorMessage: String?
+
+    init(sale: Sale) {
+        self.sale = sale
+        // Without a client, without Telegram, or already sent, the answer is known before the studio's setting.
+        let seed = SaleReceiptDelivery.initialState(sale, sendsReceipts: nil)
+        _state = State(initialValue: seed == .waiting ? nil : seed)
+    }
 
     var body: some View {
         if state != .noClient {
@@ -61,10 +69,6 @@ struct SaleReceiptDeliverySection: View {
     /// Waits for the automatic receipt: checks the sale `maxChecks` times, `checkInterval` apart.
     private func watch() async {
         guard state == nil else { return }
-        guard sale.client != nil, sale.receiptSentAt == nil else {
-            state = SaleReceiptDelivery.initialState(sale, sendsReceipts: nil)
-            return
-        }
         let sendsReceipts = try? await api.studioSettings().pos?.sendReceipt
         var current = SaleReceiptDelivery.initialState(sale, sendsReceipts: sendsReceipts)
         state = current

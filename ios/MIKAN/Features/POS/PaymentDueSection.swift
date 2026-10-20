@@ -60,8 +60,12 @@ struct PaymentDueSection: View {
             ErrorStateView(message: message, retry: retry)
                 .cardStyle()
                 .hubRow()
-        case .loaded:
-            if items.isEmpty {
+        case .loaded(let problem):
+            if let problem {
+                PaymentDueProblemRow(message: problem, retry: retry)
+                    .hubRow()
+            }
+            if items.isEmpty, problem == nil {
                 PaymentDueEmptyCard(hidesAll: hidesAll) { scope?.wrappedValue = .all }
                     .hubRow()
             } else {
@@ -107,11 +111,56 @@ struct PaymentDueSection: View {
     }
 }
 
-/// Where the «К оплате» lists are.
-enum PaymentDueLoadState: Equatable {
+/// Where the two lists of «К оплате» (open receipts, unpaid visits) are.
+nonisolated enum PaymentDueLoadState: Equatable, Sendable {
+    /// One of them has not answered yet.
     case loading
+    /// Neither loaded.
     case failed(String)
-    case loaded
+    /// At least one loaded; `problem` — why the other did not.
+    case loaded(problem: String?)
+
+    /// Each list: whether it has a value and why its last load failed while it had none.
+    init(receipts: (hasValue: Bool, failure: String?), visits: (hasValue: Bool, failure: String?)) {
+        let lists = [receipts, visits]
+        if lists.contains(where: { !$0.hasValue && $0.failure == nil }) {
+            self = .loading
+        } else if !lists.contains(where: \.hasValue) {
+            self = .failed(receipts.failure ?? visits.failure ?? "")
+        } else {
+            self = .loaded(problem: receipts.failure ?? visits.failure)
+        }
+    }
+}
+
+/// One of the lists did not load: what is there is shown, with this row to try again.
+private struct PaymentDueProblemRow: View {
+    let message: String
+    let retry: () async -> Void
+
+    @State private var isRetrying = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Label(message, systemImage: "exclamationmark.icloud")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Button {
+                Task {
+                    isRetrying = true
+                    await retry()
+                    isRetrying = false
+                }
+            } label: {
+                if isRetrying { ProgressView() } else { Text("Повторить") }
+            }
+            .buttonStyle(.bordered)
+            .frame(minHeight: 44)
+            .disabled(isRetrying)
+        }
+        .cardStyle(padding: 14)
+    }
 }
 
 /// A card: the client and amount, what is paid for, time and master, and badges (visit status, prepayment held or
