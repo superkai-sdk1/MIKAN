@@ -1,12 +1,14 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
+import type { DbOrTx } from '../db/client.js';
 import { cancellationPolicyText } from '../domain/cancellation.js';
 import { findClientByChat } from '../domain/clients.js';
 import { checkOnlineBooking, createOnlineBooking, type OnlineBookingInput } from '../domain/online-booking.js';
-import { MAX_BOOKING_ITEMS, resolveItems } from '../domain/online-booking-items.js';
+import { MAX_BOOKING_ITEMS, resolveItems, type BookingItem } from '../domain/online-booking-items.js';
 import { bookingFacts, sendPaymentRequest } from '../domain/online-booking-messages.js';
 import { availableStarts } from '../domain/online-booking-slots.js';
+import { employeesByIds, servicesByIds } from '../domain/refs.js';
 import { getStudioSettings } from '../domain/settings.js';
 import { AppError } from '../lib/errors.js';
 import { formatRub } from '../lib/text.js';
@@ -66,6 +68,18 @@ const DISABLED =
   'Онлайн-запись сейчас выключена студией. Оформи заявку через create_booking_request (имя, телефон, услуга, удобное время) — ' +
   'администратор подтвердит время.';
 
+/**
+ * What the booking costs with its master: «стоимость 4 000 ₽», «стоимость от 15 000 ₽» when a service is priced per
+ * appointment, «бесплатно»; null for «от 0» (the price is set at the consultation).
+ */
+function costText(db: DbOrTx, price: number, items: BookingItem[]): string | null {
+  const perAppointment = [...servicesByIds(db, items.map((i) => i.serviceId)).values()].some((s) => s.priceFrom);
+  if (perAppointment) return price > 0 ? `стоимость от ${formatRub(price)}` : null;
+  return price > 0 ? `стоимость ${formatRub(price)}` : 'бесплатно';
+}
+
+const withCost = (text: string, cost: string | null): string => (cost ? `${text}, ${cost}` : text);
+
 /** Why the booking failed, with the free starts of that day when the time is taken. */
 function failure(ctx: AppContext, err: unknown, input: OnlineBookingInput): ToolResult {
   if (!(err instanceof AppError)) throw err;
@@ -104,9 +118,11 @@ export function buildBookingToolHandler(ctx: AppContext, scope: ToolScope, sink:
       const check = checkOnlineBooking(ctx, input);
       if (scope.mode === 'test') {
         sink.notes.push(`создана бы онлайн-запись: ${check.items.lines.map((l) => l.name).join(', ')}, ${parsed.data.startsAt}`);
+        const master = employeesByIds(db, [check.masterId]).get(check.masterId)?.name ?? '—';
         return {
           content:
-            'Тестовый режим: запись не создана, но для клиента всё выглядит так, будто она создана. ' +
+            `Тестовый режим: запись не создана, но для клиента всё выглядит так, будто она создана: ` +
+            `${withCost(`мастер ${master}`, costText(db, check.items.price, input.items))}. ` +
             (check.prepayment ? `Клиенту пришла бы ссылка на предоплату ${formatRub(check.items.depositRequired)}.` : 'Она ждала бы подтверждения студии.'),
         };
       }
@@ -114,7 +130,8 @@ export function buildBookingToolHandler(ctx: AppContext, scope: ToolScope, sink:
       const { appointment, payment } = await createOnlineBooking(ctx, input);
       sink.done.add('online_booking');
       const f = bookingFacts(db, appointment);
-      const booked = `Запись №${appointment.id} создана: ${f.when}, ${f.what}, мастер ${f.master}.`;
+      // The price of the master the booking went to (their own prices, see «Service» `masterPrices`).
+      const booked = `Запись №${appointment.id} создана: ${withCost(`${f.when}, ${f.what}, мастер ${f.master}`, costText(db, appointment.price, input.items))}.`;
       if (payment) {
         sink.after.push(() => sendPaymentRequest(ctx, appointment, payment));
         return {

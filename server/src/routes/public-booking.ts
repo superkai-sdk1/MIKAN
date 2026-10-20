@@ -171,7 +171,7 @@ export function publicBookingRoutes(app: FastifyInstance, ctx: AppContext): void
         const check = checkOnlineBooking(ctx, input);
         await bookingLimit(request);
         request.log.info({ ip: request.ip }, 'online booking honeypot triggered');
-        return decoyBooking(ctx, check, input.masterId ?? null);
+        return decoyBooking(ctx, check);
       }
       const result = await createOnlineBooking(ctx, input);
       await bookingLimit(request);

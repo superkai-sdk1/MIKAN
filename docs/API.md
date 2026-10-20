@@ -293,7 +293,8 @@ online hold released). `employee` is `null` for `bot` and `system`.
     it when they are a master, else the catalog price). Apps resolve it the same way when they fill a price
     themselves. Prices already on an appointment never change by themselves: when staff change the master, the app
     re-prices the catalog lines whose price nobody edited.
-  - An inactive or no-longer-master employee keeps their entry (it comes back with them) but no channel offers it.
+  - An inactive or no-longer-master employee keeps their entry (it comes back with them, and a list sent back with it
+    is accepted) but no channel offers it: lines priced for them get the catalog price.
 
 ### AftercareTemplate
 ```json

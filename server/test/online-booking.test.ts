@@ -100,6 +100,7 @@ describe('online booking: settings, catalog and free time', () => {
         { name: 'Один', priceText: '2 500 ₽', price: 2500, durationMin: 45 },
         { name: 'Два', priceText: '4 000 ₽', price: 4000, durationMin: 60 },
       ],
+      masterPrices: [],
       portfolio: 0,
     });
     expect(services[0]!.priceText).toBe('от 15 000 ₽');

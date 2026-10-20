@@ -16,6 +16,7 @@ import {
   variantsByIds,
 } from './refs.js';
 import { assertDiscountSparesCertificates, CERTIFICATE_LINE_NAME, certificateNominal } from './certificates.js';
+import { servicePriceFor, tillPricingMaster } from './service-prices.js';
 import { assertInWarehouse, resolveVariant } from './stock.js';
 
 /** A line of an open receipt as stored in `open_receipts.items_json`. */
@@ -58,7 +59,8 @@ export interface ReceiptInput {
 
 const RECEIPT_GONE = 'Чек уже оплачен или удалён';
 
-function resolveItem(db: DbOrTx, item: ReceiptItemInput, position: number): ReceiptItem {
+/** `masterId` — whose prices a service line without a price gets (see `tillPricingMaster`). */
+function resolveItem(db: DbOrTx, item: ReceiptItemInput, position: number, masterId: number | null): ReceiptItem {
   const label = `Позиция №${position + 1}`;
   if (item.type === 'certificate') {
     return {
@@ -107,9 +109,12 @@ function resolveItem(db: DbOrTx, item: ReceiptItemInput, position: number): Rece
     serviceId: service?.id ?? null,
     name,
     quantity: item.quantity,
-    price: item.price ?? service?.price ?? 0,
+    price: item.price ?? (service ? servicePriceFor(service, null, masterId) : 0),
   };
 }
+
+const resolveItems = (db: DbOrTx, items: ReceiptItemInput[], masterId: number | null): ReceiptItem[] =>
+  items.map((item, i) => resolveItem(db, item, i, masterId));
 
 const subtotalOf = (items: Array<Pick<ReceiptItem, 'price' | 'quantity'>>) =>
   items.reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -201,10 +206,10 @@ export function createReceipt(db: DbOrTx, input: ReceiptInput, employeeId: numbe
       if (existing) return existing;
       const appointment = getAppointmentOrMissing(tx, input.appointmentId);
       assertReceiptable(tx, appointment);
-      items = input.items ? input.items.map((item, i) => resolveItem(tx, item, i)) : appointmentItems(tx, appointment);
+      items = input.items ? resolveItems(tx, input.items, tillPricingMaster(tx, appointment.id, employeeId)) : appointmentItems(tx, appointment);
       clientId = clientId ?? appointment.clientId;
     } else {
-      items = (input.items ?? []).map((item, i) => resolveItem(tx, item, i));
+      items = resolveItems(tx, input.items ?? [], tillPricingMaster(tx, null, employeeId));
     }
     clientMustExist(tx, clientId);
     const discount = input.discount ?? 0;
@@ -237,7 +242,8 @@ export function updateReceipt(db: DbOrTx, id: number, input: ReceiptInput): Open
       if (other && other.id !== id) throw conflict('По этой записи уже открыт другой чек');
       assertReceiptable(tx, getAppointmentOrMissing(tx, appointmentId));
     }
-    const items = (input.items ?? []).map((item, i) => resolveItem(tx, item, i));
+    // Service prices of the appointment's master, else of the employee who opened the receipt.
+    const items = resolveItems(tx, input.items ?? [], tillPricingMaster(tx, appointmentId, current.employeeId));
     const clientId = input.clientId ?? null;
     clientMustExist(tx, clientId);
     const discount = input.discount ?? 0;

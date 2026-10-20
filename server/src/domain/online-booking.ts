@@ -72,11 +72,14 @@ export interface OnlineBookingResult {
 
 /** What a booking would be, validated without writing (also the bot's test mode). */
 export interface BookingCheck {
+  /** Priced by `masterId` (see service-prices.ts). */
   items: ResolvedItems;
   startsAt: number;
   endsAt: number;
   /** Masters free at that start (only the chosen one when a master was asked for). */
   masterIds: number[];
+  /** The master the booking goes to: the chosen one, else the one «any» picks now. */
+  masterId: number;
   /** The booking will wait for the prepayment (else for staff). */
   prepayment: boolean;
 }
@@ -145,16 +148,20 @@ export function checkOnlineBooking(ctx: AppContext, input: Omit<OnlineBookingInp
   const { db } = ctx;
   const settings = assertOnlineEnabled(db);
   const now = input.now ?? Date.now();
-  const items = resolveItems(db, input.items);
+  const { durationMin } = resolveItems(db, input.items);
   if (input.masterId != null) assertOnlineMaster(db, input.masterId);
   assertBookableTime(db, input.startsAt, now, settings);
-  const option = freeStart(db, { startsAt: input.startsAt, durationMin: items.durationMin, masterId: input.masterId, now });
+  const option = freeStart(db, { startsAt: input.startsAt, durationMin, masterId: input.masterId, now });
   if (!option) throw scheduleConflict(SLOT_TAKEN);
+  // «Any master» costs what the master it goes to charges.
+  const masterId = input.masterId ?? chooseMaster(db, input.startsAt, option.masterIds);
+  const items = resolveItems(db, input.items, masterId);
   return {
     items,
     startsAt: input.startsAt,
-    endsAt: input.startsAt + items.durationMin * MINUTE_MS,
+    endsAt: input.startsAt + durationMin * MINUTE_MS,
     masterIds: option.masterIds,
+    masterId,
     prepayment: items.depositRequired > 0 && ctx.qr !== null,
   };
 }
@@ -187,6 +194,8 @@ function commit(ctx: AppContext, input: OnlineBookingInput, check: BookingCheck,
     const option = freeStart(tx, { startsAt: input.startsAt, durationMin: check.items.durationMin, masterId: input.masterId, now });
     if (!option) throw scheduleConflict(SLOT_TAKEN);
     const masterId = input.masterId ?? chooseMaster(tx, input.startsAt, option.masterIds);
+    // «Any» may land on another master than when checked (the bank call took a while): their prices then.
+    const items = masterId === check.masterId ? check.items : resolveItems(tx, input.items, masterId);
     const existing = existingClient(tx, input);
     const birthday = input.birthday ?? null;
     const client =
@@ -199,11 +208,11 @@ function commit(ctx: AppContext, input: OnlineBookingInput, check: BookingCheck,
       created = createAppointment(tx, {
         clientId: client.id,
         masterId,
-        services: check.items.lines,
+        services: items.lines,
         startsAt: input.startsAt,
         endsAt: check.endsAt,
-        price: check.items.price,
-        depositRequired: check.items.depositRequired,
+        price: items.price,
+        depositRequired: items.depositRequired,
         notes: input.comment?.trim() || null,
         status: 'scheduled',
       });

@@ -116,6 +116,7 @@ const SERVICE_LABELS: Record<string, string> = {
   imagePrompt: 'описание обложки',
   photos: 'фото',
   variants: 'варианты',
+  masterPrices: 'цены у мастеров',
   depositAmount: 'предоплата',
   aftercareTemplateId: 'памятка',
   freshProcedure: 'свежая процедура',

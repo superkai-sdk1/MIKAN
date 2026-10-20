@@ -27,6 +27,7 @@ import { scheduleFollowUps } from './follow-ups.js';
 import { closeReceipts } from './receipts.js';
 import { CERTIFICATE_LINE } from './sale-revenue.js';
 import { cancelPendingForAppointment } from './scheduling.js';
+import { servicePriceFor, tillPricingMaster } from './service-prices.js';
 import { applyMovement, assertInWarehouse, getProductRow, insufficientMessage, resolveVariant, returnVariantId } from './stock.js';
 
 export interface SaleItemInput {
@@ -106,7 +107,7 @@ function resolveCertificate(item: SaleItemInput, label: string): ResolvedItem {
   };
 }
 
-function resolveItem(db: DbOrTx, item: SaleItemInput, position: number): ResolvedItem {
+function resolveItem(db: DbOrTx, item: SaleItemInput, position: number, masterId: number | null): ResolvedItem {
   const label = `Позиция №${position + 1}`;
   if (item.type === 'certificate') return resolveCertificate(item, label);
   if (item.type === 'product') {
@@ -134,7 +135,7 @@ function resolveItem(db: DbOrTx, item: SaleItemInput, position: number): Resolve
   if (item.serviceId != null && !service) throw badRequest(`${label}: услуга не найдена`);
   const name = item.name?.trim() || service?.name;
   if (!name) throw badRequest(`${label}: укажите название услуги`);
-  const price = item.price ?? service?.price;
+  const price = item.price ?? (service ? servicePriceFor(service, null, masterId) : undefined);
   if (price == null) throw badRequest(`${label}: укажите цену`);
   return {
     type: 'service',
@@ -210,9 +211,10 @@ function assertCertificateSale(certificateTotal: number, subtotal: number, input
 }
 
 /** Validates a sale without writing anything: items, totals, payments, appointment, client and stock. */
-export function prepareSale(db: DbOrTx, input: SaleInput): PreparedSale {
+export function prepareSale(db: DbOrTx, input: SaleInput, employeeId: number | null = null): PreparedSale {
   if (input.items.length === 0) throw badRequest('Добавьте хотя бы одну позицию');
-  const items = input.items.map((item, i) => resolveItem(db, item, i));
+  const masterId = tillPricingMaster(db, input.appointmentId, employeeId);
+  const items = input.items.map((item, i) => resolveItem(db, item, i, masterId));
   const subtotal = items.reduce((sum, i) => sum + i.total, 0);
   if (input.discount > subtotal) throw badRequest('Скидка не может быть больше суммы чека');
   const certificateTotal = items.filter((i) => i.type === CERTIFICATE_LINE).reduce((sum, i) => sum + i.total, 0);
@@ -267,7 +269,7 @@ function saleLines(db: DbOrTx, sale: SaleRow, items: ResolvedItem[], employeeId:
 
 export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): SaleRow {
   return db.transaction((tx) => {
-    const prepared = prepareSale(tx, input);
+    const prepared = prepareSale(tx, input, employeeId);
     const { items, subtotal, total, clientId, appointment } = prepared;
 
     const now = Date.now();

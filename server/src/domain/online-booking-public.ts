@@ -4,7 +4,7 @@ import type { AppContext } from '../context.js';
 import type { DbOrTx } from '../db/client.js';
 import { appointments } from '../db/schema.js';
 import { buildIcs } from '../lib/ics.js';
-import { parsePhotos, parseVariants, type AppointmentRow, type ServiceRow } from '../lib/serialize.js';
+import { parseMasterPrices, parsePhotos, parseVariants, type AppointmentRow, type ServiceRow } from '../lib/serialize.js';
 import { formatRub, formatServicePrice } from '../lib/text.js';
 import { formatTime, toIso } from '../lib/time.js';
 import { cancellationPolicyText } from './cancellation.js';
@@ -16,6 +16,7 @@ import { bookingFacts } from './online-booking-messages.js';
 import { onlineMasters } from './online-booking-slots.js';
 import { portfolioCovers, servicePortfolioCounts } from './portfolio.js';
 import { employeesByIds, serviceLinesByAppointment } from './refs.js';
+import { servicePriceFor } from './service-prices.js';
 import { getStudioSettings } from './settings.js';
 
 /**
@@ -25,7 +26,27 @@ import { getStudioSettings } from './settings.js';
 
 export type PublicStatus = 'awaiting_payment' | 'awaiting_confirmation' | 'confirmed' | 'cancelled' | 'completed';
 
-export function publicService(s: ServiceRow) {
+/**
+ * The own prices of the bookable masters (`masterIds`) that have them: every variant listed, with the master's price
+ * or the catalog one.
+ */
+function publicMasterPrices(s: ServiceRow, masterIds: ReadonlySet<number>) {
+  const variants = parseVariants(s.variantsJson);
+  return parseMasterPrices(s.masterPricesJson)
+    .filter((own) => masterIds.has(own.employeeId))
+    .map((own) => ({
+      masterId: own.employeeId,
+      price: own.price,
+      priceText: formatServicePrice(own.price, own.priceMax, s.priceFrom),
+      variants: variants.map((v) => {
+        const price = servicePriceFor(s, v.name, own.employeeId);
+        return { name: v.name, price, priceText: formatRub(price) };
+      }),
+    }));
+}
+
+/** `masterIds` — the masters clients can book (their own prices are shown). */
+export function publicService(s: ServiceRow, masterIds: ReadonlySet<number>) {
   return {
     id: s.id,
     name: s.name,
@@ -44,6 +65,7 @@ export function publicService(s: ServiceRow) {
       price: v.price,
       durationMin: itemMinutes(s, v),
     })),
+    masterPrices: publicMasterPrices(s, masterIds),
   };
 }
 export type PublicService = ReturnType<typeof publicService>;
@@ -54,8 +76,9 @@ export type PublicService = ReturnType<typeof publicService>;
  */
 export function publicServices(db: DbOrTx): Array<PublicService & { portfolio: number }> {
   const works = servicePortfolioCounts(db);
+  const masterIds = new Set(onlineMasters(db).map((m) => m.id));
   return serviceSections(db).flatMap((section) =>
-    section.items.map((s) => ({ ...publicService(s), portfolio: works.get(s.id) ?? 0 })),
+    section.items.map((s) => ({ ...publicService(s, masterIds), portfolio: works.get(s.id) ?? 0 })),
   );
 }
 
@@ -143,11 +166,11 @@ export function publicBookingOut(ctx: AppContext, a: AppointmentRow) {
 export type PublicBooking = ReturnType<typeof publicBookingOut>;
 
 /** The honeypot's answer: looks like a booking waiting for confirmation, nothing is stored. */
-export function decoyBooking(ctx: AppContext, check: BookingCheck, masterId: number | null): PublicBooking {
+export function decoyBooking(ctx: AppContext, check: BookingCheck): PublicBooking {
   const { db } = ctx;
   const token = newPublicToken();
   const last = db.select({ id: appointments.id }).from(appointments).orderBy(desc(appointments.id)).limit(1).get();
-  const master = employeesByIds(db, [masterId ?? check.masterIds[0]]).values().next().value;
+  const master = employeesByIds(db, [check.masterId]).values().next().value;
   return {
     token,
     status: 'awaiting_confirmation',

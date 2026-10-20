@@ -2,11 +2,12 @@ import type { DbOrTx } from '../db/client.js';
 import { badRequest } from '../lib/errors.js';
 import { parseVariants, type ServiceRow, type ServiceVariant } from '../lib/serialize.js';
 import { servicesByIds } from './refs.js';
+import { servicePriceFor } from './service-prices.js';
 
 /**
  * What a client books online (docs/API.md «Online booking»): 1–5 active catalog services, each with its variant
  * when the service has variants. Duration = Σ durations (the variant's, else the service's; 60 min when none),
- * price = Σ prices (the variant's, else the service's), prepayment = Σ `depositAmount`.
+ * price = Σ prices of the booked master (see service-prices.ts), prepayment = Σ `depositAmount`.
  */
 
 export const MAX_BOOKING_ITEMS = 5;
@@ -56,8 +57,11 @@ function pickVariant(service: ServiceRow, wanted: string | null | undefined): Se
   return found;
 }
 
-/** Validates the items against the active catalog; `400` with a Russian reason otherwise. */
-export function resolveItems(db: DbOrTx, items: BookingItem[]): ResolvedItems {
+/**
+ * Validates the items against the active catalog; `400` with a Russian reason otherwise. Prices are `masterId`'s own
+ * (catalog prices without one).
+ */
+export function resolveItems(db: DbOrTx, items: BookingItem[], masterId: number | null = null): ResolvedItems {
   if (items.length === 0) throw badRequest('Выберите хотя бы одну услугу');
   if (items.length > MAX_BOOKING_ITEMS) throw badRequest(`Можно выбрать не больше ${MAX_BOOKING_ITEMS} услуг за одну запись`);
   const catalog = servicesByIds(db, items.map((i) => i.serviceId));
@@ -70,7 +74,7 @@ export function resolveItems(db: DbOrTx, items: BookingItem[]): ResolvedItems {
     return {
       serviceId: service.id,
       name: variant ? `${service.name} — ${variant.name}` : service.name,
-      price: variant?.price ?? service.price,
+      price: servicePriceFor(service, variant?.name ?? null, masterId),
       durationMin: itemMinutes(service, variant),
     };
   });
