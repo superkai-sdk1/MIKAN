@@ -8,7 +8,7 @@ import { processDueMessages } from '../src/bot/sender.js';
 import { issueStaffCode } from '../src/bot/staff.js';
 import { clients } from '../src/db/schema.js';
 import { getStudioSettings, saveStudioSettings, type StudioSettings } from '../src/domain/settings.js';
-import { createTestApp, make, message, ScriptedAi, text, type TestApp } from './helpers.js';
+import { createTestApp, make, message, openShift, ScriptedAi, text, type TestApp } from './helpers.js';
 
 const NOW = Date.parse('2026-10-15T09:00:00.000Z'); // Thu 12:00 Moscow
 const CHAT = 740_001;
@@ -36,6 +36,7 @@ describe('bot: follow-ups after a visit', () => {
     vi.setSystemTime(NOW);
     ai = new ScriptedAi();
     t = await createTestApp({ ai });
+    await openShift(t);
     pipeline = new BotPipeline(t.ctx, 0);
     handleStaffCommand(t.ctx, STAFF, issueStaffCode(t.ctx.db).code);
     client = await make(t, '/api/clients', { name: 'Иван', phone: '+79991234567' });

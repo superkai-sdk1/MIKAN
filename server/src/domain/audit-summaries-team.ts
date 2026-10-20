@@ -195,6 +195,7 @@ const STUDIO_LABELS: Record<string, string> = {
   workdayEnd: 'конец рабочего дня',
   cancellation: 'правила отмены',
   reviewLinks: 'ссылки на отзывы',
+  pos: 'чек клиенту в Telegram',
 };
 const BOT_LABELS: Record<string, string> = {
   aiEnabled: 'ответы ИИ',

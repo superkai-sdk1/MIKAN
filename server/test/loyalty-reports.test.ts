@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { creditGiftBonuses } from '../src/domain/bonuses.js';
 import { expireLoyalty } from '../src/domain/loyalty.js';
-import { createTestApp, make, type TestApp } from './helpers.js';
+import { createTestApp, make, openShift, type TestApp } from './helpers.js';
 import { at, ok, setRules, staff, statement, visit } from './payroll-fixtures.js';
 
 /** Loyalty in analytics, the summary, the dashboard, the cash shift and payroll (docs/API.md «Analytics», «PayRules»). */
@@ -108,6 +108,7 @@ describe('loyalty in reports and payroll', () => {
     await ok(t.api, 'POST', `/api/clients/${client.id}/bonuses`, { amount: 1500, note: 'Перенос' });
     const appointment = await visit(t, fatima.id, client.id, [lobe.id], '2026-10-15T08:00:00Z');
     at('2026-10-15T09:00:00.000Z');
+    await openShift(t);
     // A 3 000 ₽ piercing and a 1 000 ₽ ring: 1 200 ₽ of bonuses split 900 / 300.
     const paid = await sell({
       appointmentId: appointment.id,

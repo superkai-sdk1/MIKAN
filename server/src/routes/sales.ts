@@ -1,11 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
-import { announceBonusEarned } from '../domain/loyalty.js';
 import { getSaleRow, serializeSale } from '../domain/refs.js';
 import { previewRefund, refundSale } from '../domain/refunds.js';
-import { sendRefundNotice } from '../domain/sale-messages.js';
-import { createSale, listSales, type SaleInput } from '../domain/sales.js';
+import { sendReceiptByStaff, sendRefundNotice, sendSaleReceipt } from '../domain/sale-messages.js';
+import { assertShiftOpen, createSale, listSales, type SaleInput } from '../domain/sales.js';
 import { badRequest } from '../lib/errors.js';
 import { idempotent, REPLAYED_HEADER } from '../lib/idempotency.js';
 import { idParams, money, nonNull, nullableText, pagination, parse, queryId, queryInstant, requiredText } from '../lib/validation.js';
@@ -77,7 +76,8 @@ const refundItems = z
   .nullish();
 const refundBody = z.object({ reason: requiredText(500), restock: nonNull(z.boolean()), items: refundItems });
 const refundPreviewBody = z.object({ items: refundItems });
-const listQuery = pagination.extend({ from: queryInstant, to: queryInstant, clientId: queryId });
+const listQuery = pagination.extend({ from: queryInstant, to: queryInstant, clientId: queryId, search: z.string().trim().max(100).optional() });
+const sendBody = z.object({ chatId: z.number().int().refine(Number.isSafeInteger).nullish() });
 
 export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { db } = ctx;
@@ -96,10 +96,19 @@ export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
     const input = saleInputOf(parse(saleBody, request.body));
     // QR money is only counted once the bank confirms it: such a sale is created by POST /qr-payments.
     if (input.payments.qr > 0) throw badRequest('Оплату по QR-коду проводите через «Показать QR-код»');
-    const sale = idempotent(db, request, reply, (tx) => serializeSale(tx, createSale(tx, input, request.employee.id)));
-    // The client hears about the credited bonuses once (not on a replay); the reply does not wait for Telegram.
-    if (reply.getHeader(REPLAYED_HEADER) === undefined) void announceBonusEarned(ctx, sale.id);
+    const sale = idempotent(db, request, reply, (tx) => {
+      assertShiftOpen(tx);
+      return serializeSale(tx, createSale(tx, input, request.employee.id));
+    });
+    // The client gets the receipt once (not on a replay); the reply does not wait for Telegram.
+    if (reply.getHeader(REPLAYED_HEADER) === undefined) void sendSaleReceipt(ctx, sale.id);
     return sale;
+  });
+
+  app.post('/sales/:id/send', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
+    const { id } = parse(idParams, request.params);
+    const input = parse(sendBody, request.body);
+    return serializeSale(db, await sendReceiptByStaff(ctx, id, input.chatId ?? null));
   });
 
   app.post('/sales/:id/refund', async (request, reply) => {

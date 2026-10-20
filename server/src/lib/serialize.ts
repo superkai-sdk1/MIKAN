@@ -270,6 +270,7 @@ export const movementOut = (m: MovementRow, productName: string, variantName: st
   saleId: m.saleId,
   appointmentId: m.appointmentId,
   revisionId: m.revisionId,
+  deliveryId: m.deliveryId,
   amount: m.amount,
   employee,
   createdAt: toIso(m.createdAt),
@@ -461,6 +462,7 @@ export const saleOut = (
   refundReason: sale.refundReason,
   refundedTotal: sale.refundedTotal,
   refunds,
+  receiptSentAt: toIso(sale.receiptSentAt),
   createdAt: toIso(sale.createdAt),
 });
 export type SaleOut = ReturnType<typeof saleOut>;

@@ -60,6 +60,7 @@ const RESTRICTED_ROUTES: ReadonlyMap<string, readonly Role[]> = new Map([
   ['POST /products/:id/movements/batch', MANAGERS],
   ['POST /products/:id/purchases', MANAGERS],
   ['POST /stock/revisions', MANAGERS],
+  ['POST /stock/deliveries', MANAGERS],
   // Finding and merging duplicate client cards.
   ['GET /clients/duplicates', MANAGERS],
   ['POST /clients/duplicates/dismiss', MANAGERS],

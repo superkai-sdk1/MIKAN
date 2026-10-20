@@ -16,6 +16,7 @@ import {
   type ChangeDetail,
 } from './audit-text.js';
 import type { CategoryOut } from './categories.js';
+import type { DeliveryOut } from './deliveries.js';
 import type { serializeService } from './services.js';
 import type { serializeMovements } from './stock.js';
 
@@ -283,6 +284,15 @@ function stockRevision(c: SummaryContext): AuditDraft {
   return draft('stock', 'revision', null, summary);
 }
 
+/** «Поставка №4 от Industrial Strength: 3 позиции, 14 шт, 12 400 ₽» (the sum when some line had a cost). */
+function stockDelivery(c: SummaryContext): AuditDraft {
+  const d = entityOf<DeliveryOut>(c.result);
+  const from = d.supplier ? ` от ${d.supplier}` : '';
+  const sum = d.lines.some((line) => line.amount != null) ? `, ${formatRub(d.total)}` : '';
+  const summary = `Поставка №${d.number}${from}: ${countText(d.lineCount, 'позиция', 'позиции', 'позиций')}, ${d.itemCount} шт${sum}`;
+  return draft('stock', 'delivery', null, summary);
+}
+
 // ---------- catalog categories ----------
 
 const SECTION_TITLES: Record<string, string> = { jewelry: 'Украшения', goods: 'Товары', consumable: 'Расходники', service: 'Услуги' };
@@ -340,6 +350,7 @@ export const catalogSummaries: Record<string, SummaryBuilder> = {
   'POST /products/:id/movements/batch': stockBatch,
   'POST /products/:id/purchases': stockPurchase,
   'POST /stock/revisions': stockRevision,
+  'POST /stock/deliveries': stockDelivery,
   'POST /catalog/categories': categoryCreate,
   'PATCH /catalog/categories/:id': categoryRename,
   'PUT /catalog/categories/order': categoryOrder,

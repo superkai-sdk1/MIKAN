@@ -90,6 +90,9 @@ const onlineBooking = z.object({
   confirmationHours: z.number().int().min(ONLINE_CONFIRMATION_MIN).max(ONLINE_CONFIRMATION_MAX).nullish(),
 });
 
+/** Omitted = unchanged. */
+const pos = z.object({ sendReceipt: nonNull(z.boolean()) });
+
 const studioBody = z.object({
   name: nonNull(z.string().trim().min(1).max(200)),
   address: text(500),
@@ -105,6 +108,7 @@ const studioBody = z.object({
   cancellation: nonNull(cancellationRules),
   reviewLinks: nonNull(reviewLinks),
   onlineBooking: nonNull(onlineBooking),
+  pos: nonNull(pos),
 });
 
 const botBody = z.object({
@@ -164,7 +168,7 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/settings/studio', async () => getStudioSettings(db));
 
   app.put('/settings/studio', async (request) => {
-    const { cancellation, reviewLinks: links, onlineBooking: online, ...input } = parse(studioBody, request.body);
+    const { cancellation, reviewLinks: links, onlineBooking: online, pos: till, ...input } = parse(studioBody, request.body);
     const { confirmationHours, ...onlineRest } = online ?? {};
     const current = getStudioSettings(db);
     const next: StudioSettings = {
@@ -177,6 +181,7 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext): void {
         // `merge` turns null into '' (text fields); here null means «never».
         confirmationHours: confirmationHours === undefined ? current.onlineBooking.confirmationHours : confirmationHours,
       },
+      pos: merge(current.pos, till ?? {}),
     };
     // Only the calendar's default range: appointments outside it are still allowed.
     if (parseTimeOfDay(next.workdayEnd)! <= parseTimeOfDay(next.workdayStart)!) {

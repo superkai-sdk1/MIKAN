@@ -7,7 +7,7 @@ import { issueStaffCode } from '../src/bot/staff.js';
 import { silentLogger } from '../src/context.js';
 import { auditLog, employees } from '../src/db/schema.js';
 import { pruneAuditLog, writeAudit } from '../src/domain/audit.js';
-import { createTestApp, FakeQrProvider, make, message, ScriptedAi, text, toolUse, type TestApp } from './helpers.js';
+import { createTestApp, FakeQrProvider, make, message, openShift, ScriptedAi, text, toolUse, type TestApp } from './helpers.js';
 
 const NOW = Date.parse('2026-10-15T09:00:00.000Z'); // Thu 12:00 Moscow
 
@@ -225,6 +225,7 @@ describe('audit log', () => {
       expect((await t.api('POST', '/api/clients', { name: 'Без телефона' })).statusCode).toBe(400);
       expect((await log()).total).toBe(0);
 
+      await openShift(t);
       const product = await make(t, '/api/products', { kind: 'goods', name: 'Спрей', price: 500, initialQuantity: 5 });
       const key = randomUUID();
       const sell = () =>
@@ -370,6 +371,7 @@ describe('audit log', () => {
       await t.close();
       const qr = new FakeQrProvider();
       t = await createTestApp({ qr });
+      await openShift(t);
       const product = await make(t, '/api/products', { kind: 'goods', name: 'Спрей', price: 500, initialQuantity: 5 });
       const code = await make(t, '/api/qr-payments', {
         items: [{ type: 'product', productId: product.id, quantity: 1 }],

@@ -1,10 +1,11 @@
-import { and, count, desc, eq, gte, lt, max } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lt, max, or, sql, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, clients, products, productVariants, saleItems, sales, services } from '../db/schema.js';
 import { badRequest, conflict, insufficientStock } from '../lib/errors.js';
 import { sizedName } from '../lib/jewelry.js';
 import type { AppointmentRow, ProductRow, SaleRow } from '../lib/serialize.js';
-import { formatRub } from '../lib/text.js';
+import { formatRub, normalizeSearchTerm } from '../lib/text.js';
+import { likePattern } from '../lib/validation.js';
 import { assertBonusPayment, earnBonuses, spendBonuses } from './bonuses.js';
 import { getOpenShift } from './cash.js';
 import {
@@ -147,6 +148,14 @@ function resolveItem(db: DbOrTx, item: SaleItemInput, position: number, masterId
     total: price * item.quantity,
     ...NO_CERTIFICATE,
   };
+}
+
+/**
+ * Selling needs an open cash shift (docs/API.md «Sales (POS)»): `POST /sales` and a new QR code check it. A QR code the
+ * bank confirms later still becomes a sale — the client has already paid.
+ */
+export function assertShiftOpen(db: DbOrTx): void {
+  if (!getOpenShift(db)) throw conflict('Откройте кассовую смену, чтобы провести продажу');
 }
 
 /** An older build sold a product that now has several sizes: it cannot say which one. */
@@ -335,14 +344,37 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
   });
 }
 
+/** A bare number this short is a receipt number only; from this many digits it is also looked for in phones. */
+const PHONE_DIGITS_MIN = 3;
+
+/**
+ * `GET /sales?search=`: «17» / «№17» — the receipt number; phone-like digits — the client's phone too (anywhere in
+ * it); any other text — the client's name (the card's search text, as in the client list).
+ */
+function saleSearch(db: DbOrTx, search: string): SQL | undefined {
+  const term = normalizeSearchTerm(search);
+  if (!term) return undefined;
+  const numbered = /^[№#]\s*(\d{1,9})$/.exec(term);
+  if (numbered) return eq(sales.number, Number(numbered[1]));
+  const clientsMatching = (pattern: string) =>
+    inArray(sales.clientId, db.select({ id: clients.id }).from(clients).where(sql`${clients.searchText} like ${likePattern(pattern)} escape '\\'`));
+  const digits = term.replace(/\D/g, '');
+  if (!/^[\d\s+()-]+$/.test(term) || digits === '') return clientsMatching(term);
+  if (!/^\d{1,9}$/.test(term)) return clientsMatching(digits);
+  const byNumber = eq(sales.number, Number(term));
+  return digits.length < PHONE_DIGITS_MIN ? byNumber : or(byNumber, clientsMatching(digits));
+}
+
 export function listSales(
   db: DbOrTx,
-  f: { from?: number; to?: number; clientId?: number; limit: number; offset: number },
+  f: { from?: number; to?: number; clientId?: number; search?: string; limit: number; offset: number },
 ) {
   const conditions = [];
   if (f.from !== undefined) conditions.push(gte(sales.createdAt, f.from));
   if (f.to !== undefined) conditions.push(lt(sales.createdAt, f.to));
   if (f.clientId !== undefined) conditions.push(eq(sales.clientId, f.clientId));
+  const search = f.search ? saleSearch(db, f.search) : undefined;
+  if (search) conditions.push(search);
   const where = conditions.length ? and(...conditions) : undefined;
   const rows = db.select().from(sales).where(where).orderBy(desc(sales.createdAt), desc(sales.id)).limit(f.limit).offset(f.offset).all();
   const total = db.select({ n: count() }).from(sales).where(where).get()?.n ?? 0;

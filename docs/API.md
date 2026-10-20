@@ -840,9 +840,11 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   `certificate.cancel` / `certificate.send`; a sale paid with bonuses or certificates says so («… Оплачено бонусами
   300 ₽, сертификатом 1 000 ₽»); a partial refund names what came back («Возврат по чеку №17: Лабрет — 8 мм × 1,
   1 350 ₽», the one returning the rest adds « — чек возвращён полностью»), a refund of the whole receipt at once reads
-  «Продажа №17 возвращена: 3 500 ₽». `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
+  «Продажа №17 возвращена: 3 500 ₽»; a receipt sent by staff is `sale.send` («Чек №17 отправлен клиенту в Telegram»),
+  a delivery `stock.delivery` («Поставка №4 от Industrial Strength: 3 позиции, 14 шт, 12 400 ₽»). `action` is
+  `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
 - `entityId` is the id of what the entry is about: `deposit` — the appointment; `stock` — the product (`null` for a
-  stock count); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
+  stock count or a delivery); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
   the booking request or the scheduled message; `sale` — the sale (`null` for a QR code not yet paid); `settings` and
   a category reorder — `null`. An edit that changed nothing is logged too («… сохранена без изменений»); a write
   without a specific summary gets «Изменение: PUT /…» with the entity taken from the path.
@@ -1032,8 +1034,10 @@ Deliveries (поставки):
   movement «Поставка №4» (+ « · <note>»), with `amount` and the new cost exactly like a receipt with `unitCost` (see
   «Movements»).
 - `supplier` — trimmed, ≤ 100 (`""` = none). A product whose `supplier` is empty gets this one.
-- `GET /stock/suppliers` — distinct supplier names of deliveries and products (case-insensitive, the latest spelling),
-  with `deliveries` (how many) and `lastAt` (the latest delivery, `null` when only products name it).
+- `GET /stock/suppliers` — distinct supplier names of deliveries and products not deleted (case-insensitive; the
+  spelling of the latest delivery, else of the latest edited product), with `deliveries` (how many) and `lastAt` (the
+  latest delivery, `null` when only products name it). Order: by `lastAt`, newest first, then the names only products
+  carry, alphabetically. `?supplier=` of the list matches a name in any case.
 - Deliveries cannot be edited or deleted: a mistake is fixed by a write-off or a stock count.
 
 Stock counts (ревизии):
@@ -1243,7 +1247,8 @@ the background.
 | POST | `/sales/:id/send` | `{ chatId? }` | `Sale` (with `receiptSentAt`) · rate limit 30/min |
 
 - `search` (≤ 100) — a receipt number (`17`, `№17`) or the client's name or phone (digits match anywhere in the
-  phone); combined with `from` / `to` / `clientId` when they are given. The app searches all time.
+  phone; a bare number of 1–2 digits is a receipt number only, from 3 digits it also matches phones); combined with
+  `from` / `to` / `clientId` when they are given. The app searches all time.
 - **A sale needs an open cash shift**: `POST /sales` and `POST /qr-payments` without one → `409 conflict` «Откройте
   кассовую смену, чтобы провести продажу». A QR payment the bank confirms after the shift was closed still becomes a
   sale (the money is already paid; `shiftId` = the shift open then, else `null`).
@@ -1337,13 +1342,16 @@ the background.
   receipt sent it is part of it and no separate «Спасибо за покупку!» message goes; with `sendReceipt` off the separate
   notice goes as before.
 - `POST /sales/:id/send` `{ chatId? }` — staff send (or resend) the receipt: to `chatId` (a bot chat) or the client's
-  chat (the linked one, else the latest chat attributed to them). Without the bonus line. `409` «У клиента нет
-  Telegram — отправить чек некуда» / «Бот выключен» / the delivery problem («Клиент заблокировал бота»); a sale without
-  a client and no `chatId` → `409` «В чеке нет клиента». A refunded sale's receipt can be sent too (it shows the
-  refunds). Open to every role.
+  chat (the linked one, else the latest chat attributed to them). Without the bonus line. `400` «Чат Telegram не
+  найден»; `409` «У клиента нет Telegram — отправить чек некуда» / «Telegram-бот выключен — чек не отправлен» / the
+  delivery problem («Клиент заблокировал бота — сообщение не доставлено»); a sale without a client and no `chatId` →
+  `409` «В чеке нет клиента». A refunded sale's receipt can be sent too: after the payment line each refund reads
+  «↩️ Возврат 21 октября: −1 350 ₽ (Лабрет — 8 мм)». Open to every role; audited («Чек №17 отправлен клиенту в
+  Telegram»).
 - After a refund the client (same conditions, `sendReceipt` on) gets: «↩️ Возврат по чеку №17\nЛабрет — 8 мм — 1 350 ₽
   \nВернули: наличными 1 350 ₽» (+ «Бонусы: −67» when some were taken back, «Бонусы вернули: +300» when bonuses paid
-  came back).
+  came back). «Вернули» names the money parts that are not 0: «наличными», «на карту», «переводом», «по СБП», «в
+  предоплату записи», «на сертификат».
 
 ### QR payments (SBP via Tochka Bank)
 | Method | Path | Body | Response |

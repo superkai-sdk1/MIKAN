@@ -10,10 +10,10 @@ import { QrProviderError, type CreatedQr, type QrBankStatus, type QrProvider } f
 import { auditQrPaid } from './audit-events.js';
 import { announceQrDeposit } from './deposit-messages.js';
 import { recordQrDeposit } from './deposits.js';
-import { announceBonusEarned } from './loyalty.js';
 import { announceHoldPaid, awaitsPayment, holdSettled, settlePaidHold } from './online-booking-lifecycle.js';
 import { getSaleRow, serializeSale } from './refs.js';
-import { createSale, prepareSale, type SaleInput } from './sales.js';
+import { sendSaleReceipt } from './sale-messages.js';
+import { assertShiftOpen, createSale, prepareSale, type SaleInput } from './sales.js';
 import { getStudioSettings } from './settings.js';
 
 /** How long a QR code accepts payment. */
@@ -85,6 +85,7 @@ function purposeFor(db: DbOrTx): string {
 export async function createQrPayment(ctx: AppContext, input: SaleInput, employeeId: number): Promise<QrPaymentRow> {
   const provider = requireQrProvider(ctx);
   if (input.payments.qr <= 0) throw badRequest('Укажите сумму оплаты по QR-коду');
+  assertShiftOpen(ctx.db);
   const prepared = prepareSale(ctx.db, input, employeeId);
   // A catalog price edited (or a size added) before the client pays must not change what is sold: the stored cart
   // keeps every item's price and size as validated now.
@@ -213,8 +214,8 @@ async function checkBank(ctx: AppContext, id: number, force: boolean): Promise<Q
     if (updated.error) await alertStaff(ctx, updated);
     if (holdWaiting && holdSettled(ctx.db, updated)) await announceHoldPaid(ctx, updated.appointmentId!, updated.amount);
     else if (updated.kind === 'deposit') await announceQrDeposit(ctx, updated);
-    // The poll that found the payment does not wait for Telegram (announceBonusEarned never throws).
-    if (updated.saleId != null) void announceBonusEarned(ctx, updated.saleId);
+    // The poll that found the payment does not wait for Telegram (sendSaleReceipt never throws).
+    if (updated.saleId != null) void sendSaleReceipt(ctx, updated.saleId);
   }
   return updated;
 }

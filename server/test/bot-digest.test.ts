@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dueDigest, eveningDigest, morningDigest, sendDueDigests } from '../src/bot/digest.js';
 import { cashShifts, employees, openReceipts, sales } from '../src/db/schema.js';
 import { setChatEmployee, upsertChat } from '../src/domain/bot-chats.js';
-import { createTestApp, make, type TestApp } from './helpers.js';
+import { createTestApp, make, openShift, type TestApp } from './helpers.js';
 
 const HOUR = 3_600_000;
 /** Monday 19 October 2026, 09:40 in Moscow (UTC+3). */
@@ -83,6 +83,7 @@ describe('staff digests', () => {
     const lobeLine = { type: 'service', serviceId: lobe.id, quantity: 1 };
     // Yesterday's sale, refunded today.
     vi.setSystemTime(EVENING - 26 * HOUR);
+    await openShift(t);
     const yesterday = await sell(anna.id, [lobeLine], { transfer: 1600 });
     vi.setSystemTime(EVENING - 3 * HOUR);
     await t.api('POST', `/api/clients/${oleg.id}/bonuses`, { amount: 1000, note: 'Перенос' });
@@ -110,6 +111,7 @@ describe('staff digests', () => {
   it('the evening digest names refunds even on a day without sales, and leaves out bonuses and certificates when none', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(EVENING - 26 * HOUR);
+    await openShift(t);
     const res = await t.api('POST', '/api/sales', {
       clientId: anna.id, items: [{ type: 'service', serviceId: lobe.id, quantity: 1 }], discount: 0, payments: { transfer: 1600 },
     });

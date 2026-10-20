@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestApp, make, type TestApp } from './helpers.js';
+import { createTestApp, make, openShift, type TestApp } from './helpers.js';
 
 describe('sales (POS)', () => {
   let t: TestApp;
@@ -9,6 +9,7 @@ describe('sales (POS)', () => {
 
   beforeEach(async () => {
     t = await createTestApp();
+    await openShift(t);
     product = await make(t, '/api/products', { kind: 'jewelry', name: 'Лабрет', price: 1500, initialQuantity: 3 });
     service = await make(t, '/api/services', { name: 'Прокол мочки', category: 'piercing', price: 2500, durationMin: 30 });
     client = await make(t, '/api/clients', { name: 'Иван', phone: '+79991234567' });
@@ -38,7 +39,7 @@ describe('sales (POS)', () => {
       client: { id: client.id, name: 'Иван', phone: '+79991234567', telegramLinked: false },
       employee: { id: 1, name: 'Админ', color: '#FF7A1A' },
       appointmentId: null,
-      shiftId: null,
+      shiftId: 1,
       subtotal: 4000,
       discount: 500,
       total: 3500,
@@ -122,6 +123,7 @@ describe('sales (POS)', () => {
 
   it('refunds with restock and refuses a second refund', async () => {
     const sale = (await t.api('POST', '/api/sales', body())).json();
+    await t.api('POST', '/api/cash/shift/close', { closingCash: 1500 });
     // Regression (review #5): cash handed back without an open shift would vanish from the drawer.
     const noShift = await t.api('POST', `/api/sales/${sale.id}/refund`, { reason: 'Не подошло', restock: true });
     expect(noShift.statusCode).toBe(409);
@@ -143,7 +145,9 @@ describe('sales (POS)', () => {
 
     await t.api('POST', '/api/cash/shift/close', { closingCash: 3500 });
     // A refund with no cash part needs no shift.
+    await openShift(t);
     const cardOnly = (await t.api('POST', '/api/sales', body({ payments: { cash: 0, card: 3500, transfer: 0 } }))).json();
+    await t.api('POST', '/api/cash/shift/close', { closingCash: 0 });
     expect((await t.api('POST', `/api/sales/${cardOnly.id}/refund`, { reason: 'Отказ', restock: true })).statusCode).toBe(200);
     await t.api('POST', '/api/cash/shift/open', { openingCash: 0 });
     const keep = (await t.api('POST', '/api/sales', body())).json();

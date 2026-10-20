@@ -4,7 +4,7 @@ import { BotPipeline } from '../src/bot/pipeline.js';
 import { buildStablePrompt } from '../src/bot/prompt.js';
 import { creditGiftBonuses } from '../src/domain/bonuses.js';
 import { linkTelegram } from '../src/domain/clients.js';
-import { createTestApp, make, message, ScriptedAi, text, toolUse, type TestApp } from './helpers.js';
+import { createTestApp, make, message, openShift, ScriptedAi, text, toolUse, type TestApp } from './helpers.js';
 
 const NOW = Date.parse('2026-10-15T09:00:00.000Z');
 const CHAT = 700_042;
@@ -21,6 +21,7 @@ describe('bot: bonuses and gift certificates for clients', () => {
     vi.setSystemTime(NOW);
     ai = new ScriptedAi();
     t = await createTestApp({ ai });
+    await openShift(t);
     pipeline = new BotPipeline(t.ctx, 0);
     buyer = await make(t, '/api/clients', { name: 'Ольга', lastName: 'Смирнова', phone: '+79990002233' });
   });

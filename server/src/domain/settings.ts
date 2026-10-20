@@ -22,6 +22,13 @@ export interface StudioSettings {
   reviewLinks: ReviewLinks;
   /** Client-facing booking through the bot, the Mini App and the booking page (see domain/online-booking.ts). */
   onlineBooking: OnlineBookingSettings;
+  /** The till (see domain/sale-messages.ts). */
+  pos: PosSettings;
+}
+
+export interface PosSettings {
+  /** The bot sends the receipt to the client's Telegram after a paid sale and tells them about a refund. */
+  sendReceipt: boolean;
 }
 
 export interface OnlineBookingSettings {
@@ -130,6 +137,7 @@ export const DEFAULT_STUDIO: StudioSettings = {
   cancellation: { freeHours: 24, lateRetainPercent: 100, noShowRetainPercent: 100, autoRetain: false },
   reviewLinks: { yandex: '', twogis: '', google: '' },
   onlineBooking: { enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '', confirmationHours: 24 },
+  pos: { sendReceipt: true },
 };
 
 export const DEFAULT_BOT: BotSettingsStored = {
@@ -198,21 +206,23 @@ export function workdayFromText(text: string): Pick<StudioSettings, 'workdayStar
   return { workdayStart: formatTimeOfDay(start), workdayEnd: formatTimeOfDay(end) };
 }
 
-type StoredStudioValue = Partial<Omit<StudioSettings, 'cancellation' | 'reviewLinks' | 'onlineBooking'>> & {
+type StoredStudioValue = Partial<Omit<StudioSettings, 'cancellation' | 'reviewLinks' | 'onlineBooking' | 'pos'>> & {
   cancellation?: Partial<CancellationRules>;
   reviewLinks?: Partial<ReviewLinks>;
   onlineBooking?: Partial<OnlineBookingSettings>;
+  pos?: Partial<PosSettings>;
 };
 
 export function getStudioSettings(db: DbOrTx): StudioSettings {
   const stored = readKey<StoredStudioValue>(db, KEY_STUDIO) ?? {};
-  // Settings saved before the cancellation rules / review links / online booking existed take the defaults.
+  // Settings saved before the cancellation rules / review links / online booking / the till existed take the defaults.
   const merged = {
     ...DEFAULT_STUDIO,
     ...stored,
     cancellation: { ...DEFAULT_STUDIO.cancellation, ...stored.cancellation },
     reviewLinks: { ...DEFAULT_STUDIO.reviewLinks, ...stored.reviewLinks },
     onlineBooking: { ...DEFAULT_STUDIO.onlineBooking, ...stored.onlineBooking },
+    pos: { ...DEFAULT_STUDIO.pos, ...stored.pos },
   };
   if (stored.workdayStart !== undefined && stored.workdayEnd !== undefined) return merged;
   return { ...merged, ...workdayFromText(merged.workingHours) };

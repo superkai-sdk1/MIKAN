@@ -34,6 +34,7 @@ describe('settings, catalog, knowledge and uploads', () => {
       cancellation: { freeHours: 24, lateRetainPercent: 100, noShowRetainPercent: 100, autoRetain: false },
       reviewLinks: { yandex: '', twogis: '', google: '' },
       onlineBooking: { enabled: true, leadMinutes: 120, horizonDays: 60, holdMinutes: 15, stepMinutes: 30, note: '', confirmationHours: 24 },
+      pos: { sendReceipt: true },
     });
     const put = await t.api('PUT', '/api/settings/studio', { name: 'MIKAN', address: 'ул. Ленина, 1', about: null, timezone: 'Asia/Novosibirsk' });
     expect(put.json()).toMatchObject({ name: 'MIKAN', address: 'ул. Ленина, 1', about: '', timezone: 'Asia/Novosibirsk', workingHours: 'Ежедневно 11:00–21:00' });
