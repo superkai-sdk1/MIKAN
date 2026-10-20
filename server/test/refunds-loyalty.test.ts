@@ -114,6 +114,24 @@ describe('partial refunds: bonuses, certificates and prepayments', () => {
     ]);
   });
 
+  it('still takes back the earned bonuses when the bonuses a partial refund gave back burnt meanwhile', async () => {
+    await api('PUT', '/api/settings/retention', { loyalty: { expiryDays: 30 } });
+    await adjust(1000, 'Старт');
+    const sale = await sell({ clientId: client.id, items: [twoLabrets()], payments: { cash: 2100, bonus: 900 } });
+    expect(sale.bonusEarned).toBe(105);
+    await adjust(-205, 'Потратила всё'); // the earned 105 are spent, not burnt
+
+    const first = await refundAsPreviewed(sale, oneOf(sale));
+    expect(first).toMatchObject({ payments: { bonus: 450 }, bonusTakenBack: 52 });
+    vi.setSystemTime(NOW + 31 * DAY_MS);
+    expireBonusLots(t.ctx.db, Date.now()); // the 450 given back (less the 52 taken) burn
+
+    const last = await refundAsPreviewed(sale);
+    // The sale's own earnings never burnt: the rest of them is owed, as if refunded at once.
+    expect(last).toMatchObject({ payments: { bonus: 450 }, bonusTakenBack: 53 });
+    expect((await ledger()).balance).toBe(450 - 53);
+  });
+
   it('gives the certificate part back to the latest redemption first', async () => {
     const certificate = async (price: number) => {
       const sold = await sell({ clientId: client.id, items: [{ type: 'certificate', price }], payments: { cash: price } });

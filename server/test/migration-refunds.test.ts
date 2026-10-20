@@ -93,7 +93,7 @@ describe('migration 0021 (partial refunds)', () => {
         saleId: 1,
         items: [
           { saleItemId: 1, name: 'Лабрет — 8 мм', quantity: 2, amount: 1636 },
-          { saleItemId: 2, name: 'Прокол мочки', quantity: 1, amount: 1363 },
+          { saleItemId: 2, name: 'Прокол мочки', quantity: 1, amount: 1364 },
         ],
         amount: 3000,
         payments: { cash: 2000, card: 0, transfer: 500, qr: 0, deposit: 0, bonus: 500, certificate: 0 },
@@ -111,6 +111,33 @@ describe('migration 0021 (partial refunds)', () => {
     expect(shiftSummary(db, 1)).toMatchObject({ salesCount: 2, refunds: 2500, cashRefunds: 2000 });
     expect(reportSummary(db, t, t + 1000)).toMatchObject({ revenue: 1000, salesCount: 1, refunds: 2500 + 700 });
     expect(sqlite.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    sqlite.close();
+  });
+
+  it('gives a certificate line its whole nominal and splits the discount over the other lines only', () => {
+    const before = migrationsBeforeRefunds();
+    dirs.push(before);
+    const sqlite = new Database(':memory:');
+    sqlite.pragma('foreign_keys = ON');
+    const db = drizzle(sqlite, { schema });
+    migrate(db, { migrationsFolder: before });
+
+    const t = 1_790_000_000_000;
+    sqlite.exec(`
+      INSERT INTO employees (id, name, login, password_hash, color, created_at, updated_at) VALUES (1, 'Анна', 'anna', 'x', '#FF7A1A', ${t}, ${t});
+      INSERT INTO sales (id, number, employee_id, subtotal, discount, total, pay_cash, status, refunded_at, refund_reason, created_at) VALUES
+        (1, 1, 1, 2000, 200, 1800, 1800, 'refunded', ${t + 100}, 'Передумал', ${t});
+      INSERT INTO sale_items (id, sale_id, type, certificate_id, name, quantity, price, total) VALUES
+        (1, 1, 'service', NULL, 'Прокол мочки', 1, 1000, 1000),
+        (2, 1, 'certificate', 7, 'Подарочный сертификат', 1, 1000, 1000);
+    `);
+
+    migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+
+    expect(sqlite.prepare('SELECT sale_item_id, amount FROM sale_refund_items ORDER BY id').all()).toEqual([
+      { sale_item_id: 1, amount: 800 },
+      { sale_item_id: 2, amount: 1000 },
+    ]);
     sqlite.close();
   });
 });

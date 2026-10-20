@@ -289,8 +289,10 @@ export function expireBonusLots(db: DbOrTx, now = Date.now()): { lots: number; a
       .all();
     for (const lot of due) {
       tx.update(bonusOperations).set({ remaining: 0 }).where(eq(bonusOperations.id, lot.id)).run();
-      // The sale that earned the lot (if any) stays on its expiry, so a later refund knows what already burnt.
-      insertOperation(tx, { clientId: lot.clientId, type: 'expire', amount: -lot.remaining, saleId: lot.saleId, createdAt: now });
+      // The sale that earned the lot stays on its expiry, so a later refund knows what of its earnings already burnt.
+      // Other lots of a sale (bonuses a partial refund gave back) are not its earnings: their burn names no sale.
+      const saleId = lot.type === 'earn' ? lot.saleId : null;
+      insertOperation(tx, { clientId: lot.clientId, type: 'expire', amount: -lot.remaining, saleId, createdAt: now });
     }
     return { lots: due.length, amount: due.reduce((sum, lot) => sum + lot.remaining, 0) };
   });

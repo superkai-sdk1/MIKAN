@@ -62,9 +62,27 @@ SELECT s.`id`, s.`total`, s.`pay_cash`, s.`pay_card`, s.`pay_transfer`, s.`pay_q
   COALESCE(s.`refund_reason`, ''), s.`refunded_by_id`, s.`refund_shift_id`, COALESCE(s.`refunded_at`, s.`created_at`)
 FROM `sales` s WHERE s.`status` = 'refunded' ORDER BY s.`id`;
 --> statement-breakpoint
+-- A line returned what it was paid: a certificate line its nominal (never discounted), the others their total less
+-- their share of the discount (rounded down; the rest of the rubles to the last of them, so the lines add up).
 INSERT INTO `sale_refund_items` (`refund_id`, `sale_item_id`, `quantity`, `amount`)
-SELECT r.`id`, i.`id`, i.`quantity`, COALESCE(i.`total` * s.`total` / NULLIF(s.`subtotal`, 0), 0)
-FROM `sale_refunds` r JOIN `sales` s ON s.`id` = r.`sale_id` JOIN `sale_items` i ON i.`sale_id` = r.`sale_id` ORDER BY r.`id`, i.`id`;
+SELECT r.`id`, i.`id`, i.`quantity`,
+  CASE WHEN i.`certificate_id` IS NOT NULL OR i.`type` = 'certificate' THEN i.`total`
+  ELSE COALESCE(i.`total` * (s.`total` - c.`nominal`) / NULLIF(s.`subtotal` - c.`nominal`, 0), 0) END
+FROM `sale_refunds` r
+  JOIN `sales` s ON s.`id` = r.`sale_id`
+  JOIN `sale_items` i ON i.`sale_id` = r.`sale_id`
+  JOIN (SELECT `sale_id`, COALESCE(SUM(CASE WHEN `certificate_id` IS NOT NULL OR `type` = 'certificate' THEN `total` ELSE 0 END), 0) AS `nominal`
+        FROM `sale_items` GROUP BY `sale_id`) c ON c.`sale_id` = r.`sale_id`
+ORDER BY r.`id`, i.`id`;
+--> statement-breakpoint
+UPDATE `sale_refund_items` SET `amount` = `amount` + (
+  SELECT r.`amount` - SUM(x.`amount`) FROM `sale_refund_items` x JOIN `sale_refunds` r ON r.`id` = x.`refund_id`
+  WHERE x.`refund_id` = `sale_refund_items`.`refund_id`
+)
+WHERE `id` IN (
+  SELECT MAX(x.`id`) FROM `sale_refund_items` x JOIN `sale_items` i ON i.`id` = x.`sale_item_id`
+  WHERE i.`certificate_id` IS NULL AND i.`type` != 'certificate' GROUP BY x.`refund_id`
+);
 --> statement-breakpoint
 UPDATE `sale_items` SET `refunded_quantity` = `quantity` WHERE `sale_id` IN (SELECT `id` FROM `sales` WHERE `status` = 'refunded');
 --> statement-breakpoint
