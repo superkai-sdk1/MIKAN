@@ -8,25 +8,34 @@ struct MainTabView: View {
         TabView(selection: $appState.selectedTab) {
             Tab("Запись", systemImage: "calendar", value: AppTab.schedule) {
                 ScheduleView()
+                    .offlineBanner()
             }
             Tab("Клиенты", systemImage: "person.2", value: AppTab.clients) {
                 ClientsListView()
+                    .offlineBanner()
             }
             Tab("Касса", systemImage: "rublesign.circle", value: AppTab.pos) {
                 POSView()
+                    .offlineBanner()
             }
             Tab("Склад", systemImage: "shippingbox", value: AppTab.inventory) {
                 InventoryView()
+                    .offlineBanner()
             }
             .badge(appState.badges.lowStock)
             Tab("Ещё", systemImage: "ellipsis.circle", value: AppTab.more) {
                 MoreView()
+                    .offlineBanner()
             }
             .badge(appState.moreBadge)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .tabViewBottomAccessory {
             ShiftAccessoryView()
+        }
+        // A tapped push notification: the appointment, the chat or the requests, over the current tab.
+        .sheet(item: $appState.pushRoute) { route in
+            PushRouteView(route: route)
         }
     }
 }

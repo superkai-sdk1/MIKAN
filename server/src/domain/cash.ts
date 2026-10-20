@@ -5,6 +5,7 @@ import { conflict, notFound } from '../lib/errors.js';
 import { cashOpOut, type ShiftRow } from '../lib/serialize.js';
 import { formatShortDateTime, toIso } from '../lib/time.js';
 import { employeeRefOrMissing, employeesByIds } from './refs.js';
+import { saleMoneySql } from './sale-revenue.js';
 import { studioTimezone } from './settings.js';
 
 /** Prepayment operations recorded while the shift was open (`deposit_operations.shift_id`). */
@@ -80,7 +81,7 @@ export function shiftSummary(db: DbOrTx, shiftId: number): ShiftSummary {
   const salesAgg = db
     .select({
       n: count(),
-      revenue: sql<number>`coalesce(sum(${sales.total}), 0)`,
+      revenue: sql<number>`coalesce(sum(${saleMoneySql}), 0)`,
       cash: sql<number>`coalesce(sum(${sales.payCash}), 0)`,
       card: sql<number>`coalesce(sum(${sales.payCard}), 0)`,
       transfer: sql<number>`coalesce(sum(${sales.payTransfer}), 0)`,
@@ -92,7 +93,7 @@ export function shiftSummary(db: DbOrTx, shiftId: number): ShiftSummary {
     .get();
   const refundAgg = db
     .select({
-      refunds: sql<number>`coalesce(sum(${sales.total}), 0)`,
+      refunds: sql<number>`coalesce(sum(${saleMoneySql}), 0)`,
       cashRefunds: sql<number>`coalesce(sum(${sales.payCash}), 0)`,
     })
     .from(sales)

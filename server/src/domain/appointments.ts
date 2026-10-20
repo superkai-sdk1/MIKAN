@@ -11,12 +11,16 @@ import {
 import { badRequest, conflict, scheduleConflict } from '../lib/errors.js';
 import { clientFullName, parseSteps, type AppointmentRow, type AppointmentServiceRow, type ServiceRow } from '../lib/serialize.js';
 import { formatShortDate, formatTime, MINUTE_MS } from '../lib/time.js';
-import { cancelPendingDepositCodes } from './deposits.js';
+import { autoRetainDeposit, cancelPendingDepositCodes } from './deposits.js';
 import { deleteReceiptOfAppointment } from './receipts.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
 import { applyConsumptionNorms, noConsumption, recordListedUsage, usageRecorded } from './consumption.js';
+import { scheduleFollowUps } from './follow-ups.js';
+import { syncRescheduleNotice } from './reschedule-notice.js';
+import { assertWorkingTime } from './working-time.js';
+import { markWaitlistBooked, noteFreedTime } from './waitlist-hooks.js';
 
 export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
@@ -56,6 +60,8 @@ export interface AppointmentInput {
   notes?: string | null;
   status?: AppointmentStatus;
   force?: boolean;
+  /** PATCH that changes `startsAt`: tell the client in Telegram (see domain/reschedule-notice.ts). */
+  notifyClient?: boolean;
 }
 
 export interface AppointmentFilter {
@@ -64,6 +70,8 @@ export interface AppointmentFilter {
   masterId?: number;
   clientId?: number;
   statuses?: string[];
+  /** Unsettled online bookings in these states (`awaiting_payment`, `awaiting_confirmation`), still open. */
+  onlineStates?: string[];
 }
 
 export function listAppointments(db: DbOrTx, f: AppointmentFilter): AppointmentRow[] {
@@ -73,6 +81,9 @@ export function listAppointments(db: DbOrTx, f: AppointmentFilter): AppointmentR
   if (f.masterId !== undefined) conditions.push(eq(appointments.masterId, f.masterId));
   if (f.clientId !== undefined) conditions.push(eq(appointments.clientId, f.clientId));
   if (f.statuses && f.statuses.length > 0) conditions.push(inArray(appointments.status, f.statuses));
+  if (f.onlineStates && f.onlineStates.length > 0) {
+    conditions.push(inArray(appointments.onlineState, f.onlineStates), inArray(appointments.status, ['scheduled', 'confirmed']));
+  }
   return db
     .select()
     .from(appointments)
@@ -213,6 +224,7 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
     if (endsAt <= input.startsAt) throw badRequest('Окончание записи должно быть позже начала');
     const status = input.status ?? 'scheduled';
     if (!input.force && !INACTIVE_FOR_OVERLAP.includes(status)) {
+      assertWorkingTime(tx, input.masterId, input.startsAt, endsAt);
       assertOverlapFree(tx, { masterId: input.masterId, startsAt: input.startsAt, endsAt });
     }
     const now = Date.now();
@@ -237,6 +249,7 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
       .get();
     writeLines(tx, row.id, lines);
     syncReminder(tx, row, now);
+    markWaitlistBooked(tx, row, lines.map((l) => l.serviceId), now);
     return row;
   });
 }
@@ -256,7 +269,8 @@ function repricedSingleLine(
   return { id: only.id, price: input.price };
 }
 
-export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInput): AppointmentRow {
+/** `actorId` — the employee making the change (recorded on a prepayment the rules retain by themselves). */
+export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInput, actorId: number | null = null): AppointmentRow {
   return db.transaction((tx) => {
     const current = getAppointmentRow(tx, id);
     if (input.clientId !== undefined) clientMustExist(tx, input.clientId);
@@ -287,6 +301,10 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
     const timingChanged =
       next.startsAt !== current.startsAt || next.endsAt !== current.endsAt || next.masterId !== current.masterId;
     const reactivated = INACTIVE_FOR_OVERLAP.includes(current.status) && !INACTIVE_FOR_OVERLAP.includes(next.status);
+    // A master's own schedule is checked on moves only (status changes and edits that keep the time are not).
+    if (!input.force && !INACTIVE_FOR_OVERLAP.includes(next.status) && timingChanged) {
+      assertWorkingTime(tx, next.masterId, next.startsAt, next.endsAt);
+    }
     if (!input.force && !INACTIVE_FOR_OVERLAP.includes(next.status) && (timingChanged || reactivated)) {
       assertOverlapFree(tx, { id, masterId: next.masterId, startsAt: next.startsAt, endsAt: next.endsAt });
     }
@@ -307,7 +325,11 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
     const reminderRelevant =
       timingChanged || next.status !== current.status || next.clientId !== current.clientId || replaced !== undefined;
     if (reminderRelevant) syncReminder(tx, row, now);
-    return row;
+    syncRescheduleNotice(tx, current, row, input.notifyClient === true, now);
+    noteFreedTime(tx, current, row, now);
+    const closedWithoutVisit =
+      INACTIVE_FOR_OVERLAP.includes(next.status) && !INACTIVE_FOR_OVERLAP.includes(current.status);
+    return (closedWithoutVisit ? autoRetainDeposit(tx, row, now, actorId) : null) ?? row;
   });
 }
 
@@ -364,6 +386,8 @@ export function completeAppointment(db: DbOrTx, id: number, input: CompleteInput
         scheduled = scheduleAftercare(tx, row, client, parseSteps(template.stepsJson), completedAt);
       }
     }
+    // The healing check-in and the jewelry change reminder do not depend on the memo switch.
+    scheduleFollowUps(tx, row, completedAt, now);
     return { row, scheduled, consumption };
   });
 }

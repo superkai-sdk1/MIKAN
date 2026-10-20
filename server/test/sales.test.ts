@@ -48,8 +48,8 @@ describe('sales (POS)', () => {
       refundReason: null,
     });
     expect(sale.items).toEqual([
-      { id: expect.any(Number), type: 'product', productId: product.id, variantId: product.variants[0].id, variantName: null, serviceId: null, name: 'Лабрет', quantity: 1, price: 1500, total: 1500 },
-      { id: expect.any(Number), type: 'service', productId: null, variantId: null, variantName: null, serviceId: service.id, name: 'Прокол мочки', quantity: 1, price: 2500, total: 2500 },
+      { id: expect.any(Number), type: 'product', productId: product.id, variantId: product.variants[0].id, variantName: null, serviceId: null, certificateId: null, certificateCode: null, name: 'Лабрет', quantity: 1, price: 1500, total: 1500 },
+      { id: expect.any(Number), type: 'service', productId: null, variantId: null, variantName: null, serviceId: service.id, certificateId: null, certificateCode: null, name: 'Прокол мочки', quantity: 1, price: 2500, total: 2500 },
     ]);
     expect((await t.api('GET', `/api/products/${product.id}`)).json().quantity).toBe(2);
     const moves = (await t.api('GET', `/api/products/${product.id}/movements`)).json().items;

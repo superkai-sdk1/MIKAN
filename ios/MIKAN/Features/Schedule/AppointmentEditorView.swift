@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// Create / reschedule an appointment. Handles `409 schedule_conflict` with «Сохранить всё равно».
+/// Create / reschedule an appointment. Handles `409 schedule_conflict` (a busy master or time outside their own
+/// schedule) by asking «Записать всё равно?» and retrying with `force`.
 /// A new appointment that needs a prepayment continues to the prepayment screen instead of closing.
 struct AppointmentEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
     @Environment(AppState.self) private var appState
     @Environment(ReferenceStore.self) private var reference
+    @Environment(\.permissions) private var permissions
 
     @State private var draft: AppointmentDraft
     @State private var isSaving = false
@@ -62,8 +64,8 @@ struct AppointmentEditorView: View {
             }
             .task { await loadReference() }
             .errorAlert($errorMessage)
-            .alert("Время занято", isPresented: conflictBinding) {
-                Button("Сохранить всё равно") { save(force: true) }
+            .alert("Записать всё равно?", isPresented: conflictBinding) {
+                Button("Записать") { save(force: true) }
                 Button("Изменить время", role: .cancel) {}
             } message: {
                 Text(conflictMessage ?? "")
@@ -95,7 +97,10 @@ struct AppointmentEditorView: View {
 
     private var masterSection: some View {
         Section {
-            if reference.masters.isEmpty, referenceError == nil {
+            if !permissions.picksMaster {
+                // A master books and moves only their own appointments.
+                LabeledContent("Мастер", value: appState.employee?.name ?? "—")
+            } else if reference.masters.isEmpty, referenceError == nil {
                 LabeledContent("Мастер") { ProgressView() }
             } else {
                 Picker("Мастер", selection: $draft.masterId) {
@@ -124,8 +129,11 @@ struct AppointmentEditorView: View {
         } header: {
             Text("Время")
         } footer: {
-            if !reference.workday.contains(start: draft.start, end: draft.end, calendar: .app) {
-                Label("Вне рабочего времени студии (\(reference.workday.title)). Запись сохранится — календарь покажет её.", systemImage: "clock.badge.exclamationmark")
+            VStack(alignment: .leading, spacing: 4) {
+                MasterDayHint(masterId: draft.masterId, start: draft.start, end: draft.end)
+                if !reference.workday.contains(start: draft.start, end: draft.end, calendar: .app) {
+                    Label("Вне рабочего времени студии (\(reference.workday.title)). Запись сохранится — календарь покажет её.", systemImage: "clock.badge.exclamationmark")
+                }
             }
         }
     }
@@ -196,6 +204,8 @@ struct AppointmentEditorView: View {
     }
 
     private func loadReference() async {
+        // A master books only themselves, whatever column or request the draft came from.
+        draft.masterId = permissions.master(for: draft.masterId)
         do {
             try await reference.ensureEmployees()
             try await reference.ensureServices()

@@ -4,6 +4,8 @@ import { appointments, depositOperations, qrPayments } from '../db/schema.js';
 import { badRequest, conflict } from '../lib/errors.js';
 import type { AppointmentRow, DepositOperationRow, QrPaymentRow, SaleRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
+import { auditAutoRetain } from './audit-events.js';
+import { closingRetain } from './cancellation.js';
 import { getOpenShift } from './cash.js';
 import {
   appointmentLedger,
@@ -14,6 +16,7 @@ import {
   type DepositOperationType,
 } from './deposit-ledger.js';
 import { getAppointmentRow } from './refs.js';
+import { getStudioSettings } from './settings.js';
 
 /**
  * The prepayment ledger write side. Every movement is a new `deposit_operations` row; money is counted once, when it
@@ -147,7 +150,7 @@ export function retainDeposit(
   db: DbOrTx,
   appointmentId: number,
   input: { amount?: number; reason?: string | null },
-  employeeId: number,
+  employeeId: number | null,
 ): AppointmentRow {
   return db.transaction((tx) => {
     const appointment = getAppointmentRow(tx, appointmentId);
@@ -167,6 +170,28 @@ export function retainDeposit(
     });
     return touchAppointment(tx, appointmentId, now);
   });
+}
+
+/**
+ * `StudioSettings.cancellation.autoRetain`: the appointment has just been cancelled (at `at`) or marked a no-show —
+ * keep the share the rules name of what it holds (nothing for a free cancellation). The remainder stays held for
+ * staff to refund. Returns the updated row, or null when nothing was retained.
+ */
+export function autoRetainDeposit(
+  db: DbOrTx,
+  appointment: AppointmentRow,
+  at: number,
+  employeeId: number | null,
+): AppointmentRow | null {
+  const rules = getStudioSettings(db).cancellation;
+  if (!rules.autoRetain) return null;
+  const held = heldDeposit(db, appointment.id);
+  if (held <= 0) return null;
+  const retain = closingRetain(appointment.status, appointment.startsAt, at, held, rules);
+  if (!retain || retain.amount <= 0) return null;
+  const row = retainDeposit(db, appointment.id, retain, employeeId);
+  auditAutoRetain(db, row, retain);
+  return row;
 }
 
 /** Checkout: `amount` of the held prepayment is counted in `sale` (validated by `prepareSale`). */

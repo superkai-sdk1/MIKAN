@@ -128,11 +128,15 @@ struct ReceiptLinesSection: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach($cart.lines) { $line in
-                    ReceiptLineRow(
-                        line: $line,
-                        stockLimit: cart.stockLimit(for: line),
-                        stockWarning: cart.stockWarning(for: line)
-                    )
+                    if line.isCertificate {
+                        CertificateLineEditor(line: $line)
+                    } else {
+                        ReceiptLineRow(
+                            line: $line,
+                            stockLimit: cart.stockLimit(for: line),
+                            stockWarning: cart.stockWarning(for: line)
+                        )
+                    }
                 }
                 .onDelete { offsets in
                     withAnimation(.snappy) { cart.remove(at: offsets) }

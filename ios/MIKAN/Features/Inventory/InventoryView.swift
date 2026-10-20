@@ -12,6 +12,7 @@ struct InventoryView: View {
     @Environment(APIClient.self) private var api
     @Environment(AppState.self) private var appState
     @Environment(ReferenceStore.self) private var reference
+    @Environment(\.permissions) private var permissions
     @State private var model = InventoryModel()
     @State private var showsEditor = false
     @State private var showsCategories = false
@@ -114,6 +115,7 @@ struct InventoryView: View {
             await appState.refreshBadges()
         }
         .task(id: model.section) { await model.load(api: api) }
+        .onReconnect { await model.load(api: api) }
         .remoteErrorAlert(model.remote)
     }
 
@@ -134,7 +136,7 @@ struct InventoryView: View {
             ProductRow(product: product, highlightedSize: model.filter.size)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if product.isPresenceTracked {
+            if product.isPresenceTracked, permissions.editsCatalog {
                 ForEach(PresenceStatus.allCases.reversed().filter { $0 != product.presenceStatus }) { status in
                     Button(status.shortTitle, systemImage: status.symbol) { setPresence(status, of: product) }
                         .tint(status.color)
@@ -182,7 +184,19 @@ struct InventoryView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if model.section == .service {
+        if !permissions.editsCatalog {
+            // A master looks at the stock: its history only.
+            if model.section != .service {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("История ревизий", systemImage: "clock.arrow.circlepath") { route = .revisions }
+                        Button("Движения", systemImage: "arrow.left.arrow.right") { route = .movements }
+                    } label: {
+                        Label("Склад", systemImage: "ellipsis")
+                    }
+                }
+            }
+        } else if model.section == .service {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Категории услуг", systemImage: "folder") { showsCategories = true }
             }
@@ -243,8 +257,10 @@ struct InventoryView: View {
             } description: {
                 Text(emptyDescription)
             } actions: {
-                Button(addTitle) { showsEditor = true }
-                    .buttonStyle(.glassProminent)
+                if permissions.editsCatalog {
+                    Button(addTitle) { showsEditor = true }
+                        .buttonStyle(.glassProminent)
+                }
             }
         }
     }

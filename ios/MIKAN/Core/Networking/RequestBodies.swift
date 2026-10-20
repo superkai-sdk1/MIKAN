@@ -31,14 +31,17 @@ nonisolated struct LoginBody: Encodable, Sendable {
     let password: String
 }
 
+/// `POST /employees`, `PATCH /employees/:id`. Fields the signed-in employee may not change are omitted
+/// (see `EmployeeBody.make`).
 nonisolated struct EmployeeBody: Encodable, Sendable {
     var name: String
-    var login: String
+    var login: String?
     /// Omitted when not changing the password.
     var password: String?
     var phone: Nullable<String>
     var color: Nullable<String>
-    var isMaster: Bool
+    var isMaster: Bool?
+    var role: EmployeeRole?
     var active: Bool?
 }
 
@@ -76,6 +79,9 @@ nonisolated struct ServiceBody: Encodable, Sendable {
     var aftercareTemplateId: Nullable<Int>
     /// «Свежий прокол» / «Свежее тату»: aftercare memos are sent only for such services.
     var freshProcedure: Bool
+    /// Post-visit follow-ups of the bot: days until «Как заживает?», weeks until the jewelry change; `null` — never.
+    var healingCheckDays: Nullable<Int>
+    var jewelryChangeWeeks: Nullable<Int>
     /// Replace the compatible jewelry and the consumption norm.
     var jewelryIds: [Int] = []
     var consumables: [ServiceConsumable] = []
@@ -282,6 +288,9 @@ nonisolated struct SaleItemBody: Encodable, Hashable, Sendable {
     let price: Int
     /// The size sold; required by the server for a product with several sizes.
     var variantId: Int? = nil
+    /// Who a gift certificate (`type: certificate`) is for, and a note kept on it; omitted for other lines.
+    var recipientName: String? = nil
+    var note: String? = nil
 }
 
 /// `POST /sales` and `POST /qr-payments`.

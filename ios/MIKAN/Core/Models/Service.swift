@@ -67,6 +67,10 @@ nonisolated struct Service: Codable, Hashable, Identifiable, Sendable {
     var aftercareTemplateId: Int?
     /// «Свежий прокол» / «Свежее тату»: completing an appointment sends aftercare memos only for such services.
     var freshProcedure = true
+    /// The bot asks the client «Как заживает?» this many days after the visit (1…60); `nil` — never.
+    var healingCheckDays: Int?
+    /// The bot suggests changing the jewelry this many weeks after the visit (1…52); `nil` — never.
+    var jewelryChangeWeeks: Int?
     /// Catalog jewelry compatible with the service (the bot offers it).
     var jewelryIds: [Int] = []
     /// Consumables one procedure uses; deducted when an appointment with the service is completed.
@@ -102,11 +106,12 @@ nonisolated extension Service {
     private enum CodingKeys: String, CodingKey {
         case id, name, category, group, price, priceMax, priceFrom, durationMin, description
         case imageUrl, imagePrompt, photos, variants, depositAmount, aftercareTemplateId, freshProcedure, jewelryIds, consumables
+        case healingCheckDays, jewelryChangeWeeks
         case active, sort
     }
 
-    /// Tolerates servers that predate service cards (no group, photos, variants, cover), prepayments or the
-    /// fresh-procedure switch (such a server sends memos for any service: read as `true`).
+    /// Tolerates servers that predate service cards (no group, photos, variants, cover), prepayments, the
+    /// fresh-procedure switch (such a server sends memos for any service: read as `true`) or post-visit follow-ups.
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
@@ -125,6 +130,8 @@ nonisolated extension Service {
         depositAmount = try c.decodeIfPresent(Int.self, forKey: .depositAmount) ?? 0
         aftercareTemplateId = try c.decodeIfPresent(Int.self, forKey: .aftercareTemplateId)
         freshProcedure = try c.decodeIfPresent(Bool.self, forKey: .freshProcedure) ?? true
+        healingCheckDays = try c.decodeIfPresent(Int.self, forKey: .healingCheckDays)
+        jewelryChangeWeeks = try c.decodeIfPresent(Int.self, forKey: .jewelryChangeWeeks)
         jewelryIds = try c.decodeIfPresent([Int].self, forKey: .jewelryIds) ?? []
         consumables = try c.decodeIfPresent([ServiceConsumable].self, forKey: .consumables) ?? []
         active = try c.decode(Bool.self, forKey: .active)

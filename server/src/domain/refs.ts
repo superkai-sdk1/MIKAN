@@ -1,8 +1,23 @@
 import { asc, eq, inArray } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, appointmentServices, clients, employees, openReceipts, products, productVariants, saleItems, sales, services } from '../db/schema.js';
+import {
+  appointments,
+  appointmentServices,
+  clients,
+  employees,
+  giftCertificates,
+  openReceipts,
+  products,
+  productVariants,
+  saleItems,
+  sales,
+  services,
+} from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
+import { earnedBySales } from './bonuses.js';
+import { appointmentCancellation } from './cancellation.js';
 import { depositLedgerByAppointment, depositStatusOf, heldAmount, latestDepositCodes } from './deposit-ledger.js';
+import { getStudioSettings } from './settings.js';
 import {
   appointmentOut,
   appointmentServiceOut,
@@ -112,11 +127,13 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
     ...rows.map((r) => r.serviceId),
     ...[...lines.values()].flat().map((l) => l.serviceId),
   ]);
+  const rules = getStudioSettings(db).cancellation;
   return rows.map((a) => {
     const client = cl.get(a.clientId);
     const master = em.get(a.masterId);
     const service = a.serviceId != null ? sv.get(a.serviceId) : undefined;
     const ledger = ledgers.get(a.id) ?? [];
+    const held = heldAmount(ledger);
     const link = links.get(a.id);
     return appointmentOut(
       a,
@@ -127,12 +144,13 @@ export function serializeAppointments(db: DbOrTx, rows: AppointmentRow[]): Appoi
         appointmentServiceOut(l, l.serviceId != null ? (sv.get(l.serviceId)?.category ?? null) : null),
       ),
       {
-        held: heldAmount(ledger),
+        held,
         status: depositStatusOf(ledger, a.depositRequired, a.status),
         operations: ledger.map((op) => depositOperationOut(op, employeeRefOrMissing(em, op.employeeId))),
         link: link ? qrPaymentOut(link, null) : null,
       },
       receipts.get(a.id) ?? null,
+      appointmentCancellation(a, held, rules),
     );
   });
 }
@@ -174,6 +192,14 @@ export function serializeSales(db: DbOrTx, rows: SaleRow[]): SaleOut[] {
     db,
     rows.map((r) => r.employeeId),
   );
+  const earned = earnedBySales(
+    db,
+    rows.map((r) => r.id),
+  );
+  const codes = certificateCodes(
+    db,
+    items.map((i) => i.certificateId),
+  );
   return rows.map((sale) => {
     const client = sale.clientId != null ? cl.get(sale.clientId) : undefined;
     const employee = em.get(sale.employeeId);
@@ -182,8 +208,24 @@ export function serializeSales(db: DbOrTx, rows: SaleRow[]): SaleOut[] {
       (bySale.get(sale.id) ?? []).sort((a, b) => a.id - b.id),
       client ? clientRef(client) : null,
       employee ? employeeRef(employee) : missingEmployee(sale.employeeId),
+      earned.get(sale.id) ?? 0,
+      codes,
     );
   });
+}
+
+/** Codes of the given gift certificates, by id. */
+function certificateCodes(db: DbOrTx, ids: Array<number | null | undefined>): Map<number, string> {
+  const list = unique(ids);
+  if (list.length === 0) return new Map();
+  return new Map(
+    db
+      .select({ id: giftCertificates.id, code: giftCertificates.code })
+      .from(giftCertificates)
+      .where(inArray(giftCertificates.id, list))
+      .all()
+      .map((r) => [r.id, r.code]),
+  );
 }
 
 export function getSaleRow(db: DbOrTx, id: number): SaleRow {

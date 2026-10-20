@@ -7,8 +7,11 @@ import { AppError, badRequest, conflict, errorMessage, notFound } from '../lib/e
 import { qrPaymentOut, type QrPaymentRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
 import { QrProviderError, type CreatedQr, type QrBankStatus, type QrProvider } from '../payments/qr-provider.js';
+import { auditQrPaid } from './audit-events.js';
 import { announceQrDeposit } from './deposit-messages.js';
 import { recordQrDeposit } from './deposits.js';
+import { announceBonusEarned } from './loyalty.js';
+import { announceHoldPaid, awaitsPayment, holdSettled, settlePaidHold } from './online-booking-lifecycle.js';
 import { getSaleRow, serializeSale } from './refs.js';
 import { createSale, prepareSale, type SaleInput } from './sales.js';
 import { getStudioSettings } from './settings.js';
@@ -139,7 +142,11 @@ function update(db: DbOrTx, id: number, values: Partial<QrPaymentRow>): QrPaymen
  */
 function completePaid(db: DbOrTx, row: QrPaymentRow, now: number): QrPaymentRow {
   const paid = { status: 'paid', paidAt: now, checkedAt: now, updatedAt: now };
-  if (row.kind === 'deposit') return update(db, row.id, { ...paid, error: recordQrDeposit(db, row, now) });
+  if (row.kind === 'deposit') {
+    const error = recordQrDeposit(db, row, now);
+    settlePaidHold(db, row, now); // an online booking waiting for this prepayment is confirmed
+    return update(db, row.id, { ...paid, error });
+  }
   if (row.status === 'cancelled') return update(db, row.id, { ...paid, error: paidAfterCancel(row.amount) });
   if (row.saleInputJson == null) throw new Error(`QR payment ${row.id} has no cart to sell`);
   const input = JSON.parse(row.saleInputJson) as SaleInput;
@@ -189,6 +196,7 @@ async function checkBank(ctx: AppContext, id: number, force: boolean): Promise<Q
   const now = Date.now();
   if (!ctx.qr || !isWatched(row, now)) return row;
   if (!force && row.checkedAt != null && now - row.checkedAt < QR_MIN_CHECK_INTERVAL_MS) return row;
+  const holdWaiting = awaitsPayment(ctx.db, row);
   let bank: QrBankStatus;
   try {
     bank = await ctx.qr.paymentStatus(row.externalId);
@@ -201,8 +209,12 @@ async function checkBank(ctx: AppContext, id: number, force: boolean): Promise<Q
   const updated = applyBankStatus(ctx.db, id, bank, Date.now());
   if (updated.status === 'paid' && row.status !== 'paid') {
     ctx.log.info({ qrPaymentId: id, kind: updated.kind, saleId: updated.saleId, amount: updated.amount }, 'QR payment received');
+    auditQrPaid(ctx, updated);
     if (updated.error) await alertStaff(ctx, updated);
-    if (updated.kind === 'deposit') await announceQrDeposit(ctx, updated);
+    if (holdWaiting && holdSettled(ctx.db, updated)) await announceHoldPaid(ctx, updated.appointmentId!, updated.amount);
+    else if (updated.kind === 'deposit') await announceQrDeposit(ctx, updated);
+    // The poll that found the payment does not wait for Telegram (announceBonusEarned never throws).
+    if (updated.saleId != null) void announceBonusEarned(ctx, updated.saleId);
   }
   return updated;
 }

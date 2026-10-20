@@ -7,7 +7,11 @@ struct CheckoutLinesSection: View {
         @Bindable var cart = cart
         Section("Позиции") {
             ForEach($cart.lines) { $line in
-                CheckoutLineRow(line: $line, stockWarning: cart.stockWarning(for: line))
+                if line.isCertificate {
+                    CertificateLineEditor(line: $line)
+                } else {
+                    CheckoutLineRow(line: $line, stockWarning: cart.stockWarning(for: line))
+                }
             }
             .onDelete { cart.remove(at: $0) }
         }
@@ -77,18 +81,22 @@ struct CheckoutTotalsSection: View {
         Section {
             LabeledContent("Подытог") { MoneyText(cart.subtotal) }
             NumberField.money("Скидка", value: $cart.discount, systemImage: "tag")
+            CheckoutBirthdayDiscountRow()
             LabeledContent {
                 MoneyText(cart.total).font(.title3.weight(.bold))
             } label: {
                 Text("Итого").font(.title3.weight(.bold))
             }
-            if cart.depositApplied > 0 {
+            if cart.depositApplied > 0 || cart.creditsApplied > 0 {
                 CheckoutDepositRows()
             }
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 if !cart.isDiscountValid {
-                    Text("Скидка не может быть больше суммы чека.").foregroundStyle(.red)
+                    Text(cart.sellsCertificate
+                        ? "Скидка не может быть больше суммы чека без подарочного сертификата."
+                        : "Скидка не может быть больше суммы чека.")
+                        .foregroundStyle(.red)
                 }
                 if cart.depositRemainder > 0 {
                     Text("Остаток предоплаты \(Money.format(cart.depositRemainder)) останется за записью — верните его клиенту в карточке записи.")
@@ -98,7 +106,8 @@ struct CheckoutTotalsSection: View {
     }
 }
 
-/// «Предоплата −2 000 ₽ · внесена переводом 15 октября» and «К оплате» — what is left after the prepayment.
+/// «Предоплата −2 000 ₽ · внесена переводом 15 октября», bonuses and certificates, and «К оплате» — what is left
+/// for the payment methods.
 private struct CheckoutDepositRows: View {
     @Environment(CartStore.self) private var cart
 
@@ -107,16 +116,19 @@ private struct CheckoutDepositRows: View {
     }
 
     var body: some View {
-        LabeledContent {
-            Text(Money.format(-cart.depositApplied))
-                .monospacedDigit()
-                .foregroundStyle(.green)
-        } label: {
-            Label(PaymentLine.depositTitle, systemImage: PaymentLine.depositSymbol)
-            if let receivedNote {
-                Text(receivedNote)
+        if cart.depositApplied > 0 {
+            LabeledContent {
+                Text(Money.format(-cart.depositApplied))
+                    .monospacedDigit()
+                    .foregroundStyle(.green)
+            } label: {
+                Label(PaymentLine.depositTitle, systemImage: PaymentLine.depositSymbol)
+                if let receivedNote {
+                    Text(receivedNote)
+                }
             }
         }
+        CheckoutCreditRows()
         LabeledContent {
             MoneyText(cart.amountDue)
                 .fontWeight(.semibold)
@@ -209,6 +221,8 @@ struct SaleReceiptView: View {
             }
             SaleItemsSection(sale: sale)
             SalePaymentsSection(payments: sale.payments)
+            SaleBonusEarnedSection(sale: sale)
+            IssuedCertificatesSection(sale: sale)
             if depositRemainder > 0 {
                 Section {
                     Label(
@@ -252,6 +266,11 @@ struct SaleItemsSection: View {
         Section("Позиции") {
             ForEach(sale.items) { item in
                 HStack(alignment: .firstTextBaseline) {
+                    if item.isCertificate {
+                        Image(systemName: PaymentLine.certificateSymbol)
+                            .foregroundStyle(Color.accentColor)
+                            .accessibilityHidden(true)
+                    }
                     VStack(alignment: .leading, spacing: 2) {
                         SizedItemTitle(name: item.name, size: item.variantName)
                         Text("\(item.quantity) × \(Money.format(item.price))")

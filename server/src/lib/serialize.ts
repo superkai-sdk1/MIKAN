@@ -1,4 +1,5 @@
 import type * as s from '../db/schema.js';
+import type { AppointmentCancellationOut } from '../domain/cancellation.js';
 import { toIso } from './time.js';
 
 type Row<T extends { $inferSelect: unknown }> = T['$inferSelect'];
@@ -66,6 +67,7 @@ export const employeeOut = (e: EmployeeRow) => ({
   phone: e.phone,
   color: e.color,
   isMaster: e.isMaster,
+  role: e.role,
   active: e.active,
   createdAt: toIso(e.createdAt),
 });
@@ -82,7 +84,14 @@ export const clientRef = (c: ClientRow): ClientRef => ({
   telegramLinked: c.telegramChatId != null,
 });
 
-export const clientOut = (c: ClientRow, stats: ClientStats | null = null) => ({
+/** `Client.loyalty` of the client card (domain/loyalty.ts); `null` in lists. */
+export interface ClientLoyalty {
+  bonusBalance: number;
+  expiring: { amount: number; at: string } | null;
+  birthdayDiscount: { percent: number; until: string } | null;
+}
+
+export const clientOut = (c: ClientRow, stats: ClientStats | null = null, loyalty: ClientLoyalty | null = null) => ({
   id: c.id,
   name: c.name,
   lastName: c.lastName,
@@ -98,7 +107,9 @@ export const clientOut = (c: ClientRow, stats: ClientStats | null = null) => ({
   archived: c.archived,
   createdAt: toIso(c.createdAt),
   updatedAt: toIso(c.updatedAt),
+  marketingOptOut: c.marketingOptOut,
   stats,
+  loyalty,
 });
 
 export const serviceRef = (sv: ServiceRow): ServiceRef => ({ id: sv.id, name: sv.name, category: sv.category });
@@ -120,6 +131,8 @@ export const serviceOut = (sv: ServiceRow) => ({
   depositAmount: sv.depositAmount,
   aftercareTemplateId: sv.aftercareTemplateId,
   freshProcedure: sv.freshProcedure,
+  healingCheckDays: sv.healingCheckDays,
+  jewelryChangeWeeks: sv.jewelryChangeWeeks,
   active: sv.active,
   sort: sv.sort,
 });
@@ -294,6 +307,8 @@ export const appointmentOut = (
   deposit: AppointmentDepositOut,
   /** Its open receipt in the POS (the visit has started). */
   receiptId: number | null,
+  /** What the studio's cancellation rules mean for it (see domain/cancellation.ts). */
+  cancellation: AppointmentCancellationOut | null,
 ) => ({
   id: a.id,
   client,
@@ -316,34 +331,73 @@ export const appointmentOut = (
   completedAt: toIso(a.completedAt),
   createdAt: toIso(a.createdAt),
   updatedAt: toIso(a.updatedAt),
+  cancellation,
+  channel: a.channel,
+  ...onlineOut(a),
 });
 export type AppointmentOut = ReturnType<typeof appointmentOut>;
 
-export const saleItemOut = (i: SaleItemRow) => ({
+/** Statuses in which an online booking may still wait to be settled. */
+const UNSETTLED_STATUSES = ['scheduled', 'confirmed'];
+
+/**
+ * `onlineState` / `holdUntil` of an appointment: an online booking not settled yet. Once it is closed (cancelled,
+ * completed, no-show) it waits for nothing, whatever the stored state says.
+ */
+function onlineOut(a: AppointmentRow): { onlineState: string | null; holdUntil: string | null } {
+  const onlineState = a.onlineState != null && UNSETTLED_STATUSES.includes(a.status) ? a.onlineState : null;
+  return { onlineState, holdUntil: onlineState === 'awaiting_payment' ? toIso(a.holdUntil) : null };
+}
+
+/**
+ * A sale line on the wire. A gift certificate line is stored as `certificate` and sent as `service` with
+ * `certificateId` and `certificateCode` (older builds know only `product` | `service`).
+ */
+export const saleItemOut = (i: SaleItemRow, certificateCode: string | null = null) => ({
   id: i.id,
-  type: i.type,
+  type: i.type === 'certificate' ? 'service' : i.type,
   productId: i.productId,
   variantId: i.variantId,
   variantName: i.variantName,
   serviceId: i.serviceId,
+  certificateId: i.certificateId,
+  certificateCode,
   name: i.name,
   quantity: i.quantity,
   price: i.price,
   total: i.total,
 });
 
-export const saleOut = (sale: SaleRow, items: SaleItemRow[], client: ClientRef | null, employee: EmployeeRef) => ({
+export const saleOut = (
+  sale: SaleRow,
+  items: SaleItemRow[],
+  client: ClientRef | null,
+  employee: EmployeeRef,
+  /** Bonuses credited for the sale (0 when none). */
+  bonusEarned = 0,
+  /** Codes of the certificates its lines sold, by certificate id. */
+  certificateCodes: ReadonlyMap<number, string> = new Map(),
+) => ({
   id: sale.id,
   number: sale.number,
   client,
   employee,
   appointmentId: sale.appointmentId,
   shiftId: sale.shiftId,
-  items: items.map(saleItemOut),
+  items: items.map((i) => saleItemOut(i, i.certificateId != null ? (certificateCodes.get(i.certificateId) ?? null) : null)),
   subtotal: sale.subtotal,
   discount: sale.discount,
   total: sale.total,
-  payments: { cash: sale.payCash, card: sale.payCard, transfer: sale.payTransfer, qr: sale.payQr, deposit: sale.payDeposit },
+  payments: {
+    cash: sale.payCash,
+    card: sale.payCard,
+    transfer: sale.payTransfer,
+    qr: sale.payQr,
+    deposit: sale.payDeposit,
+    bonus: sale.payBonus,
+    certificate: sale.payCertificate,
+  },
+  bonusEarned,
   status: sale.status,
   note: sale.note,
   refundedAt: toIso(sale.refundedAt),

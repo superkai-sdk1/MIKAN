@@ -4,6 +4,8 @@ import SwiftUI
 struct SalesHistoryView: View {
     @Environment(APIClient.self) private var api
     @State private var day = Calendar.app.startOfDay(for: .now)
+    /// The day on screen: cleared only for another one, not when the screen reappears after a swipe back.
+    @State private var shownDay: Date?
     @State private var sales = Remote<[Sale]>()
 
     private static let dayLimit = 200
@@ -46,7 +48,8 @@ struct SalesHistoryView: View {
         }
         .refreshable { await load() }
         .task(id: day) {
-            sales.reset()
+            if shownDay != day { sales.reset() }
+            shownDay = day
             await load()
         }
         .remoteErrorAlert(sales)
