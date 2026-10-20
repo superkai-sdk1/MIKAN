@@ -17,6 +17,7 @@ import { notFound } from '../lib/errors.js';
 import { earnedBySales } from './bonuses.js';
 import { appointmentCancellation } from './cancellation.js';
 import { depositLedgerByAppointment, depositStatusOf, heldAmount, latestDepositCodes } from './deposit-ledger.js';
+import { refundsBySales } from './refund-rows.js';
 import { getStudioSettings } from './settings.js';
 import {
   appointmentOut,
@@ -26,6 +27,7 @@ import {
   employeeRef,
   qrPaymentOut,
   saleOut,
+  saleRefundOut,
   serviceRef,
   type AppointmentOut,
   type AppointmentRow,
@@ -188,10 +190,13 @@ export function serializeSales(db: DbOrTx, rows: SaleRow[]): SaleOut[] {
     db,
     rows.map((r) => r.clientId),
   );
-  const em = employeesByIds(
+  const refunds = refundsBySales(
     db,
-    rows.map((r) => r.employeeId),
+    rows.map((r) => r.id),
   );
+  const refundRows = [...refunds.values()].flat().map((r) => r.row);
+  const em = employeesByIds(db, [...rows.map((r) => r.employeeId), ...refundRows.map((r) => r.employeeId)]);
+  const itemNames = new Map(items.map((i) => [i.id, i.name]));
   const earned = earnedBySales(
     db,
     rows.map((r) => r.id),
@@ -210,6 +215,13 @@ export function serializeSales(db: DbOrTx, rows: SaleRow[]): SaleOut[] {
       employee ? employeeRef(employee) : missingEmployee(sale.employeeId),
       earned.get(sale.id) ?? 0,
       codes,
+      (refunds.get(sale.id) ?? []).map(({ row, items: lines }) =>
+        saleRefundOut(
+          row,
+          lines.map((l) => ({ saleItemId: l.saleItemId, name: itemNames.get(l.saleItemId) ?? '', quantity: l.quantity, amount: l.amount })),
+          employeeRefOrMissing(em, row.employeeId),
+        ),
+      ),
     );
   });
 }

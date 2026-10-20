@@ -3,7 +3,7 @@ import { DateTime } from 'luxon';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, clients, sales } from '../db/schema.js';
 import { DAY_MS, localDate } from '../lib/time.js';
-import { saleRevenueSql } from './sale-revenue.js';
+import { saleKeptRevenueSql } from './sale-revenue.js';
 
 /**
  * `retention`, `value` and `sources` of the growth report (docs/API.md «Reports»). A visit is a completed appointment;
@@ -109,10 +109,10 @@ export function retentionSection(histories: ClientHistory[], newcomers: ClientHi
   };
 }
 
-/** Revenue of the kept (not refunded) sales of each client made in [from, to). */
+/** Kept revenue (what refunds left of it) of the sales of each client made in [from, to) and not returned in full. */
 function revenueByClient(db: DbOrTx, from: number | null, to: number): Map<number, number> {
   const rows = db
-    .select({ clientId: sales.clientId, revenue: sql<number>`coalesce(sum(${saleRevenueSql}), 0)` })
+    .select({ clientId: sales.clientId, revenue: sql<number>`coalesce(sum(${saleKeptRevenueSql}), 0)` })
     .from(sales)
     .where(
       and(

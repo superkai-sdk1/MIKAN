@@ -171,8 +171,9 @@ export function clientStatsByIds(db: DbOrTx, clientIds: readonly number[]): Map<
     .where(and(inArray(appointments.clientId, ids), eq(appointments.status, 'completed')))
     .groupBy(appointments.clientId)
     .all();
+  // What the client kept of each sale: a partial refund takes off what it returned, a full one everything.
   const spent = db
-    .select({ id: sales.clientId, v: sql<number>`coalesce(sum(${sales.total}), 0)` })
+    .select({ id: sales.clientId, v: sql<number>`coalesce(sum(${sales.total} - ${sales.refundedTotal}), 0)` })
     .from(sales)
     .where(and(inArray(sales.clientId, ids), eq(sales.status, 'completed')))
     .groupBy(sales.clientId)

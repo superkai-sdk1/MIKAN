@@ -509,8 +509,9 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
 ```
 - One refund of some lines / units of a sale, or of everything left. `items[].amount` — what those units returned:
   `quantity × price` less their share of the sale discount (the discount is split across the non-certificate lines in
-  proportion to their totals, rounded down per unit; the refund that returns the last units of the sale returns
-  exactly what is left, so Σ refunds = `total`). `amount` = Σ `items[].amount`.
+  proportion to their totals as in analytics, `allocateDiscount`; a unit returns the line's net divided by its
+  quantity, rounded down; the refund that returns the last units of a line returns exactly what is left of it, so a
+  line returned in full gives back its net and Σ refunds = `total`). `amount` = Σ `items[].amount`.
 - `payments` — how `amount` goes back, in proportion to what of each payment part is still unreturned (rounded down,
   the leftover rubles to the parts in the order cash, transfer, card, qr, certificate, bonus, deposit; never more than
   a part has left; the refund of the rest returns every part's rest exactly):
@@ -520,7 +521,9 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   - `bonus` — comes back to the client as a new lot (`reverse`), `certificate` — back onto the sale's certificates,
     the latest redemption first.
 - `bonusTakenBack` — the bonuses the sale earned that this refund takes back: in proportion to the refunded part of
-  the bonus base (rounded down; the refund of the rest takes the rest), as in «Loyalty bonuses».
+  the bonus base (`amount − payments.bonus − payments.certificate −` the certificate lines it returns; rounded down;
+  the refund of the rest takes the rest), never what of the sale's lot has burnt (it comes off the last refunds) and
+  never more than the client has, as in «Loyalty bonuses».
 - A certificate line refunded cancels that certificate (`409` «Сертификат … уже частично оплачен покупками — его
   нельзя вернуть» when spent in part). `restock` — product units go back to their size (`return` movements).
 - `shiftId` — the shift open at the refund (always set when `payments.cash > 0`). `employee` — who refunded.
@@ -818,7 +821,7 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
 
 - Logged: every successful write request from the app (`POST`/`PUT`/`PATCH`/`DELETE`) except `POST /auth/login`,
   `POST /uploads`, `POST /bot/chats/:chatId/read`, `POST /bot/staff-code`, `POST /devices`, `DELETE /devices/:token`,
-  `POST /campaigns/preview` and idempotent replays; online bookings from the booking page and the Mini App and client
+  `POST /campaigns/preview`, `POST /sales/:id/refund/preview` and idempotent replays; online bookings from the booking page and the Mini App and client
   cancellations on the booking page and moves / cancellations in the client cabinet as `online` (a birthday given on
   the booking page or in the cabinet — `client.birthday`); client actions in the bot (online booking, booking request,
   reschedule, confirm «Приду», «🔕 Не присылать новости» / «Снова получать новости» — `client.marketing_opt_out` /
@@ -835,7 +838,9 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   `settings`, `bot`, `campaign`, `certificate`, `waitlist`, `portfolio`. A manual bonus adjustment is `client.bonus_adjust` on the client
   («Начислено 500 бонусов клиенту «Анна Иванова»: Компенсация»); certificates log `certificate.update` /
   `certificate.cancel` / `certificate.send`; a sale paid with bonuses or certificates says so («… Оплачено бонусами
-  300 ₽, сертификатом 1 000 ₽»). `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
+  300 ₽, сертификатом 1 000 ₽»); a partial refund names what came back («Возврат по чеку №17: Лабрет — 8 мм × 1,
+  1 350 ₽», the one returning the rest adds « — чек возвращён полностью»), a refund of the whole receipt at once reads
+  «Продажа №17 возвращена: 3 500 ₽». `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
 - `entityId` is the id of what the entry is about: `deposit` — the appointment; `stock` — the product (`null` for a
   stock count); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
   the booking request or the scheduled message; `sale` — the sale (`null` for a QR code not yet paid); `settings` and
@@ -1186,7 +1191,9 @@ the background.
   `GET /products/:id/history` keeps one size.
   Service items of a sale count only when the sale is not linked to an appointment (otherwise the appointment
   already lists them).
-- `refunded`: the sale (of the item, or the one that paid for the appointment) was refunded.
+- `refunded`: the sale (of the item, or the one that paid for the appointment) was refunded — or, while the rest of it
+  is kept, the entry's line came back in full (a sale item; an appointment's service line matched to the sale's
+  service items by catalog service, else by name; an appointment without lines once every service item came back).
 - Used by `GET /clients/:id/history` (`items`, all entries), `GET /services/:id/history` and
   `GET /products/:id/history` (paginated, default limit 50, max 200).
 
@@ -1286,9 +1293,11 @@ the background.
   or "Лабрет (осталось 0)" for a product without sizes). Whole sale is one transaction.
 - With `appointmentId`, the appointment gets `saleId` (and is marked `completed` if not already, without aftercare).
 - Refund (`POST /sales/:id/refund`) returns some lines or units, or everything left (see «SaleRefund» for the money):
-  - `items` — `[{ saleItemId, quantity }]`, lines of this sale, each once, `1 ≤ quantity ≤` what of the line is not
-    returned yet (`400` «Можно вернуть не больше 1 шт «Лабрет — 8 мм»»). Omitted (older builds) = every unit not
-    returned yet. Nothing left to return → `409` «Чек №17 уже возвращён». `reason` 1…500 is required.
+  - `items` — `[{ saleItemId, quantity }]` (1…100), lines of this sale (`400` «Позиция не найдена в чеке №17»), each
+    once (`400` «Позиция «Лабрет — 8 мм» указана дважды»), `1 ≤ quantity ≤` what of the line is not returned yet
+    (`400` «Можно вернуть не больше 1 шт «Лабрет — 8 мм»»; a line already returned in full — `400` «Позиция «Лабрет —
+    8 мм» уже возвращена»). Omitted (older builds) = every unit not returned yet. Nothing left to return → `409` «Чек
+    №17 уже возвращён». `reason` 1…500 is required.
   - Gives back the bonuses and certificate amounts of the returned part and takes back the bonuses it earned (see
     «Loyalty bonuses», «Gift certificates»); refunding a certificate line that was already spent in part → `409`
     «Сертификат … уже частично оплачен покупками — его нельзя вернуть».
@@ -1372,11 +1381,14 @@ sale refunded).
 ### Reports
 **Partial refunds everywhere money is counted** (reports, analytics, payroll, the dashboard, a client's
 `totalSpent`, «Рост»): a sale counts by what of it is kept. Its revenue counts on the sale's day as before; a refund
-counts on its own day (`refunds`, `refunded`) by its money (`cash + card + transfer + qr + deposit` parts — bonuses and
-certificates are not money), and what the refund returned leaves the «kept» figures: item tops, categories, margins,
-cost of goods and payroll use each line's kept units (`quantity − refundedQuantity`) with the line's net per unit;
-`totalSpent` = Σ (`total − refundedTotal`) of the client's sales. A sale returned in full behaves as a refunded sale
-did before.
+counts on its own day (`refunds`, `refunded`) by its revenue, the way the sale's own revenue is counted: `amount −
+payments.bonus −` the certificate lines it returned (bonuses paid and certificates sold are not revenue, a certificate
+payment is), so a sale returned in parts adds up to the same as one refunded at once; the cash register counts a
+refund by its money instead (`cash + card + transfer + qr + deposit`, see «CashShift»). What the refunds returned
+leaves the «kept» figures: a sale's kept revenue is its revenue less its refunds' revenue, and item tops, categories,
+margins, cost of goods and payroll use each line's kept units (`quantity − refundedQuantity`) with their share of that
+kept revenue (split across the kept units like the discount, so the lines add up to it); `totalSpent` = Σ (`total −
+refundedTotal`) of the client's sales. A sale returned in full behaves as a refunded sale did before.
 
 `GET /reports/growth?from=&to=` (instants; owner, admin; ≤ 400 days) — how the studio grows:
 ```json
@@ -1443,9 +1455,11 @@ The app shows it in Analytics → «Рост» (owner, admin).
 ```
 Revenue excludes refunded sales, bonus payments and gift certificates sold, like analytics (a sale's revenue is
 `total − payments.bonus − its certificate lines`; item revenue is split as in analytics and certificate lines are left
-out of the tops). `byDay` uses the studio timezone and lists every day in range (zeros included).
-`payments` splits the money of those sales by how it was paid (`deposit` — covered by prepayments received earlier);
-it keeps its older keys, so the bonus and certificate parts are not listed (they are in analytics).
+out of the tops); a partly refunded sale counts by what of it is kept (see above), `refunds` — the revenue of the
+refunds made in the period. `byDay` uses the studio timezone and lists every day in range (zeros included).
+`payments` splits the money of those sales by how it was paid (`deposit` — covered by prepayments received earlier),
+less what their refunds gave back; it keeps its older keys, so the bonus and certificate parts are not listed (they
+are in analytics).
 `deposits` — prepayment operations in the period: `received` (+ by method), `applied` (counted in sales, net of
 sale refunds), `refunded`, `retained` (kept after cancellations / no-shows; not part of `revenue`); `held` — the total
 held for appointments at the end of the period. `held(start) + received − applied − refunded − retained = held(end)`.
@@ -1524,10 +1538,12 @@ picture of `[from, to)` plus the headline numbers of the **previous period of th
 ```
 Which sales count where:
 - **Made** sales — created in the period, whatever their status now (a receipt refunded later was still made then).
-- **Refunds** — sales refunded during the period (`refundedAt`), whenever they were made.
-- **Kept** sales — the made sales that are still `completed`. Every breakdown below `revenue` (services, products,
-  margins, weekdays, hours, masters, clients) counts kept sales only, so a returned receipt never inflates tops or
-  margins. Item revenue is net of the sale discount, split as in the summary (`allocateDiscount`).
+- **Refunds** — refunds (whole or partial) made during the period, whenever their sales were made, by their revenue
+  (see the top of «Reports»).
+- **Kept** sales — the made sales that are still `completed`, each by what of it is kept. Every breakdown below
+  `revenue` (services, products, margins, weekdays, hours, masters, clients) counts kept sales only, so a returned
+  receipt or line never inflates tops or margins. Item revenue is net of the sale discount, split as in the summary
+  (`allocateDiscount`), over the lines' kept units.
 
 Fields:
 - `totals` — headline numbers of the period; `previous` — the same keys for the previous period (the app shows
@@ -1536,7 +1552,7 @@ Fields:
   `newClients` as in `clients`; `appointmentsCompleted` / `noShows` / `noShowLoss` as in `appointments`;
   `depositsReceived` = `deposits.received`.
 - `revenue`: `gross` — Σ revenue of made sales, `salesCount` — their number, `averageCheck = round(gross / salesCount)`
-  (`0` without sales), `discounts` — Σ their discounts; `refunds` / `refundsCount` — refunded in the period;
+  (`0` without sales), `discounts` — Σ their discounts; `refunds` / `refundsCount` — the refunds made in the period;
   `net = gross − refunds` («Выручка»); `kept` — Σ revenue of kept sales (= `services.revenue + products.revenue`);
   `payments` — how the made sales were paid, every way (`deposit` — covered by prepayments received earlier): it sums
   to `gross + payments.bonus +` the certificates those sales sold.
@@ -2030,7 +2046,8 @@ saleId, saleNumber, note, employee: EmployeeRef | null, createdAt }`.
   unspent rest of its own lot, then (for what the client spent of them) from the oldest lots, never below 0. Refunds
   work with loyalty off too.
 - A partial refund takes back the earned bonuses in proportion (see «SaleRefund») and gives back the bonuses paid in
-  the returned part.
+  the returned part. What of the sale's lot has burnt is never taken back: it comes off the last refunds, so a sale
+  returned in parts takes back what a whole refund would.
 - After a paid sale that earned bonuses (`POST /sales`, a confirmed QR code) the bot tells the client — inside the
   receipt when it is sent (see «Receipt in Telegram»), else as its own message — in the **linked** Telegram chat, when
   `loyalty.notifyClient`, the client's `botEnabled` and the card is not archived:

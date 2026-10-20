@@ -1,11 +1,11 @@
 import { and, count, eq, getTableColumns, gt, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
-import { appointments, botChats, bookingRequests, clients, depositOperations, products, saleItems, sales } from '../db/schema.js';
+import { appointments, botChats, bookingRequests, clients, depositOperations, products, saleItems, saleRefunds, sales } from '../db/schema.js';
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
 import { localDate, localDatesInRange, toIso } from '../lib/time.js';
 import { hasLowStock } from './products.js';
 import { employeeRefOrMissing, employeesByIds, productsByIds, variantsByIds } from './refs.js';
-import { isCertificateLine, lineRevenues, saleRevenueSql } from './sale-revenue.js';
+import { isCertificateLine, keptLineRevenues, keptUnits, refundRevenueSql, saleKeptRevenueSql } from './sale-revenue.js';
 import { studioTimezone } from './settings.js';
 import { openEntryCount } from './waitlist-store.js';
 
@@ -61,8 +61,8 @@ export function reportDeposits(db: DbOrTx, from: number, to: number): ReportDepo
 
 export { allocateDiscount } from './sale-revenue.js';
 
-/** A sale with its revenue (`total − bonuses − certificate lines`, see sale-revenue.ts). */
-type RevenueSale = SaleRow & { revenue: number };
+/** A sale with what of its revenue is kept (`total − bonuses − certificate lines`, less its refunds; see sale-revenue.ts). */
+type RevenueSale = SaleRow & { keptRevenue: number };
 
 interface TopEntry {
   id: number | null;
@@ -86,31 +86,26 @@ const topOf = (map: Map<string, TopEntry>) => [...map.values()].sort(byRevenue).
 
 export function reportSummary(db: DbOrTx, from: number, to: number) {
   const tz = studioTimezone(db);
+  const keptInRange = and(gte(sales.createdAt, from), lt(sales.createdAt, to), eq(sales.status, 'completed'));
   const rangeSales: RevenueSale[] = db
-    .select({ ...getTableColumns(sales), revenue: saleRevenueSql })
+    .select({ ...getTableColumns(sales), keptRevenue: saleKeptRevenueSql })
     .from(sales)
-    .where(and(gte(sales.createdAt, from), lt(sales.createdAt, to), eq(sales.status, 'completed')))
+    .where(keptInRange)
     .all();
-  const revenue = rangeSales.reduce((s, x) => s + x.revenue, 0);
-  const payments = {
-    cash: rangeSales.reduce((s, x) => s + x.payCash, 0),
-    card: rangeSales.reduce((s, x) => s + x.payCard, 0),
-    transfer: rangeSales.reduce((s, x) => s + x.payTransfer, 0),
-    qr: rangeSales.reduce((s, x) => s + x.payQr, 0),
-    deposit: rangeSales.reduce((s, x) => s + x.payDeposit, 0),
-  };
+  const revenue = rangeSales.reduce((s, x) => s + x.keptRevenue, 0);
+  const payments = keptPayments(db, rangeSales, keptInRange);
   const refunds =
     db
-      .select({ v: sql<number>`coalesce(sum(${saleRevenueSql}), 0)` })
-      .from(sales)
-      .where(and(eq(sales.status, 'refunded'), gte(sales.refundedAt, from), lt(sales.refundedAt, to)))
+      .select({ v: sql<number>`coalesce(sum(${refundRevenueSql}), 0)` })
+      .from(saleRefunds)
+      .where(and(gte(saleRefunds.createdAt, from), lt(saleRefunds.createdAt, to)))
       .get()?.v ?? 0;
 
   const byDayMap = new Map(localDatesInRange(from, to, tz).map((d) => [d, { date: d, revenue: 0, salesCount: 0 }]));
   for (const sale of rangeSales) {
     const day = byDayMap.get(localDate(sale.createdAt, tz));
     if (day) {
-      day.revenue += sale.revenue;
+      day.revenue += sale.keptRevenue;
       day.salesCount += 1;
     }
   }
@@ -154,6 +149,31 @@ export function reportSummary(db: DbOrTx, from: number, to: number) {
   };
 }
 
+/** How the kept part of the sales was paid: their payments less what their refunds gave back, by method. */
+function keptPayments(db: DbOrTx, rangeSales: RevenueSale[], keptInRange: SQL | undefined) {
+  const sum = (pick: (x: RevenueSale) => number) => rangeSales.reduce((s, x) => s + pick(x), 0);
+  const r = saleRefunds;
+  const back = db
+    .select({
+      cash: sql<number>`coalesce(sum(${r.payCash}), 0)`,
+      card: sql<number>`coalesce(sum(${r.payCard}), 0)`,
+      transfer: sql<number>`coalesce(sum(${r.payTransfer}), 0)`,
+      qr: sql<number>`coalesce(sum(${r.payQr}), 0)`,
+      deposit: sql<number>`coalesce(sum(${r.payDeposit}), 0)`,
+    })
+    .from(r)
+    .innerJoin(sales, eq(r.saleId, sales.id))
+    .where(keptInRange)
+    .get();
+  return {
+    cash: sum((x) => x.payCash) - (back?.cash ?? 0),
+    card: sum((x) => x.payCard) - (back?.card ?? 0),
+    transfer: sum((x) => x.payTransfer) - (back?.transfer ?? 0),
+    qr: sum((x) => x.payQr) - (back?.qr ?? 0),
+    deposit: sum((x) => x.payDeposit) - (back?.deposit ?? 0),
+  };
+}
+
 function itemBreakdown(db: DbOrTx, rangeSales: RevenueSale[]) {
   let servicesRevenue = 0;
   let productsRevenue = 0;
@@ -171,22 +191,23 @@ function itemBreakdown(db: DbOrTx, rangeSales: RevenueSale[]) {
   for (const item of items) bySale.set(item.saleId, [...(bySale.get(item.saleId) ?? []), item]);
   for (const sale of rangeSales) {
     const saleItemsList = (bySale.get(sale.id) ?? []).sort((a, b) => a.id - b.id);
-    const net = lineRevenues(sale, saleItemsList);
+    const net = keptLineRevenues(sale, saleItemsList);
     saleItemsList.forEach((item, i) => {
       const value = net[i] ?? 0;
-      if (isCertificateLine(item)) return;
+      const quantity = keptUnits(item);
+      if (isCertificateLine(item) || quantity <= 0) return;
       if (item.type === 'product') {
         productsRevenue += value;
         const name = (item.productId != null ? productNames.get(item.productId)?.name : undefined) ?? item.name;
-        const top = addTop(productTop, `p${item.productId ?? item.name}`, item.productId, name, item.quantity, value);
+        const top = addTop(productTop, `p${item.productId ?? item.name}`, item.productId, name, quantity, value);
         if (item.variantId != null) {
           const sizeName = sizeNames.get(item.variantId)?.name ?? item.variantName ?? '';
-          addTop(top.sizes, `v${item.variantId}`, item.variantId, sizeName, item.quantity, value);
+          addTop(top.sizes, `v${item.variantId}`, item.variantId, sizeName, quantity, value);
         }
       } else {
         servicesRevenue += value;
         const key = item.serviceId != null ? `s${item.serviceId}` : `n${item.name.toLowerCase()}`;
-        addTop(serviceTop, key, item.serviceId, item.name, item.quantity, value);
+        addTop(serviceTop, key, item.serviceId, item.name, quantity, value);
       }
     });
   }
@@ -214,7 +235,7 @@ function masterBreakdown(db: DbOrTx, rangeSales: RevenueSale[], from: number, to
   for (const c of completed) entry(c.masterId).appointmentsCompleted = c.n;
   for (const sale of rangeSales) {
     const masterId = sale.appointmentId != null ? masterOfAppointment.get(sale.appointmentId) : undefined;
-    if (masterId !== undefined) entry(masterId).revenue += sale.revenue;
+    if (masterId !== undefined) entry(masterId).revenue += sale.keptRevenue;
   }
   const emps = employeesByIds(db, [...stats.keys()]);
   return [...stats.entries()]

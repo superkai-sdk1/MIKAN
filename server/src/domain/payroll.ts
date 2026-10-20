@@ -7,12 +7,13 @@ import { localDate } from '../lib/time.js';
 import { adjustmentsInPeriod, adjustmentsOut, type AdjustmentRow } from './payroll-adjustments.js';
 import { loadPayrollData, type PayrollData, type PayrollVisit } from './payroll-data.js';
 import { ruleVersionsByEmployee, rulesOn, type PayRules, type RuleVersion } from './payroll-rules.js';
-import { lineRevenues } from './sale-revenue.js';
+import { keptLineRevenues, keptUnits } from './sale-revenue.js';
 import { studioTimezone } from './settings.js';
 
 /**
  * Payroll statements (docs/API.md «PayrollStatement»). A visit counts on its own studio date (`startsAt`) with its
- * non-refunded sales, whenever they were paid; a product line counts on the day of its sale. Every visit, sale and day
+ * sales, whenever they were paid; a product line counts on the day of its sale. Lines count by their kept units (what
+ * refunds have not returned), a line returned in full not at all. Every visit, sale and day
  * is counted by the pay rules version in force that day.
  */
 
@@ -90,9 +91,9 @@ function visitLines(data: PayrollData, visit: PayrollVisit, versions: RuleVersio
   const served: Array<{ saleId: number; item: SaleItemRow; revenue: number }> = [];
   for (const sale of data.visitSales.get(visit.id) ?? []) {
     const items = data.visitItems.get(sale.id) ?? [];
-    const net = lineRevenues(sale, items);
+    const net = keptLineRevenues(sale, items);
     items.forEach((item, i) => {
-      if (item.type === 'service') served.push({ saleId: sale.id, item, revenue: net[i] ?? 0 });
+      if (item.type === 'service' && keptUnits(item) > 0) served.push({ saleId: sale.id, item, revenue: net[i] ?? 0 });
     });
   }
   const materials = rules?.deductMaterials ? (data.materials.get(visit.id) ?? 0) : 0;
@@ -119,9 +120,9 @@ function productLines(data: PayrollData, employeeId: number, versions: RuleVersi
     const date = localDate(sale.createdAt, tz);
     const percent = rulesOn(versions, date)?.productPercent ?? 0;
     const items = data.sales.itemsBySale.get(sale.id) ?? [];
-    const net = lineRevenues(sale, items);
+    const net = keptLineRevenues(sale, items);
     items.forEach((item, i) => {
-      if (item.type !== 'product') return;
+      if (item.type !== 'product' || keptUnits(item) <= 0) return;
       const revenue = net[i] ?? 0;
       lines.push({
         date, kind: 'product', appointmentId: sale.appointmentId, saleId: sale.id, name: item.name, category: null,

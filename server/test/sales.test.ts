@@ -48,8 +48,8 @@ describe('sales (POS)', () => {
       refundReason: null,
     });
     expect(sale.items).toEqual([
-      { id: expect.any(Number), type: 'product', productId: product.id, variantId: product.variants[0].id, variantName: null, serviceId: null, certificateId: null, certificateCode: null, name: 'Лабрет', quantity: 1, price: 1500, total: 1500 },
-      { id: expect.any(Number), type: 'service', productId: null, variantId: null, variantName: null, serviceId: service.id, certificateId: null, certificateCode: null, name: 'Прокол мочки', quantity: 1, price: 2500, total: 2500 },
+      { id: expect.any(Number), type: 'product', productId: product.id, variantId: product.variants[0].id, variantName: null, serviceId: null, certificateId: null, certificateCode: null, name: 'Лабрет', quantity: 1, price: 1500, total: 1500, refundedQuantity: 0 },
+      { id: expect.any(Number), type: 'service', productId: null, variantId: null, variantName: null, serviceId: service.id, certificateId: null, certificateCode: null, name: 'Прокол мочки', quantity: 1, price: 2500, total: 2500, refundedQuantity: 0 },
     ]);
     expect((await t.api('GET', `/api/products/${product.id}`)).json().quantity).toBe(2);
     const moves = (await t.api('GET', `/api/products/${product.id}/movements`)).json().items;
@@ -125,7 +125,7 @@ describe('sales (POS)', () => {
     // Regression (review #5): cash handed back without an open shift would vanish from the drawer.
     const noShift = await t.api('POST', `/api/sales/${sale.id}/refund`, { reason: 'Не подошло', restock: true });
     expect(noShift.statusCode).toBe(409);
-    expect(noShift.json().error).toEqual({ code: 'conflict', message: 'Чтобы вернуть 1 500 ₽ наличными, сначала откройте кассовую смену' });
+    expect(noShift.json().error).toEqual({ code: 'conflict', message: 'Откройте смену, чтобы вернуть наличные' });
     expect((await t.api('GET', `/api/sales/${sale.id}`)).json().status).toBe('completed');
     await t.api('POST', '/api/cash/shift/open', { openingCash: 5000 });
     const refund = await t.api('POST', `/api/sales/${sale.id}/refund`, { reason: 'Не подошло', restock: true });

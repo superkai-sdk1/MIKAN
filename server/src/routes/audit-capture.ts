@@ -59,8 +59,9 @@ export const AUDIT_EXCLUDED = new Set([
   'POST /bot/staff-code',
   'POST /devices',
   'DELETE /devices/:token',
-  // Counts the recipients of a segment, changes nothing.
+  // Counts the recipients of a segment / works out a refund: they change nothing.
   'POST /campaigns/preview',
+  'POST /sales/:id/refund/preview',
 ]);
 
 type Params = Record<string, string | undefined>;

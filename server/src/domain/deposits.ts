@@ -209,16 +209,25 @@ export function applyDeposit(db: DbOrTx, sale: SaleRow, amount: number, employee
   });
 }
 
-/** Sale refund: the prepayment part of the sale is not paid out — it is held for the appointment again. */
-export function unapplyDeposit(db: DbOrTx, sale: SaleRow, shiftId: number | null, employeeId: number, now: number): void {
-  if (sale.payDeposit <= 0 || sale.appointmentId == null) return;
+/**
+ * Sale refund: the refund's prepayment part (`amount`) is not paid out — it is held for the appointment again. A sale
+ * refunded in parts may unapply its prepayment in several steps.
+ */
+export function unapplyDeposit(
+  db: DbOrTx,
+  sale: SaleRow,
+  refund: { amount: number; shiftId: number | null; note: string },
+  employeeId: number,
+  now: number,
+): void {
+  if (refund.amount <= 0 || sale.appointmentId == null) return;
   insertOperation(db, {
     appointmentId: sale.appointmentId,
     type: 'unapply',
-    amount: sale.payDeposit,
-    shiftId,
+    amount: refund.amount,
+    shiftId: refund.shiftId,
     saleId: sale.id,
-    note: `Возврат чека №${sale.number}`,
+    note: refund.note,
     employeeId,
     createdAt: now,
   });

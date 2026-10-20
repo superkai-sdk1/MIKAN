@@ -1,14 +1,13 @@
-import { and, asc, count, desc, eq, gte, lt, max } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lt, max } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.js';
 import { appointments, clients, products, productVariants, saleItems, sales, services } from '../db/schema.js';
 import { badRequest, conflict, insufficientStock } from '../lib/errors.js';
 import { sizedName } from '../lib/jewelry.js';
-import type { AppointmentRow, ProductRow, SaleItemRow, SaleRow } from '../lib/serialize.js';
+import type { AppointmentRow, ProductRow, SaleRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
-import { assertBonusPayment, earnBonuses, reverseSaleBonuses, spendBonuses } from './bonuses.js';
+import { assertBonusPayment, earnBonuses, spendBonuses } from './bonuses.js';
 import { getOpenShift } from './cash.js';
 import {
-  assertCertificatesRefundable,
   assertDiscountSparesCertificates,
   CERTIFICATE_LINE_NAME,
   certificateLineName,
@@ -16,11 +15,10 @@ import {
   issueCertificate,
   redeemCertificates,
   resolveRedemptions,
-  reverseSaleCertificates,
   type CertificatePaymentInput,
   type CertificateRedemption,
 } from './certificates.js';
-import { applyDeposit, cancelPendingDepositCodes, heldDeposit, unapplyDeposit } from './deposits.js';
+import { applyDeposit, cancelPendingDepositCodes, heldDeposit } from './deposits.js';
 import { getAppointmentRow, getSaleRow, serializeSales } from './refs.js';
 import { applyConsumptionNorms, usageRecorded } from './consumption.js';
 import { scheduleFollowUps } from './follow-ups.js';
@@ -28,7 +26,7 @@ import { closeReceipts } from './receipts.js';
 import { CERTIFICATE_LINE } from './sale-revenue.js';
 import { cancelPendingForAppointment } from './scheduling.js';
 import { servicePriceFor, tillPricingMaster } from './service-prices.js';
-import { applyMovement, assertInWarehouse, getProductRow, insufficientMessage, resolveVariant, returnVariantId } from './stock.js';
+import { applyMovement, assertInWarehouse, getProductRow, insufficientMessage, resolveVariant } from './stock.js';
 
 export interface SaleItemInput {
   /** `certificate` — a gift certificate sold (issued by the sale; see certificates.ts). */
@@ -335,69 +333,6 @@ export function createSale(db: DbOrTx, input: SaleInput, employeeId: number): Sa
     closeReceipts(tx, input.receiptId, appointment?.id);
     return sale;
   });
-}
-
-export function refundSale(db: DbOrTx, id: number, input: { reason: string; restock: boolean }, employeeId: number): SaleRow {
-  return db.transaction((tx) => {
-    const sale = getSaleRow(tx, id);
-    if (sale.status === 'refunded') throw conflict(`Чек №${sale.number} уже возвращён`);
-    assertCertificatesRefundable(tx, sale.id);
-    const openShift = getOpenShift(tx);
-    if (sale.payCash > 0 && !openShift) {
-      // Cash handed back must be recorded against a shift, otherwise the drawer stops balancing.
-      throw conflict(`Чтобы вернуть ${formatRub(sale.payCash)} наличными, сначала откройте кассовую смену`);
-    }
-    const now = Date.now();
-    const updated = tx
-      .update(sales)
-      .set({
-        status: 'refunded',
-        refundedAt: now,
-        refundReason: input.reason,
-        refundShiftId: openShift?.id ?? null,
-        refundedById: employeeId,
-      })
-      .where(eq(sales.id, id))
-      .returning()
-      .get();
-    unapplyDeposit(tx, updated, openShift?.id ?? null, employeeId, now);
-    reverseSaleBonuses(tx, updated, employeeId, now);
-    reverseSaleCertificates(tx, updated, employeeId, now);
-    if (input.restock) {
-      const items = tx.select().from(saleItems).where(eq(saleItems.saleId, id)).all();
-      for (const item of items) {
-        if (item.type !== 'product' || item.productId == null) continue;
-        // A product deleted since the sale has nowhere to return to: the money is refunded, the stock is not.
-        if (getProductRow(tx, item.productId).archived) continue;
-        applyMovement(tx, {
-          productId: item.productId,
-          variantId: returnVariantId(tx, soldVariantId(tx, item.productId, item)),
-          delta: item.quantity,
-          type: 'return',
-          saleId: id,
-          employeeId,
-          note: input.reason,
-        });
-      }
-    }
-    return updated;
-  });
-}
-
-/**
- * The size a sold item goes back to. Every product item names one (items sold before sizes existed were linked to
- * their product's only size by the migration); a hand-edited row without it falls back to the product's first size.
- */
-function soldVariantId(db: DbOrTx, productId: number, item: SaleItemRow): number {
-  if (item.variantId != null) return item.variantId;
-  const first = db
-    .select({ id: productVariants.id })
-    .from(productVariants)
-    .where(eq(productVariants.productId, productId))
-    .orderBy(asc(productVariants.archived), asc(productVariants.position), asc(productVariants.id))
-    .get();
-  if (!first) throw conflict(`Не найден размер товара «${item.name}» для возврата на склад`);
-  return first.id;
 }
 
 export function listSales(
