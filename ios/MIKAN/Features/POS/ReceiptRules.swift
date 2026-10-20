@@ -1,13 +1,21 @@
 import Foundation
 
-/// Whose prices catalog services take in a receipt (docs/API.md «Service» `masterPrices`).
+/// Whose prices catalog services take in a receipt — the server's rule for receipt lines (docs/API.md «Open
+/// receipts», «Service» `masterPrices`).
 nonisolated enum ReceiptPricing {
-    /// The master of the receipt's visit; without a visit the signed-in employee when they are a master; `nil` — the
-    /// catalog price.
-    static func masterId(appointmentMasterId: Int?, employee: Employee?) -> Int? {
+    /// The master of the receipt's visit; without a visit the employee who opened the receipt when they are a master
+    /// (`masterIds`); `nil` — the catalog price.
+    static func masterId(appointmentMasterId: Int?, openedBy: Int?, masterIds: Set<Int>) -> Int? {
         if let appointmentMasterId { return appointmentMasterId }
-        guard let employee, employee.isMaster else { return nil }
-        return employee.id
+        guard let openedBy, masterIds.contains(openedBy) else { return nil }
+        return openedBy
+    }
+
+    /// Who is a master: the staff list (inactive masters too), and the signed-in employee before it loads.
+    static func masterIds(employees: [Employee], signedIn: Employee?) -> Set<Int> {
+        let staff = employees.filter(\.isMaster).map(\.id)
+        let me = signedIn.flatMap { $0.isMaster ? $0.id : nil }
+        return Set(staff + [me].compactMap { $0 })
     }
 }
 
@@ -50,17 +58,14 @@ nonisolated enum SaleReceiptDelivery {
     static let checkInterval: Duration = .seconds(2)
     static let maxChecks = 3
 
-    /// The bot sends the receipt by itself only to a client with Telegram linked, while the studio has it on
-    /// (`nil` — unknown, the server default is on).
-    static func expectsAutomaticSend(_ sale: Sale, sendsReceipts: Bool?) -> Bool {
-        sale.receiptSentAt == nil && sale.client?.telegramLinked == true && sendsReceipts != false
-    }
-
-    /// The initial state of the success screen.
+    /// The initial state of the success screen. The bot sends the receipt by itself only to a client with Telegram
+    /// linked, while the studio has it on (`sendsReceipts` `nil` — unknown, the server default is on); a client
+    /// without Telegram cannot get it at all.
     static func initialState(_ sale: Sale, sendsReceipts: Bool?) -> SaleReceiptDeliveryState {
         if let sentAt = sale.receiptSentAt { return .sent(sentAt) }
-        guard sale.client != nil else { return .noClient }
-        return expectsAutomaticSend(sale, sendsReceipts: sendsReceipts) ? .waiting : .notSent
+        guard let client = sale.client else { return .noClient }
+        guard client.telegramLinked else { return .noTelegram }
+        return sendsReceipts == false ? .notSent : .waiting
     }
 
     /// After a check of the sale: sent, still waiting (checks left), or not sent.
@@ -74,6 +79,8 @@ nonisolated enum SaleReceiptDelivery {
 nonisolated enum SaleReceiptDeliveryState: Equatable, Sendable {
     /// The sale has no client: there is nobody to send it to.
     case noClient
+    /// The client has not linked Telegram: «У клиента не подключён Telegram».
+    case noTelegram
     /// Waiting for the bot to send it.
     case waiting
     case sent(Date)

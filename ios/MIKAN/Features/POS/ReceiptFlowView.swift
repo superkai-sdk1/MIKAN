@@ -25,7 +25,7 @@ struct ReceiptFlowView: View {
         NavigationStack {
             switch checkout.phase {
             case .editing:
-                ReceiptView(checkout: checkout, catalog: catalog, onClose: { dismiss() })
+                ReceiptView(checkout: checkout, catalog: catalog, onClose: close)
             case .sold(let outcome):
                 SaleSuccessView(outcome: outcome, onNewSale: startNewSale, onDone: finish)
             }
@@ -43,7 +43,7 @@ struct ReceiptFlowView: View {
         }
         .onChange(of: cart.receiptId) { _, id in
             // Deleted here, or let go because its appointment was cancelled: nothing is left to show.
-            if id == nil, !checkout.isSold, receipts.goneNotice == nil { dismiss() }
+            if id == nil, !checkout.isSold, receipts.goneNotice == nil { close() }
         }
         .onAppear {
             appState.isReceiptOpen = true
@@ -53,7 +53,6 @@ struct ReceiptFlowView: View {
         .onDisappear {
             appState.isReceiptOpen = false
             if checkout.isSold { cart.clear() }
-            Task { await receipts.leave() }
         }
     }
 
@@ -67,7 +66,7 @@ struct ReceiptFlowView: View {
             get: { receipts.goneNotice },
             set: { notice in
                 receipts.goneNotice = notice
-                if notice == nil { dismiss() }
+                if notice == nil { close() }
             }
         )
     }
@@ -87,6 +86,13 @@ struct ReceiptFlowView: View {
 
     private func finish() {
         cart.clear()
+        close()
+    }
+
+    /// Back to where the receipt was opened. Its last save (or deleting a «Новый чек» left empty) starts right away,
+    /// and the screen below reloads only after it.
+    private func close() {
+        receipts.leaveInBackground()
         dismiss()
     }
 }

@@ -15,6 +15,9 @@ final class CartStore {
     var client: ClientRef?
     /// Appointment this receipt pays for (kept whole: checkout may need to complete it first).
     private(set) var appointment: Appointment?
+    /// Who opened the receipt: without a visit, services take their prices when they are a master
+    /// (`ReceiptPricing.masterId`). `nil` for a receipt not loaded from the server.
+    private(set) var openedBy: EmployeeRef?
     var appointmentId: Int? { appointment?.id }
     var discount = 0
     /// Prepayment held for the appointment (received earlier); `depositApplied` of it is counted in this receipt.
@@ -254,6 +257,7 @@ final class CartStore {
         lines = receipt.items.compactMap(CartLine.init(item:))
         client = receipt.client
         appointment = receipt.appointment
+        openedBy = receipt.openedBy
         deposit = max(0, receipt.appointment?.deposit ?? 0)
         discount = receipt.discount
         note = receipt.note ?? ""
@@ -325,6 +329,7 @@ final class CartStore {
         lines = []
         client = nil
         appointment = nil
+        openedBy = nil
         discount = 0
         deposit = 0
         note = ""

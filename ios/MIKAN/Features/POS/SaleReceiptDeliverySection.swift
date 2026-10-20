@@ -49,6 +49,10 @@ struct SaleReceiptDeliverySection: View {
             }
             .frame(minHeight: 44, alignment: .leading)
             .accessibilityElement(children: .combine)
+        case .noTelegram:
+            Label("У клиента не подключён Telegram — чек не отправить", systemImage: "paperplane")
+                .foregroundStyle(.secondary)
+                .frame(minHeight: 44, alignment: .leading)
         case .notSent, .sending:
             Button(action: send) {
                 HStack {

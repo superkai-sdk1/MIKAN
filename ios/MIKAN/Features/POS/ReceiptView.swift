@@ -23,9 +23,13 @@ struct ReceiptView: View {
     @State private var isDeleting = false
     @State private var deleteError: String?
 
-    /// Whose prices catalog services take: the visit's master, else the signed-in master.
+    /// Whose prices catalog services take: the visit's master, else whoever opened the receipt when a master.
     private var masterId: Int? {
-        ReceiptPricing.masterId(appointmentMasterId: cart.appointment?.master.id, employee: appState.employee)
+        ReceiptPricing.masterId(
+            appointmentMasterId: cart.appointment?.master.id,
+            openedBy: cart.openedBy?.id,
+            masterIds: ReceiptPricing.masterIds(employees: reference.employees, signedIn: appState.employee)
+        )
     }
 
     var body: some View {
@@ -163,14 +167,15 @@ struct ReceiptView: View {
         }
     }
 
-    /// Whether QR payments are on, the services (aftercare memo, catalog), category order and the shift. Each one
-    /// failing only hides what it adds; the server checks everything again.
+    /// Whether QR payments are on, the services (aftercare memo, catalog), who is a master (prices), category order
+    /// and the shift. Each one failing only hides what it adds; the server checks everything again.
     private func loadReference() async {
         async let qr: Void = loadQrConfig()
         async let services: Void? = try? reference.ensureServices()
+        async let employees: Void? = try? reference.ensureEmployees()
         async let categories: Void? = try? reference.ensureCategories()
         if !shift.hasLoaded { await shift.refresh() }
-        _ = await (qr, services, categories)
+        _ = await (qr, services, employees, categories)
     }
 
     private func loadQrConfig() async {
