@@ -133,14 +133,27 @@ struct ServiceMasterPricesEditorSection: View {
     }
 }
 
-/// A master's price field with the catalog price as the placeholder, and «до» for a range.
+/// A master's price field with the catalog price as the placeholder, and «до» for a range («—» when their saved
+/// price has no maximum).
 private struct ServiceMasterPriceFields: View {
     let title: String
     @Binding var entry: ServiceMasterPriceDraft
     let catalog: ServicePriceFields
 
     /// A range service, or a master who already has their own maximum.
-    private var showsMaximum: Bool { catalog.priceMax != nil || entry.priceMax != nil }
+    private var showsMaximum: Bool { catalog.priceMax != nil || entry.priceMax.amount != nil }
+
+    /// Typing sets the master's maximum; emptying the field makes it follow the catalog.
+    private var maximum: Binding<Int?> {
+        Binding(
+            get: { entry.priceMax.amount },
+            set: { entry.priceMax = $0.map(ServiceMasterPriceMax.amount) ?? .catalog }
+        )
+    }
+
+    private var maximumPlaceholder: String {
+        entry.priceMax == .noMaximum ? ServiceMasterPriceText.placeholder(nil) : ServiceMasterPriceText.placeholder(catalog.priceMax)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -152,8 +165,8 @@ private struct ServiceMasterPriceFields: View {
             if showsMaximum {
                 NumberField.optionalMoney(
                     "до",
-                    value: $entry.priceMax,
-                    placeholder: ServiceMasterPriceText.placeholder(catalog.priceMax)
+                    value: maximum,
+                    placeholder: maximumPlaceholder
                 )
             }
             if let message = ServiceMasterPricesDraft.rangeMessage(entry, catalog: catalog) {
