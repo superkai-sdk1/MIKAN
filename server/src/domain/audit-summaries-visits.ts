@@ -230,17 +230,28 @@ function saleCreate(c: SummaryContext): AuditDraft {
   };
 }
 
+/** «Лабрет — 8 мм × 1, Серьга × 2» — the lines of a refund (the first three). */
+function refundLinesText(items: SaleOut['refunds'][number]['items']): string {
+  const names = items.map((i) => `${i.name} × ${i.quantity}`);
+  return names.length > 3 ? `${names.slice(0, 3).join(', ')} и ещё ${names.length - 3}` : names.join(', ');
+}
+
+/**
+ * A refund of the whole receipt at once reads «Продажа №17 возвращена: 3 500 ₽»; a partial one names what came back —
+ * «Возврат по чеку №17: Лабрет — 8 мм × 1, 1 350 ₽» (« — чек возвращён полностью» for the one returning the rest).
+ */
 function saleRefund(c: SummaryContext): AuditDraft {
   const s = entityOf<SaleOut>(c.result);
-  const reason = s.refundReason ? `. Причина: ${s.refundReason}` : '';
+  const refund = s.refunds?.at(-1);
+  const reasonText = refund?.reason ?? s.refundReason;
+  const reason = reasonText ? `. Причина: ${reasonText}` : '';
   const restock = c.body.restock === false ? '. Товар не возвращён на склад' : '';
-  return {
-    action: 'sale.refund',
-    entity: 'sale',
-    entityId: s.id,
-    summary: `Продажа №${s.number} возвращена: ${formatRub(s.total)}${reason}${restock}`,
-    changes: null,
-  };
+  const whole = !refund || (s.refunds.length === 1 && s.status === 'refunded');
+  const what = whole
+    ? `Продажа №${s.number} возвращена: ${formatRub(refund?.amount ?? s.total)}`
+    : `Возврат по чеку №${s.number}: ${refundLinesText(refund.items)}, ${formatRub(refund.amount)}` +
+      (s.status === 'refunded' ? ' — чек возвращён полностью' : '');
+  return { action: 'sale.refund', entity: 'sale', entityId: s.id, summary: `${what}${reason}${restock}`, changes: null };
 }
 
 function qrCreate(c: SummaryContext): AuditDraft {

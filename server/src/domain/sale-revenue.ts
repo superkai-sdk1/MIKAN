@@ -1,5 +1,5 @@
-import { sql } from 'drizzle-orm';
-import { sales } from '../db/schema.js';
+import { sql, type SQL } from 'drizzle-orm';
+import { saleRefunds, sales } from '../db/schema.js';
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
 
 /**
@@ -55,3 +55,51 @@ export const saleRevenueSql = sql<number>`(${sales.total} - ${sales.payBonus} - 
 
 /** SQL for the money a sale brought into the till now: everything except bonuses and certificate payments. */
 export const saleMoneySql = sql<number>`(${sales.total} - ${sales.payBonus} - ${sales.payCertificate})`;
+
+// ---------- partial refunds (docs/API.md «Reports»: a sale counts by what of it is kept) ----------
+
+/** SQL: Σ amounts of the certificate lines returned by refunds — the refund lines `ri` (with their sale line `si`) matching `refundCondition`. */
+const refundedCertificateLinesSql = (refundCondition: SQL) =>
+  sql`coalesce((select sum(ri.amount) from sale_refund_items ri join sale_items si on si.id = ri.sale_item_id where ${refundCondition} and si.type = ${CERTIFICATE_LINE}), 0)`;
+
+/**
+ * SQL for a refund row's revenue — the analytics counterpart of a sale's: `amount − payments.bonus −` the certificate
+ * lines it returned (they were never revenue). Σ over a sale's refunds = the sale's revenue once it is returned in full.
+ */
+export const refundRevenueSql = sql<number>`(${saleRefunds.amount} - ${saleRefunds.payBonus} - ${refundedCertificateLinesSql(sql`ri.refund_id = "sale_refunds"."id"`)})`;
+
+/** SQL for the money a refund gave back: its `cash + card + transfer + qr + deposit` parts (bonuses and certificates are not money). */
+export const refundMoneySql = sql<number>`(${saleRefunds.payCash} + ${saleRefunds.payCard} + ${saleRefunds.payTransfer} + ${saleRefunds.payQr} + ${saleRefunds.payDeposit})`;
+
+/** SQL: Σ `refundRevenueSql` over a sale row's refunds. */
+const saleRefundsRevenueSql = sql`(coalesce((select sum(r.amount - r.pay_bonus) from sale_refunds r where r.sale_id = "sales"."id"), 0)
+  - ${refundedCertificateLinesSql(sql`si.sale_id = "sales"."id"`)})`;
+
+/**
+ * SQL for a sale row's kept revenue: its revenue less the revenue of its refunds (`refundRevenueSql`); 0 once it is
+ * returned in full, the whole revenue while nothing is returned.
+ */
+export const saleKeptRevenueSql = sql<number>`(case when ${sales.status} = 'refunded' then 0
+  when ${sales.refundedTotal} = 0 then ${saleRevenueSql} else ${saleRevenueSql} - ${saleRefundsRevenueSql} end)`;
+
+/** Units of a line no refund has returned. */
+export const keptUnits = (item: Pick<SaleItemRow, 'quantity' | 'refundedQuantity'>): number => item.quantity - item.refundedQuantity;
+
+/**
+ * Kept revenue of each line, in order (docs/API.md «Reports»): a line counts by its kept units at its net price. The
+ * sale's kept revenue is split across the kept units of the lines that are not certificates the way `lineRevenues`
+ * splits a sale's discount and bonuses, so the lines add up to it; certificate lines and lines returned in full
+ * earn 0. A sale nothing was returned from splits exactly like `lineRevenues`.
+ */
+export function keptLineRevenues(
+  sale: Pick<SaleRow, 'discount' | 'payBonus' | 'refundedTotal'> & { keptRevenue: number },
+  items: Array<Pick<SaleItemRow, 'type' | 'total' | 'price' | 'quantity' | 'refundedQuantity'>>,
+): number[] {
+  if (sale.refundedTotal === 0) return lineRevenues(sale, items);
+  const counted = (item: (typeof items)[number]) => !isCertificateLine(item) && keptUnits(item) > 0;
+  const kept = items.filter(counted).map((item) => ({ total: item.price * keptUnits(item) }));
+  const keptSubtotal = kept.reduce((sum, item) => sum + item.total, 0);
+  const shared = allocateDiscount(kept, Math.min(keptSubtotal, Math.max(0, keptSubtotal - sale.keptRevenue)));
+  let next = 0;
+  return items.map((item) => (counted(item) ? (shared[next++] ?? 0) : 0));
+}

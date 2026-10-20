@@ -4,11 +4,16 @@ import { appointments, products, productVariants, saleItems, sales, stockMovemen
 import type { SaleItemRow, SaleRow } from '../lib/serialize.js';
 import { loadPeriodSales, type PeriodSales } from './analytics-sales.js';
 import { servicesByIds } from './refs.js';
+import { saleKeptRevenueSql } from './sale-revenue.js';
+
+/** A sale with its kept revenue (its revenue less what its refunds returned). */
+export type KeptSale = SaleRow & { keptRevenue: number };
 
 /**
  * Everything a payroll period is counted from, loaded once for all employees: the completed visits starting in the
- * period with their non-refunded sales (paid whenever) and the consumables written off for them, and the sales made in
- * the period (analytics' `loadPeriodSales`: product lines and the days people worked at the till).
+ * period with their sales not returned in full (paid whenever; their lines count by kept units) and the consumables
+ * written off for them, and the sales made in the period (analytics' `loadPeriodSales`: product lines and the days
+ * people worked at the till).
  */
 
 export interface PayrollVisit {
@@ -19,8 +24,8 @@ export interface PayrollVisit {
 
 export interface PayrollData {
   visits: PayrollVisit[];
-  /** Non-refunded sales of each visit, by id. */
-  visitSales: Map<number, SaleRow[]>;
+  /** Sales of each visit not returned in full (with what of them is kept), by id. */
+  visitSales: Map<number, KeptSale[]>;
   /** Items of those sales, by sale, by id. */
   visitItems: Map<number, SaleItemRow[]>;
   /** Cost of the consumables used for each visit (usage × the current unit cost; units without a cost count 0). */
@@ -71,7 +76,7 @@ export function loadPayrollData(db: DbOrTx, start: number, end: number): Payroll
     .all();
   const keptOfVisits = and(visitInPeriod(start, end), eq(sales.status, 'completed'));
   const visitSales = db
-    .select(getTableColumns(sales))
+    .select({ ...getTableColumns(sales), keptRevenue: saleKeptRevenueSql })
     .from(sales)
     .innerJoin(appointments, eq(sales.appointmentId, appointments.id))
     .where(keptOfVisits)

@@ -4,7 +4,6 @@ import { DateTime } from 'luxon';
 import type { DbOrTx } from '../db/client.js';
 import { certificateOperations, giftCertificates } from '../db/schema.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
-import type { SaleRow } from '../lib/serialize.js';
 import { formatRub } from '../lib/text.js';
 import { getRetentionSettings } from './retention-settings.js';
 import { studioTimezone } from './settings.js';
@@ -208,26 +207,34 @@ function spentFrom(db: DbOrTx, certificateId: number): number {
     .reduce((sum, op) => sum + op.amount, 0);
 }
 
-/** A sale that sold certificates can be refunded only while none of them has been spent. */
-export function assertCertificatesRefundable(db: DbOrTx, saleId: number): void {
-  const sold = db.select().from(giftCertificates).where(eq(giftCertificates.saleId, saleId)).all();
-  for (const certificate of sold) {
+/** Refunding a sold certificate line cancels the certificate: only while nothing of it has been spent. */
+export function assertCertificatesRefundable(db: DbOrTx, certificateIds: readonly number[]): void {
+  for (const id of certificateIds) {
+    const certificate = getCertificateRow(db, id);
     if (spentFrom(db, certificate.id) > 0) {
-      throw conflict(`Сертификат ${certificate.code} уже частично оплачен покупками — чек вернуть нельзя`);
+      throw conflict(`Сертификат ${certificate.code} уже частично оплачен покупками — его нельзя вернуть`);
     }
   }
 }
 
 /**
- * A refunded sale: what it paid with certificates goes back to them (burning at once with a certificate that has
- * expired or been cancelled since), and the certificates it sold are cancelled.
+ * A refund's certificate part: `amount` goes back onto the certificates the sale was paid with, the latest redemption
+ * first, each at most what it paid and has not got back yet (burning at once on a certificate that has expired or been
+ * cancelled since).
  */
-export function reverseSaleCertificates(db: DbOrTx, sale: SaleRow, employeeId: number | null, now: number): void {
-  const v = { saleId: sale.id, employeeId, now };
-  const redeemed = operationsOf(db, and(eq(certificateOperations.saleId, sale.id), eq(certificateOperations.type, 'redeem')));
+export function returnCertificatePayment(db: DbOrTx, saleId: number, amount: number, employeeId: number | null, now: number): void {
+  if (amount <= 0) return;
+  const v = { saleId, employeeId, now };
+  const ops = operationsOf(db, eq(certificateOperations.saleId, saleId));
+  const redeemed = ops.filter((op) => op.type === 'redeem').sort((a, b) => b.id - a.id);
+  let left = amount;
   for (const op of redeemed) {
+    if (left === 0) break;
+    const returned = ops.filter((o) => o.type === 'refund' && o.certificateId === op.certificateId).reduce((sum, o) => sum + o.amount, 0);
+    const back = Math.min(left, -op.amount - returned);
+    if (back <= 0) continue;
+    left -= back;
     const certificate = getCertificateRow(db, op.certificateId);
-    const back = -op.amount;
     addOperation(db, certificate.id, 'refund', back, v);
     const lapsed = certificate.expiresAt != null && certificate.expiresAt <= now;
     const status: CertificateStatus | null =
@@ -240,8 +247,19 @@ export function reverseSaleCertificates(db: DbOrTx, sale: SaleRow, employeeId: n
       setCertificate(db, certificate.id, { status: 'active', balance: certificate.balance + back }, now);
     }
   }
-  const sold = db.select().from(giftCertificates).where(eq(giftCertificates.saleId, sale.id)).all();
-  for (const certificate of sold) {
+}
+
+/** Refunded certificate lines: the certificates they sold are cancelled (checked by `assertCertificatesRefundable`). */
+export function cancelSoldCertificates(
+  db: DbOrTx,
+  certificateIds: readonly number[],
+  saleId: number,
+  employeeId: number | null,
+  now: number,
+): void {
+  const v = { saleId, employeeId, now };
+  for (const id of certificateIds) {
+    const certificate = getCertificateRow(db, id);
     if (certificate.status === 'cancelled') continue;
     if (certificate.balance > 0) addOperation(db, certificate.id, 'cancel', -certificate.balance, v);
     setCertificate(db, certificate.id, { status: 'cancelled', balance: 0 }, now);

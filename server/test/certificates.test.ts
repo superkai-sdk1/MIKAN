@@ -85,7 +85,7 @@ describe('gift certificates', () => {
     expect(sale.items).toEqual([
       {
         id: expect.any(Number), type: 'service', productId: null, variantId: null, variantName: null, serviceId: null,
-        certificateId: id, certificateCode: code, name: `Подарочный сертификат ${code}`, quantity: 1, price: 5000, total: 5000,
+        certificateId: id, certificateCode: code, name: `Подарочный сертификат ${code}`, quantity: 1, price: 5000, total: 5000, refundedQuantity: 0,
       },
     ]);
     expect(sale.bonusEarned).toBe(0);
@@ -295,7 +295,7 @@ describe('gift certificates', () => {
     await payService([{ code: spent.code, amount: 500 }], 2500);
     const blocked = await t.api('POST', `/api/sales/${spent.sale.id}/refund`, { reason: 'Передумали', restock: true });
     expect(blocked.statusCode).toBe(409);
-    expect(blocked.json().error.message).toBe(`Сертификат ${spent.code} уже частично оплачен покупками — чек вернуть нельзя`);
+    expect(blocked.json().error.message).toBe(`Сертификат ${spent.code} уже частично оплачен покупками — его нельзя вернуть`);
     expect((await t.api('GET', `/api/sales/${spent.sale.id}`)).json().status).toBe('completed');
   });
 

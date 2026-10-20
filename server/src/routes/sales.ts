@@ -3,7 +3,9 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { announceBonusEarned } from '../domain/loyalty.js';
 import { getSaleRow, serializeSale } from '../domain/refs.js';
-import { createSale, listSales, refundSale, type SaleInput } from '../domain/sales.js';
+import { previewRefund, refundSale } from '../domain/refunds.js';
+import { sendRefundNotice } from '../domain/sale-messages.js';
+import { createSale, listSales, type SaleInput } from '../domain/sales.js';
 import { badRequest } from '../lib/errors.js';
 import { idempotent, REPLAYED_HEADER } from '../lib/idempotency.js';
 import { idParams, money, nonNull, nullableText, pagination, parse, queryId, queryInstant, requiredText } from '../lib/validation.js';
@@ -67,7 +69,14 @@ export function saleInputOf(input: SaleBody): SaleInput {
   };
 }
 
-const refundBody = z.object({ reason: requiredText(500), restock: nonNull(z.boolean()) });
+/** Lines (and units) to return; omitted — everything not returned yet (older builds). */
+const refundItems = z
+  .array(z.object({ saleItemId: id, quantity: z.number().int().min(1).max(10_000) }))
+  .min(1)
+  .max(100)
+  .nullish();
+const refundBody = z.object({ reason: requiredText(500), restock: nonNull(z.boolean()), items: refundItems });
+const refundPreviewBody = z.object({ items: refundItems });
 const listQuery = pagination.extend({ from: queryInstant, to: queryInstant, clientId: queryId });
 
 export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -96,9 +105,21 @@ export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post('/sales/:id/refund', async (request, reply) => {
     const params = parse(idParams, request.params);
     const input = parse(refundBody, request.body);
-    return idempotent(db, request, reply, (tx) => {
-      const sale = refundSale(tx, params.id, { reason: input.reason, restock: input.restock ?? true }, request.employee.id);
-      return serializeSale(tx, sale);
+    const sale = idempotent(db, request, reply, (tx) => {
+      const refundInput = { reason: input.reason, restock: input.restock ?? true, items: input.items };
+      return serializeSale(tx, refundSale(tx, params.id, refundInput, request.employee.id));
     });
+    // The client hears about the refund once (not on a replay); the reply does not wait for Telegram.
+    if (reply.getHeader(REPLAYED_HEADER) === undefined) {
+      const refund = sale.refunds.at(-1);
+      if (refund) void sendRefundNotice(ctx, refund.id);
+    }
+    return sale;
+  });
+
+  app.post('/sales/:id/refund/preview', async (request) => {
+    const params = parse(idParams, request.params);
+    const input = parse(refundPreviewBody, request.body);
+    return previewRefund(db, params.id, input.items);
   });
 }

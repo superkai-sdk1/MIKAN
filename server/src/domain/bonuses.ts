@@ -23,6 +23,7 @@ export type BonusRow = typeof bonusOperations.$inferSelect;
 export const bonusesText = (n: number): string => `${formatAmount(n)} ${pluralWord(n, 'бонус', 'бонуса', 'бонусов')}`;
 
 const isLive = (now: number) => or(isNull(bonusOperations.expiresAt), gt(bonusOperations.expiresAt, now));
+const isLiveLot = (lot: BonusRow, now: number) => lot.remaining > 0 && (lot.expiresAt == null || lot.expiresAt > now);
 
 /** Unspent lots that have not burnt, oldest first. */
 function liveLots(db: DbOrTx, clientId: number, now: number): BonusRow[] {
@@ -163,46 +164,80 @@ export function earnBonuses(db: DbOrTx, sale: SaleRow, base: number, employeeId:
   return earned;
 }
 
+/** What a sale earned: its `earn` lot (`null` when it earned nothing) and how much of that lot has burnt since. */
+export function saleEarnings(db: DbOrTx, saleId: number): { lot: BonusRow | null; burnt: number } {
+  const ops = db.select().from(bonusOperations).where(eq(bonusOperations.saleId, saleId)).all();
+  const burnt = -ops.filter((op) => op.type === 'expire').reduce((sum, op) => sum + op.amount, 0);
+  return { lot: ops.find((op) => op.type === 'earn') ?? null, burnt };
+}
+
 /**
- * A refunded sale: the bonuses paid in it come back first (a new lot that burns like newly earned ones), then the
- * bonuses it earned are taken back, except what of them has burnt: the unspent rest of its own lot (burnt by now or
- * not), then — for what the client has spent of them — from the other lots, never below 0. Works with loyalty off too.
+ * What `reverseSaleBonuses` would take back of `owed` (nothing is written): the unspent rest of the sale's own lot
+ * (burnt by now or not), then the client's other live lots plus the `givenBack` lot it credits first, never below 0.
  */
-export function reverseSaleBonuses(db: DbOrTx, sale: SaleRow, employeeId: number | null, now: number): void {
-  if (sale.clientId == null) return;
-  const ops = db.select().from(bonusOperations).where(eq(bonusOperations.saleId, sale.id)).all();
-  const spent = -ops.filter((op) => op.type === 'spend').reduce((sum, op) => sum + op.amount, 0);
-  const earnLot = ops.find((op) => op.type === 'earn');
-  if (spent > 0) {
+export function previewTakeBack(
+  db: DbOrTx,
+  clientId: number | null,
+  lot: BonusRow | null,
+  owed: number,
+  givenBack: number,
+  now: number,
+): number {
+  if (clientId == null || owed <= 0) return 0;
+  const fromOwnLot = Math.min(lot?.remaining ?? 0, owed);
+  if (fromOwnLot === owed) return owed;
+  const ownLive = lot && isLiveLot(lot, now) ? lot.remaining : 0;
+  const others = bonusBalance(db, clientId, now) - ownLive + givenBack;
+  return fromOwnLot + Math.min(owed - fromOwnLot, Math.max(0, others));
+}
+
+export interface BonusReversal {
+  /** Bonuses paid in the returned part: they come back as a new lot. */
+  givenBack: number;
+  /** Earned bonuses the refund takes back (see refunds.ts), before the client's balance limits it. */
+  owed: number;
+  /** The refund returns the whole sale at once: the notes say «Возврат чека», else «Частичный возврат чека». */
+  whole: boolean;
+}
+
+/**
+ * A refund of (part of) a sale: the bonuses paid in the returned part come back first (a new lot that burns like newly
+ * earned ones), then `owed` of the bonuses it earned are taken back — the unspent rest of its own lot (burnt by now or
+ * not), then from the other lots, never below 0. Returns what was taken back. Works with loyalty off too.
+ */
+export function reverseSaleBonuses(db: DbOrTx, sale: SaleRow, reversal: BonusReversal, employeeId: number | null, now: number): number {
+  if (sale.clientId == null) return 0;
+  const prefix = `${reversal.whole ? 'Возврат' : 'Частичный возврат'} чека №${sale.number}`;
+  if (reversal.givenBack > 0) {
     insertOperation(db, {
       clientId: sale.clientId,
       type: 'reverse',
-      amount: spent,
+      amount: reversal.givenBack,
       expiresAt: earnedExpiry(db, getRetentionSettings(db).loyalty, now),
       saleId: sale.id,
-      note: `Возврат чека №${sale.number}: бонусы, оплаченные в чеке, вернулись`,
+      note: `${prefix}: бонусы, оплаченные в чеке, вернулись`,
       employeeId,
       createdAt: now,
     });
   }
-  if (!earnLot) return;
-  const burnt = -ops.filter((op) => op.type === 'expire').reduce((sum, op) => sum + op.amount, 0);
-  const owed = Math.max(0, earnLot.amount - burnt);
-  const fromOwnLot = Math.min(earnLot.remaining, owed);
-  if (fromOwnLot > 0) {
-    db.update(bonusOperations).set({ remaining: earnLot.remaining - fromOwnLot }).where(eq(bonusOperations.id, earnLot.id)).run();
+  if (reversal.owed <= 0) return 0;
+  const { lot } = saleEarnings(db, sale.id);
+  const fromOwnLot = Math.min(lot?.remaining ?? 0, reversal.owed);
+  if (lot && fromOwnLot > 0) {
+    db.update(bonusOperations).set({ remaining: lot.remaining - fromOwnLot }).where(eq(bonusOperations.id, lot.id)).run();
   }
-  const taken = fromOwnLot + drawFromLots(db, sale.clientId, owed - fromOwnLot, now);
-  if (taken <= 0) return;
+  const taken = fromOwnLot + drawFromLots(db, sale.clientId, reversal.owed - fromOwnLot, now);
+  if (taken <= 0) return 0;
   insertOperation(db, {
     clientId: sale.clientId,
     type: 'reverse',
     amount: -taken,
     saleId: sale.id,
-    note: `Возврат чека №${sale.number}: начисленные бонусы списаны`,
+    note: `${prefix}: начисленные бонусы списаны`,
     employeeId,
     createdAt: now,
   });
+  return taken;
 }
 
 /**

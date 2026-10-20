@@ -14,6 +14,8 @@ export type AppointmentRow = Row<typeof s.appointments>;
 export type AppointmentServiceRow = Row<typeof s.appointmentServices>;
 export type SaleRow = Row<typeof s.sales>;
 export type SaleItemRow = Row<typeof s.saleItems>;
+export type SaleRefundRow = Row<typeof s.saleRefunds>;
+export type SaleRefundItemRow = Row<typeof s.saleRefundItems>;
 export type ShiftRow = Row<typeof s.cashShifts>;
 export type QrPaymentRow = Row<typeof s.qrPayments>;
 export type DepositOperationRow = Row<typeof s.depositOperations>;
@@ -366,7 +368,36 @@ export const saleItemOut = (i: SaleItemRow, certificateCode: string | null = nul
   quantity: i.quantity,
   price: i.price,
   total: i.total,
+  refundedQuantity: i.refundedQuantity,
 });
+
+/** A refund of a sale (docs/API.md «SaleRefund»); `items` carry the sale line's name. */
+export const saleRefundOut = (
+  r: SaleRefundRow,
+  items: Array<{ saleItemId: number; name: string; quantity: number; amount: number }>,
+  employee: EmployeeRef | null,
+) => ({
+  id: r.id,
+  saleId: r.saleId,
+  items,
+  amount: r.amount,
+  payments: {
+    cash: r.payCash,
+    card: r.payCard,
+    transfer: r.payTransfer,
+    qr: r.payQr,
+    deposit: r.payDeposit,
+    bonus: r.payBonus,
+    certificate: r.payCertificate,
+  },
+  bonusTakenBack: r.bonusTakenBack,
+  restock: r.restock,
+  reason: r.reason,
+  employee,
+  shiftId: r.shiftId,
+  createdAt: toIso(r.createdAt),
+});
+export type SaleRefundOut = ReturnType<typeof saleRefundOut>;
 
 export const saleOut = (
   sale: SaleRow,
@@ -377,6 +408,8 @@ export const saleOut = (
   bonusEarned = 0,
   /** Codes of the certificates its lines sold, by certificate id. */
   certificateCodes: ReadonlyMap<number, string> = new Map(),
+  /** Its refunds, oldest first. */
+  refunds: SaleRefundOut[] = [],
 ) => ({
   id: sale.id,
   number: sale.number,
@@ -402,6 +435,8 @@ export const saleOut = (
   note: sale.note,
   refundedAt: toIso(sale.refundedAt),
   refundReason: sale.refundReason,
+  refundedTotal: sale.refundedTotal,
+  refunds,
   createdAt: toIso(sale.createdAt),
 });
 export type SaleOut = ReturnType<typeof saleOut>;
