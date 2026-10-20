@@ -1,5 +1,20 @@
 import SwiftUI
 
+/// «Касса»: whether the bot sends the receipt to the client's Telegram (`StudioSettings.pos`).
+struct PosSettingsSection: View {
+    @Binding var settings: PosSettings
+
+    var body: some View {
+        Section {
+            Toggle("Отправлять чек клиенту в Telegram", isOn: $settings.sendReceipt)
+        } header: {
+            Text("Касса")
+        } footer: {
+            Text("Если у клиента подключён Telegram, бот пришлёт чек после оплаты и сообщит о возврате.")
+        }
+    }
+}
+
 /// «Отмена и предоплата»: what the studio keeps of a prepayment when a visit is cancelled late or missed.
 struct CancellationRulesSection: View {
     @Binding var rules: CancellationRules
