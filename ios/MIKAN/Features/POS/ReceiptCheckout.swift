@@ -26,13 +26,19 @@ final class ReceiptCheckout {
     static let saleFailedTitle = "Продажа не проведена"
 
     private(set) var phase = Phase.editing
-    /// The SBP QR code shown over the receipt while it waits for the payment.
-    var qrPayment: QrPayment?
+    /// The SBP QR code shown over the receipt while it waits for the payment. Leaving it unpaid lets the receipt be
+    /// saved again.
+    var qrPayment: QrPayment? {
+        didSet { if qrPayment == nil, oldValue != nil { paymentSettled() } }
+    }
     private(set) var isSubmitting = false
     var errorMessage: String?
     private(set) var errorTitle = ReceiptCheckout.saleFailedTitle
-    /// «Продажа могла пройти»: the answer was lost; «Повторить» resends the same sale (same idempotency key).
-    var retryMessage: String?
+    /// «Продажа могла пройти»: the answer was lost; «Повторить» resends the same sale (same idempotency key). Until
+    /// it is answered the sale may have deleted the receipt, so the receipt is not saved.
+    var retryMessage: String? {
+        didSet { if retryMessage == nil, oldValue != nil { paymentSettled() } }
+    }
 
     /// Result of completing the appointment in this checkout (kept across a failed sale and its retry).
     @ObservationIgnored private var completion: CompleteAppointmentResult?
@@ -75,8 +81,9 @@ final class ReceiptCheckout {
         Task {
             defer {
                 isSubmitting = false
-                // Not sold (failed, or waiting for the QR code to be paid): edits are saved again.
-                if !isSold { receipts.endPayment() }
+                // Failed for sure: edits are saved again. A QR code waiting for the bank or a lost answer keeps the
+                // receipt unsaved until it is settled (`paymentSettled`).
+                if !isSold, qrPayment == nil, retryMessage == nil { receipts.endPayment() }
             }
             if let completeBody, let appointmentId {
                 guard await completeAppointment(id: appointmentId, completeBody) else { return }
@@ -101,7 +108,7 @@ final class ReceiptCheckout {
 
     /// The bank confirmed the QR code and the server sold the cart.
     func qrPaid(_ sale: Sale) {
-        Task { await sold(sale, cashChange: nil) }
+        sold(sale, cashChange: nil)
     }
 
     /// The bank has the money but the server could not sell the cart: it is finished by hand as a transfer.
@@ -145,29 +152,40 @@ final class ReceiptCheckout {
             let payment = try await api.createQrPayment(body)
             withAnimation(.smooth) { qrPayment = payment }
         } catch {
-            await failed(error, title: "QR-код не создан")
+            failed(error, title: "QR-код не создан")
         }
     }
 
     private func createSale(_ body: SaleBody, key: UUID, cashChange: Int?) async {
         do {
-            await sold(try await api.createSale(body, idempotencyKey: key), cashChange: cashChange)
+            sold(try await api.createSale(body, idempotencyKey: key), cashChange: cashChange)
         } catch let error as APIError where error.isOutcomeUnknown {
             retryMessage = "Связь прервалась до ответа сервера. Нажмите «Повторить» — если продажа уже прошла, второй раз она не проведётся."
         } catch {
-            await failed(error, title: Self.saleFailedTitle)
+            failed(error, title: Self.saleFailedTitle)
         }
     }
 
-    private func failed(_ error: any Error, title: String) async {
+    private func failed(_ error: any Error, title: String) {
         showError(error.userMessage, title: title)
-        // «Откройте кассовую смену…»: the shift was closed elsewhere, the button turns into «Открыть смену».
-        if (error as? APIError)?.status == 409 { await shift.refresh() }
-        // The appointment was completed even though the sale failed: show its new status in the schedule.
-        if completion != nil { await schedule.refreshVisible() }
+        let needsShift = (error as? APIError)?.status == 409
+        let completedVisit = completion != nil
+        // In the background, so the button is ready again at once.
+        Task { [shift, schedule] in
+            // «Откройте кассовую смену…»: the shift was closed elsewhere, the button turns into «Открыть смену».
+            if needsShift { await shift.refresh() }
+            // The appointment was completed even though the sale failed: show its new status in the schedule.
+            if completedVisit { await schedule.refreshVisible() }
+        }
     }
 
-    private func sold(_ sale: Sale, cashChange: Int?) async {
+    /// Not sold, and nothing about the payment is pending any more: the receipt is saved again.
+    private func paymentSettled() {
+        guard !isSold, !isSubmitting else { return }
+        receipts.endPayment()
+    }
+
+    private func sold(_ sale: Sale, cashChange: Int?) {
         let outcome = SaleOutcome(
             sale: sale,
             cashChange: cashChange,
@@ -179,11 +197,15 @@ final class ReceiptCheckout {
             phase = .sold(outcome)
             qrPayment = nil
         }
+        // The success screen is ready at once: «Новая продажа» must not wait for the refreshes below.
+        isSubmitting = false
         // The server deleted the paid receipt; the hub reloads its lists after the sale.
         receipts.receiptPaid()
         cart.recordCompletedSale()
-        await shift.refresh()
-        if sale.appointmentId != nil { await schedule.refreshVisible() }
+        Task { [shift, schedule] in
+            await shift.refresh()
+            if sale.appointmentId != nil { await schedule.refreshVisible() }
+        }
     }
 
     private func showError(_ message: String, title: String) {

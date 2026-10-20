@@ -29,12 +29,36 @@ struct ReceiptRulesTests {
 
     // MARK: Prices
 
-    @Test("Services take the visit master's prices, else the signed-in master's, else the catalog's")
+    @Test("Services take the visit master's prices, else those of who opened the receipt when a master, else the catalog's")
     func pricingMaster() {
-        #expect(ReceiptPricing.masterId(appointmentMasterId: 4, employee: Self.employee(id: 2, isMaster: true)) == 4)
-        #expect(ReceiptPricing.masterId(appointmentMasterId: nil, employee: Self.employee(id: 2, isMaster: true)) == 2)
-        #expect(ReceiptPricing.masterId(appointmentMasterId: nil, employee: Self.employee(id: 2, isMaster: false)) == nil)
-        #expect(ReceiptPricing.masterId(appointmentMasterId: nil, employee: nil) == nil)
+        let masters: Set<Int> = [2, 4]
+        #expect(ReceiptPricing.masterId(appointmentMasterId: 4, openedBy: 2, masterIds: masters) == 4)
+        #expect(ReceiptPricing.masterId(appointmentMasterId: nil, openedBy: 2, masterIds: masters) == 2)
+        #expect(ReceiptPricing.masterId(appointmentMasterId: nil, openedBy: 7, masterIds: masters) == nil, "an admin opened it")
+        #expect(ReceiptPricing.masterId(appointmentMasterId: nil, openedBy: nil, masterIds: masters) == nil)
+    }
+
+    @Test("Masters are the staff marked so, inactive ones too, and the signed-in master before the staff loads")
+    func masterIds() {
+        var retired = Self.employee(id: 5, isMaster: true)
+        retired.active = false
+        let staff = [Self.employee(id: 2, isMaster: true), Self.employee(id: 3, isMaster: false), retired]
+        #expect(ReceiptPricing.masterIds(employees: staff, signedIn: nil) == [2, 5])
+        #expect(ReceiptPricing.masterIds(employees: [], signedIn: Self.employee(id: 9, isMaster: true)) == [9])
+        #expect(ReceiptPricing.masterIds(employees: [], signedIn: Self.employee(id: 9, isMaster: false)).isEmpty)
+    }
+
+    @Test("The cart keeps who opened the receipt and forgets it when cleared")
+    func cartKeepsOpener() throws {
+        let cart = CartStore(defaults: try #require(UserDefaults(suiteName: "ReceiptRulesTests")))
+        let opener = EmployeeRef(id: 2, name: "Анна", color: nil)
+        cart.load(OpenReceipt(
+            id: 7, appointment: nil, client: nil, items: [], subtotal: 0, discount: 0, total: 0, itemCount: 0, note: nil,
+            openedBy: opener, createdAt: Fixtures.referenceDate, updatedAt: Fixtures.referenceDate
+        ))
+        #expect(cart.openedBy == opener)
+        cart.clear()
+        #expect(cart.openedBy == nil)
     }
 
     // MARK: The big button
@@ -54,14 +78,14 @@ struct ReceiptRulesTests {
 
     // MARK: Receipt in Telegram
 
-    @Test("The bot's receipt is waited for only for a client with Telegram while the studio sends receipts")
+    @Test("The bot's receipt is waited for only for a client with Telegram while the studio sends receipts; without Telegram nothing is offered")
     func deliveryStart() {
         let sentAt = Fixtures.referenceDate
         #expect(SaleReceiptDelivery.initialState(Self.sale(client: nil), sendsReceipts: true) == .noClient)
         #expect(SaleReceiptDelivery.initialState(Self.sale(client: Self.linked), sendsReceipts: true) == .waiting)
         #expect(SaleReceiptDelivery.initialState(Self.sale(client: Self.linked), sendsReceipts: nil) == .waiting, "on by default")
         #expect(SaleReceiptDelivery.initialState(Self.sale(client: Self.linked), sendsReceipts: false) == .notSent)
-        #expect(SaleReceiptDelivery.initialState(Self.sale(client: Self.unlinked), sendsReceipts: true) == .notSent)
+        #expect(SaleReceiptDelivery.initialState(Self.sale(client: Self.unlinked), sendsReceipts: true) == .noTelegram)
         #expect(SaleReceiptDelivery.initialState(Self.sale(client: Self.linked, sentAt: sentAt), sendsReceipts: true) == .sent(sentAt))
     }
 
