@@ -22,12 +22,16 @@ const WEEKDAYS_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAY_MS = 86_400_000;
 
-/** «3 000 ₽» — whole rubles with non-breaking spaces. */
-export function formatRub(amount) {
+/** «3 000» — whole rubles with non-breaking spaces between the thousands, no currency sign. */
+export function formatAmount(amount) {
   const value = Math.round(Number(amount) || 0);
   const sign = value < 0 ? '−' : '';
-  const digits = String(Math.abs(value)).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
-  return `${sign}${digits}${NBSP}₽`;
+  return `${sign}${String(Math.abs(value)).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP)}`;
+}
+
+/** «3 000 ₽» — whole rubles with non-breaking spaces. */
+export function formatRub(amount) {
+  return `${formatAmount(amount)}${NBSP}₽`;
 }
 
 /** Russian plural: plural(2, 'услуга', 'услуги', 'услуг') → «услуги». */
@@ -61,6 +65,21 @@ export function totalPriceText(lines) {
   const exact = lines.every((line) => line.priceText === plainPriceText(line.price));
   if (exact) return total === 0 ? 'Бесплатно' : formatRub(total);
   return total > 0 ? `от${NBSP}${formatRub(total)}` : 'Цена — на консультации';
+}
+
+/**
+ * The totals of the same lines priced by several masters: «3 000–4 000 ₽» when every line is a plain price, else
+ * «от 3 000 ₽» from the cheapest (some lines are priced per appointment).
+ * @param {Array<Array<{ price: number, priceText: string }>>} lineSets
+ */
+export function priceRangeText(lineSets) {
+  if (lineSets.length === 0) return '';
+  const totals = lineSets.map((lines) => lines.reduce((sum, line) => sum + (Number(line.price) || 0), 0));
+  const min = Math.min(...totals);
+  const max = Math.max(...totals);
+  const exact = lineSets.every((lines) => lines.every((line) => line.priceText === plainPriceText(line.price)));
+  if (exact) return min === max ? plainPriceText(min) : `${formatAmount(min)}–${formatRub(max)}`;
+  return min > 0 ? `от${NBSP}${formatRub(min)}` : 'Цена — на консультации';
 }
 
 /** How the server prints a fixed price: «2 500 ₽», or «Бесплатно» for 0. */

@@ -5,7 +5,7 @@
  */
 import { birthdayFromInput } from './birthday.js';
 import { isPhoneComplete } from './phone.js';
-import { plainPriceText } from './format.js';
+import { plainPriceText, priceRangeText, totalPriceText } from './format.js';
 
 export const MAX_ITEMS = 5;
 export const NAME_MAX = 100;
@@ -219,25 +219,101 @@ export function applyPreselect(state, preselect, catalog, masters) {
   return { ...next, step };
 }
 
+/** Whose prices the chosen lines cost: the chosen master's; «any» and no choice yet — the catalog's. */
+const pricingMaster = (state) => (typeof state.master === 'number' ? state.master : null);
+
+/** A master's own prices of the service (`PublicService.masterPrices`), undefined when they charge the catalog's. */
+function ownPrices(service, masterId) {
+  if (masterId === null) return undefined;
+  return (service.masterPrices ?? []).find((own) => own.masterId === masterId);
+}
+
 /**
- * The chosen lines with their prices and durations (variant's, else the service's; 60 min when none).
+ * The chosen lines with their prices and durations (variant's, else the service's; 60 min when none). Prices are
+ * `masterId`'s own where they have them (their variant's, else their price), else the catalog's; the chosen master by
+ * default, null — the catalog.
+ * @param {FlowState} state
+ * @param {Map<number, any>} catalog
+ * @param {number | null} [masterId]
  * @returns {Array<{ serviceId: number, name: string, price: number, priceText: string, durationMin: number, depositAmount: number }>}
  */
-export function selectedLines(state, catalog) {
+export function selectedLines(state, catalog, masterId = pricingMaster(state)) {
   return state.items.flatMap((item) => {
     const service = catalog.get(item.serviceId);
     if (!service) return [];
     const variant = item.variant ? (service.variants ?? []).find((v) => v.name === item.variant) : undefined;
-    const price = variant?.price ?? service.price ?? 0;
+    const own = ownPrices(service, masterId);
+    const ownPrice = variant ? (own?.variants ?? []).find((v) => v.name === variant.name) : own;
+    const price = ownPrice?.price ?? variant?.price ?? service.price ?? 0;
     return [{
       serviceId: service.id,
       name: variant ? `${service.name} — ${variant.name}` : service.name,
       price,
-      priceText: variant?.priceText ?? service.priceText ?? plainPriceText(price),
+      priceText: ownPrice?.priceText ?? variant?.priceText ?? service.priceText ?? plainPriceText(price),
       durationMin: variant?.durationMin ?? service.durationMin ?? DEFAULT_DURATION_MIN,
       depositAmount: service.depositAmount ?? 0,
     }];
   });
+}
+
+/** The chosen lines priced by each master (the catalog's when there are none). */
+function linesByMaster(state, catalog, masters) {
+  return masters.length > 0
+    ? masters.map((master) => selectedLines(state, catalog, master.id))
+    : [selectedLines(state, catalog, null)];
+}
+
+/**
+ * What the chosen lines cost with «any» master: one total when every master charges the same (`varies: false`),
+ * else the range of their totals («3 000–4 000 ₽»).
+ * @param {FlowState} state
+ * @param {Map<number, any>} catalog
+ * @param {Array<{ id: number }>} masters
+ * @returns {{ text: string, varies: boolean }}
+ */
+export function anyMasterPrice(state, catalog, masters) {
+  const sets = linesByMaster(state, catalog, masters);
+  const texts = sets.map(totalPriceText);
+  if (texts.every((text) => text === texts[0])) return { text: texts[0], varies: false };
+  return { text: priceRangeText(sets), varies: true };
+}
+
+/** «3 000–4 000 ₽ — зависит от мастера» for a price that varies, else just the price. */
+export function anyMasterPriceText(price) {
+  return price.varies ? `${price.text} — зависит от мастера` : price.text;
+}
+
+/**
+ * The chosen lines for «any» master: a line every master prices the same keeps its price (theirs), one that differs
+ * has `priceText: null` (the total shows the range).
+ * @param {FlowState} state
+ * @param {Map<number, any>} catalog
+ * @param {Array<{ id: number }>} masters
+ */
+export function anyMasterLines(state, catalog, masters) {
+  const [first, ...rest] = linesByMaster(state, catalog, masters);
+  return first.map((line, i) => (rest.every((lines) => lines[i]?.priceText === line.priceText) ? line : { ...line, priceText: null }));
+}
+
+/**
+ * Each master's total for the chosen lines, for the masters whose total differs from the catalog's.
+ * @param {FlowState} state
+ * @param {Map<number, any>} catalog
+ * @param {Array<{ id: number }>} masters
+ * @returns {Map<number, string>}
+ */
+export function masterTotals(state, catalog, masters) {
+  const catalogText = totalPriceText(selectedLines(state, catalog, null));
+  return new Map(masters.flatMap((master) => {
+    const text = totalPriceText(selectedLines(state, catalog, master.id));
+    return text === catalogText ? [] : [[master.id, text]];
+  }));
+}
+
+/** The total of the booking: the chosen master's, for «any» the masters' one total or range. */
+export function bookingPriceText(state, catalog, masters) {
+  if (state.master === 'any') return anyMasterPrice(state, catalog, masters).text;
+  return totalPriceText(selectedLines(state, catalog));
 }
 
 /** Σ durations of the chosen lines. */

@@ -5,7 +5,7 @@
  */
 import { birthdayFromInput, birthdayLabel } from '../lib/birthday.js';
 import { h, mount } from '../lib/dom.js';
-import { contactErrors, selectedLines, totalDeposit, totalDuration } from '../lib/flow.js';
+import { anyMasterLines, anyMasterPrice, contactErrors, selectedLines, totalDeposit, totalDuration } from '../lib/flow.js';
 import { formatDateTime, formatDuration, formatRub, formatTime, totalPriceText } from '../lib/format.js';
 import { birthdayField } from './birthday-field.js';
 import { errorPanel, stepHeading, summaryRow } from './common.js';
@@ -17,7 +17,14 @@ import { errorPanel, stepHeading, summaryRow } from './common.js';
  */
 export function renderConfirm(ctx) {
   const { state, catalog, config } = ctx;
-  const lines = selectedLines(state, catalog);
+  // A chosen master: their prices. «Any»: a line every master prices alike keeps its price, the total may be a range.
+  const any = state.master === 'any';
+  const lines = any ? anyMasterLines(state, catalog, ctx.masters) : selectedLines(state, catalog);
+  const anyPrice = any ? anyMasterPrice(state, catalog, ctx.masters) : null;
+  // «5 600–7 000 ₽» over a small «зависит от мастера» when the masters' totals differ.
+  const total = anyPrice?.varies
+    ? h('span', { class: 'total-price total-range' }, anyPrice.text, h('span', { class: 'total-note' }, 'зависит от мастера'))
+    : h('span', { class: 'total-price' }, anyPrice ? anyPrice.text : totalPriceText(lines));
   const duration = totalDuration(lines);
   const deposit = totalDeposit(lines);
   const masterName = state.master === 'any'
@@ -28,7 +35,7 @@ export function renderConfirm(ctx) {
   const edit = (step, what) => ({ onClick: () => ctx.edit(step), ariaLabel: `Изменить ${what}` });
 
   const servicesValue = h('ul', { class: 'lines' }, lines.map((line) =>
-    h('li', null, h('span', null, line.name), h('span', { class: 'line-price' }, line.priceText))));
+    h('li', null, h('span', null, line.name), line.priceText ? h('span', { class: 'line-price' }, line.priceText) : null)));
 
   const contactsValue = state.linked
     ? h('span', null, [ctx.me?.name, ctx.me?.phone].filter(Boolean).join(', '), h('span', { class: 'muted' }, ' — из Telegram'))
@@ -55,7 +62,7 @@ export function renderConfirm(ctx) {
     state.comment.trim() ? summaryRow('Комментарий', state.comment.trim(), edit('contacts', 'комментарий')) : null,
     h('div', { class: 'summary-total' },
       h('span', null, `Итого · ${formatDuration(duration)}`),
-      h('span', { class: 'total-price' }, totalPriceText(lines))));
+      total));
 
   const notes = [
     deposit > 0
