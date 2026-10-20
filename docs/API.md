@@ -71,13 +71,14 @@ Three roles; the server checks every request (the app only hides what a role can
 | Own profile: name, phone, color, password (`PATCH /employees/:me`) | ✓ | ✓ | ✓ |
 | Appointments (create, edit, move, cancel) & prepayments | ✓ | ✓ | own only |
 | Completing a visit (`POST /appointments/:id/complete`, e.g. at checkout) | ✓ | ✓ | ✓ |
-| POS, sales, refunds, cash, QR, dashboard | ✓ | ✓ | ✓ |
+| POS, sales, refunds (whole or partial, `…/refund/preview`), sending a receipt (`POST /sales/:id/send`), cash, QR, dashboard | ✓ | ✓ | ✓ |
 | Loyalty at the till: paying with bonuses, selling and redeeming gift certificates, reading bonuses and certificates, editing a certificate's recipient and note, sending it | ✓ | ✓ | ✓ |
 | Bonus adjustments (`POST /clients/:id/bonuses`) | ✓ | ✓ | — |
 | Certificates: cancel, change the expiry (`expiresAt` in `PATCH /certificates/:id`) | ✓ | — | — |
 | Clients, history | ✓ | ✓ | ✓ |
 | Duplicate cards: list, dismiss, merge (`/clients/duplicates…`, `POST /clients/:id/merge`) | ✓ | ✓ | — |
-| Services, products, categories, aftercare templates, stock movements, purchases, revisions, image generation: write | ✓ | ✓ | — |
+| Services, products, categories, aftercare templates, stock movements, purchases, revisions, deliveries, image generation: write | ✓ | ✓ | — |
+| Deliveries and suppliers: read (`GET /stock/deliveries…`, `GET /stock/suppliers`) | ✓ | ✓ | ✓ |
 | Reports and analytics (`/reports/*`) | ✓ | ✓ | — |
 | Settings (studio, bot), knowledge base, staff chat binding (`PUT/DELETE /bot/chats/:chatId/employee`), `POST /bot/test`: write | ✓ | ✓ | — |
 | Work schedules: read | ✓ | ✓ | ✓ |
@@ -238,6 +239,7 @@ online hold released). `employee` is `null` for `bot` and `system`.
   "variants": [ { "name": "Один", "price": 2500, "durationMin": null },
                 { "name": "Два", "price": 4000, "durationMin": 60 } ],
   "depositAmount": 0,
+  "masterPrices": [ { "employeeId": 2, "price": 3000, "priceMax": null, "variants": [ { "name": "Два", "price": 5000 } ] } ],
   "aftercareTemplateId": 2, "freshProcedure": true, "healingCheckDays": 7, "jewelryChangeWeeks": 6,
   "jewelryIds": [1, 7], "consumables": [ { "productId": 12, "quantity": 1 }, { "productId": 15, "quantity": 2 } ],
   "active": true, "sort": 0 }
@@ -275,6 +277,23 @@ online hold released). `employee` is `null` for `bot` and `system`.
 - `variants`: up to 20 priced options (`name` 1–100 chars, `price`, optional `durationMin` overriding the service
   duration); `[]` when none. Booking a service with variants books one variant: the line name is
   `"<service name> — <variant name>"` and its price/duration come from the variant.
+- `masterPrices` — a master's own prices for this service (цены по мастерам), `[]` when every master charges the catalog
+  price. Up to 20 entries with distinct `employeeId`s, each an existing employee with `isMaster` (`400` «Мастер не
+  найден»):
+  - `price` (≥ 0) and `priceMax` (`null`, or greater than `price`) replace the service's `price` / `priceMax` for that
+    master; `priceFrom` stays the service's (a master's «от» price reads «от 3 000 ₽»).
+  - `variants` — `[{ name, price }]`: that master's price of a variant, by its `name` (a current variant of the
+    service — `400` «Нет варианта «Три» у услуги «Соски»»; each at most once). A variant left out costs its catalog
+    `price` for that master too. Renaming or removing variants (a PATCH with `variants`) drops the overrides of names
+    that no longer exist.
+  - **The price of a line for a master** = their variant override ?? the variant's `price` (a variant line), or their
+    `price` ?? the service's `price` (no variant). This is the default wherever a booked or sold line gets its price:
+    appointments (`POST/PATCH /appointments` lines without `price`, by the appointment's `masterId`), online booking
+    (by the booked master), open receipts and sales (by the receipt's appointment master, else the employee who opened
+    it when they are a master, else the catalog price). Apps resolve it the same way when they fill a price
+    themselves. Prices already on an appointment never change by themselves: when staff change the master, the app
+    re-prices the catalog lines whose price nobody edited.
+  - An inactive or no-longer-master employee keeps their entry (it comes back with them) but no channel offers it.
 
 ### AftercareTemplate
 ```json
@@ -352,7 +371,7 @@ service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` f
 ```json
 { "id": 1, "productId": 1, "productName": "Лабрет", "variantId": 5, "variantName": "8 мм",
   "delta": -1, "quantityAfter": 11,
-  "type": "sale", "note": null, "saleId": 5, "appointmentId": null, "revisionId": null, "amount": null,
+  "type": "sale", "note": null, "saleId": 5, "appointmentId": null, "revisionId": null, "deliveryId": null, "amount": null,
   "employee": { "id": 1, "name": "Анна", "color": "#FF7A1A" }, "createdAt": "..." }
 ```
 `type`: `receipt` (приход) | `sale` | `return` | `writeoff` (списание) | `usage` (расход на процедуру) | `adjustment` (инвентаризация)
@@ -361,6 +380,21 @@ service `category` (`serviceCategory`: `tattoo` | `piercing` | `other`; `null` f
 otherwise.
 `variantName` — the size's current name (`""` for a product without sizes); `quantityAfter` — the stock of that size
 after the movement. `revisionId` — the stock count (`StockRevision`) an `adjustment` came from, else `null`.
+`deliveryId` — the delivery (`StockDelivery`) a `receipt` belongs to, else `null`.
+
+### StockDelivery (поставка)
+```json
+{ "id": 4, "number": 4, "supplier": "Industrial Strength", "note": null,
+  "total": 12400, "itemCount": 14, "lineCount": 3,
+  "employee": { EmployeeRef } | null, "createdAt": "...",
+  "lines": [ { "movementId": 81, "productId": 1, "productName": "Лабрет", "productKind": "jewelry",
+               "variantId": 5, "variantName": "8 мм", "quantity": 4, "unitCost": 700, "amount": 2800 } ] }
+```
+- One receiving of many products and sizes from a supplier: every line is a `receipt` movement with `deliveryId`.
+- `number` — sequential; `supplier` (≤ 100) and `note` (≤ 500) — `null` when not given.
+- `total` — Σ `amount` of the lines with a cost; `itemCount` — Σ `quantity`; `lineCount` — the number of lines.
+- `lines` in the order sent (`[]` in lists): `productName` / `variantName` — current names (`""` for a product without
+  sizes), `unitCost` / `amount` — `null` for a line received without a cost.
 
 ### StockRevision (ревизия)
 ```json
@@ -432,12 +466,19 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   "appointmentId": null, "shiftId": 3,
   "items": [ { "id": 1, "type": "product", "productId": 1, "variantId": 5, "variantName": "8 мм",
                "serviceId": null, "certificateId": null, "certificateCode": null, "name": "Лабрет — 8 мм", "quantity": 1,
-               "price": 1500, "total": 1500 } ],
+               "price": 1500, "total": 1500, "refundedQuantity": 0 } ],
   "subtotal": 1500, "discount": 0, "total": 1500,
   "payments": { "cash": 1500, "card": 0, "transfer": 0, "qr": 0, "deposit": 0, "bonus": 0, "certificate": 0 },
   "bonusEarned": 75,
-  "status": "completed", "note": null, "refundedAt": null, "refundReason": null, "createdAt": "..." }
+  "status": "completed", "note": null, "refundedAt": null, "refundReason": null,
+  "refundedTotal": 0, "refunds": [ SaleRefund ], "receiptSentAt": null, "createdAt": "..." }
 ```
+- `refundedTotal` — what refunds have returned so far (Σ `refunds[].amount`); `refunds` — oldest first, `[]` when none;
+  items' `refundedQuantity` — units of the line returned so far. A sale stays `completed` while something of it is
+  kept (a partial refund) and becomes `refunded` when every unit is returned; `refundedAt` / `refundReason` are those
+  of the refund that returned the rest (`null` until then).
+- `receiptSentAt` — when the bot last sent this receipt to the client's Telegram (automatically after the sale or by
+  `POST /sales/:id/send`), `null` when never.
 - `type`: `product` (requires `productId`; decrements the stock of the sold size) | `service` (`serviceId` optional;
   `name` required when no `serviceId`).
 - Product items: `variantId` — the size sold; `variantName` — its name at the moment of sale (`null` for services,
@@ -455,6 +496,34 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
   `serviceId: null`, `name: "Подарочный сертификат MIKAN-7K3Q-9F2D"` (older builds know only `product` | `service`);
   apps treat any line with `certificateId` as a certificate; `certificateCode` carries its code (no need to read it
   from the name). Every line has `certificateId` and `certificateCode` (`null` for the others).
+
+### SaleRefund (возврат по чеку)
+```json
+{ "id": 3, "saleId": 17,
+  "items": [ { "saleItemId": 41, "name": "Лабрет — 8 мм", "quantity": 1, "amount": 1350 } ],
+  "amount": 1350,
+  "payments": { "cash": 1350, "card": 0, "transfer": 0, "qr": 0, "deposit": 0, "bonus": 0, "certificate": 0 },
+  "bonusTakenBack": 67, "restock": true, "reason": "Не подошёл размер",
+  "employee": { EmployeeRef } | null, "shiftId": 5, "createdAt": "..." }
+```
+- One refund of some lines / units of a sale, or of everything left. `items[].amount` — what those units returned:
+  `quantity × price` less their share of the sale discount (the discount is split across the non-certificate lines in
+  proportion to their totals, rounded down per unit; the refund that returns the last units of the sale returns
+  exactly what is left, so Σ refunds = `total`). `amount` = Σ `items[].amount`.
+- `payments` — how `amount` goes back, in proportion to what of each payment part is still unreturned (rounded down,
+  the leftover rubles to the parts in the order cash, transfer, card, qr, certificate, bonus, deposit; never more than
+  a part has left; the refund of the rest returns every part's rest exactly):
+  - `cash` — from the drawer (needs an open shift, `409` «Откройте смену, чтобы вернуть наличные»), `transfer` / `card`
+    — staff send it back, `qr` — refunded in the Tochka internet bank (the app says so);
+  - `deposit` — becomes the appointment's held prepayment again (an `unapply` of that amount);
+  - `bonus` — comes back to the client as a new lot (`reverse`), `certificate` — back onto the sale's certificates,
+    the latest redemption first.
+- `bonusTakenBack` — the bonuses the sale earned that this refund takes back: in proportion to the refunded part of
+  the bonus base (rounded down; the refund of the rest takes the rest), as in «Loyalty bonuses».
+- A certificate line refunded cancels that certificate (`409` «Сертификат … уже частично оплачен покупками — его
+  нельзя вернуть» when spent in part). `restock` — product units go back to their size (`return` movements).
+- `shiftId` — the shift open at the refund (always set when `payments.cash > 0`). `employee` — who refunded.
+- Sales refunded before partial refunds existed read as one refund of everything.
 
 ### OpenReceipt (открытый чек)
 ```json
@@ -527,14 +596,16 @@ price — and completes the visit. Cancelled visits and no-shows are left as the
 ```
 - Sales part: `revenue` = money of the shift's sales = `cash + card + transfer + qr + deposit` (`deposit` — the part
   covered by prepayments received earlier): bonus and gift certificate payments are not money and stay out of it (a
-  certificate sold is money in). `refunds` — the same money of the sales refunded in the shift.
+  certificate sold is money in). `refunds` — the same money of the refunds made in the shift (whole or partial:
+  their `cash + card + transfer + qr + deposit` parts); `cashRefunds` — their `cash` parts.
 - `deposits` — prepayment operations recorded while the shift was open: `received` (all methods) with its split by
   method, `refunded` (all methods) and `cashRefunded`, `retained`.
 - `expectedCash = openingCash + summary.cash − summary.cashRefunds + summary.deposits.cash − summary.deposits.cashRefunded
   + summary.cashIn − summary.cashOut` (computed live while open; frozen at close).
 - `difference = closingCash − expectedCash` after close.
 - `operations` is included in `GET /cash/shift/current` and `GET /cash/shifts/:id`, empty array in lists.
-- At most one shift is open at a time. Sales attach to the open shift if there is one (a shift is not required to sell).
+- At most one shift is open at a time. Selling needs an open shift (`409` otherwise, see «Sales»); a sale attaches to
+  it. Prepayments can be taken without a shift except in cash (as before).
 
 ### CashOperation
 ```json
@@ -596,8 +667,11 @@ carry the inline buttons «✅ Приду» and «🔁 Перенести» (see
   "cancellation": { "freeHours": 24, "lateRetainPercent": 100, "noShowRetainPercent": 100, "autoRetain": false },
   "reviewLinks": { "yandex": "https://yandex.ru/maps/org/…", "twogis": "", "google": "" },
   "onlineBooking": { "enabled": true, "leadMinutes": 120, "horizonDays": 60, "holdMinutes": 15, "stepMinutes": 30,
-                     "note": "", "confirmationHours": 24 } }
+                     "note": "", "confirmationHours": 24 },
+  "pos": { "sendReceipt": true } }
 ```
+- `pos.sendReceipt` (default `true`) — the bot sends the receipt to the client's Telegram after a paid sale and tells
+  them about a refund (see «Receipt in Telegram»). On PUT omitted = unchanged.
 - `onlineBooking` — the client-facing booking (bot, Mini App, booking page; see «Online booking»): `enabled` (default
   `true`; `false` → the booking page says «Онлайн-запись временно недоступна» and the bot falls back to booking
   requests); `leadMinutes` (0…2880, default 120) — the earliest start from now; `horizonDays` (1…180, default 60) — how
@@ -828,13 +902,15 @@ source's chat stays attributed to the kept card. The same card, an unknown card 
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/services?includeInactive=true` | — | `{ items: [Service] }` sorted by `sort`, then name |
-| POST | `/services` | `{ name, category, group?, price, priceMax?, priceFrom?, durationMin, description?, imageUrl?, imagePrompt?, photos?, variants?, depositAmount?, aftercareTemplateId?, freshProcedure?, healingCheckDays?, jewelryChangeWeeks?, jewelryIds?, consumables?, active?, sort? }` | `Service` |
+| POST | `/services` | `{ name, category, group?, price, priceMax?, priceFrom?, durationMin, description?, imageUrl?, imagePrompt?, photos?, variants?, masterPrices?, depositAmount?, aftercareTemplateId?, freshProcedure?, healingCheckDays?, jewelryChangeWeeks?, jewelryIds?, consumables?, active?, sort? }` | `Service` |
 | PATCH | `/services/:id` | any of the above | `Service` |
 | GET | `/services/:id/history?limit=&offset=` | — | `{ items: [HistoryEntry], total }` — who got this service and when, newest first |
 
 - `jewelryIds` (≤ 100) replaces the compatible jewelry (`kind: jewelry` products, `400` «Украшение не найдено»
   otherwise); `consumables` (≤ 50, `{ productId, quantity: 1…1000 }`, distinct products) replaces the norm (`kind:
   consumable` products, `400` «Расходник не найден» otherwise). Omitted — unchanged.
+- `masterPrices` replaces the masters' prices (see «Service»); omitted — unchanged, `[]` clears them. Owner and admin
+  edit them like the rest of the service.
 | POST | `/services/:id/image/generate` | `{ prompt? }` (≤ 1000 chars) | `Service` with a new `imageUrl` — generates the schematic cover with AI (Polza Media API, ~1–2 min; apps use a 4-minute timeout). A non-empty `prompt` is used and saved as `imagePrompt`; `prompt: ""` / `null` resets it (generates from the name/description and saves `imagePrompt = null`); without `prompt` the saved `imagePrompt` (or name/description) is used. Only `imageUrl` (and `imagePrompt` when `prompt` is sent) change, so edits made during generation are kept. `409 conflict` when the AI key (`AI_API_KEY` + `AI_BASE_URL`) is not configured or a generation for this service is already running, `502 upstream_error` when generation fails (message says why). The previous picture file is kept. |
 
 ### Aftercare templates
@@ -935,6 +1011,25 @@ Movements:
   «есть / нет». Для остальных — приход количеством.». The analytics counts the amount as a stock expense of the day
   of the purchase (`stock.purchases`).
 
+Deliveries (поставки):
+| Method | Path | Body | Response |
+|---|---|---|---|
+| POST | `/stock/deliveries` | `{ supplier?, note?, lines: [ { productId, variantId?, quantity, unitCost? } ] }` | `StockDelivery` · accepts `Idempotency-Key` |
+| GET | `/stock/deliveries?supplier=&limit=&offset=` | — | `{ items: [StockDelivery], total }` newest first (`lines: []`) |
+| GET | `/stock/deliveries/:id` | — | `StockDelivery` with `lines` |
+| GET | `/stock/suppliers` | — | `{ items: [ { name, deliveries, lastAt } ] }` — suppliers for the picker, most recently used first |
+
+- `lines` (1…200): products in `quantity` mode (jewelry, goods, consumables; a presence consumable → `400` «Покупку
+  расходника «Перчатки» записывают суммой»; an archived one → `400` «Позиция удалена со склада»), `variantId` a
+  current size (omitted → the only size; several sizes → `400` «Выберите размер «Лабрет»»), each size at most once
+  (`400`), `quantity` 1…10 000, `unitCost` 0…100 000 000 or omitted. One transaction: every line is a `receipt`
+  movement «Поставка №4» (+ « · <note>»), with `amount` and the new cost exactly like a receipt with `unitCost` (see
+  «Movements»).
+- `supplier` — trimmed, ≤ 100 (`""` = none). A product whose `supplier` is empty gets this one.
+- `GET /stock/suppliers` — distinct supplier names of deliveries and products (case-insensitive, the latest spelling),
+  with `deliveries` (how many) and `lastAt` (the latest delivery, `null` when only products name it).
+- Deliveries cannot be edited or deleted: a mistake is fixed by a write-off or a stock count.
+
 Stock counts (ревизии):
 | Method | Path | Body | Response |
 |---|---|---|---|
@@ -971,8 +1066,8 @@ Files are served publicly at `GET /uploads/<name>` (outside `/api`, no auth; nam
 | POST | `/appointments/:id/deposit/remind` | `{ chatId? }` | `DepositLinkResult` · rate limit 30/min |
 
 - `services`: `[{ serviceId?, name?, price?, durationMin? }]` (≤ 20) — replaces all service lines (`[]` clears them).
-  A line with `serviceId` defaults `name`, `price` and `durationMin` from the catalog service; a line without one
-  needs `name` (`price` defaults to 0). Apps resolve variants themselves and send the variant's name/price/duration.
+  A line with `serviceId` defaults `name`, `price` and `durationMin` from the catalog service — the price of the
+  appointment's master (see «Service» `masterPrices`); a line without one needs `name` (`price` defaults to 0). Apps resolve variants themselves and send the variant's name/price/duration.
 - Legacy `serviceId` (older builds) is used only when `services` is absent: the same service as the current first
   catalog line keeps the lines untouched (`null` included — older builds always send `null` for appointments whose
   lines are all custom); another service replaces them with that single service; `null` while the appointment has a
@@ -1108,7 +1203,9 @@ the background.
   "Маше" }`: quantity 1, nominal 500…100 000, never discounted — the same `400`s as in a sale).
   Product lines need an existing sellable product (`400` for a consumable or a missing one) and one of its current
   sizes (`variantId`; omitted → its only size; several sizes → `400` «Выберите размер «Лабрет»»). Service lines need
-  `name` unless `serviceId` is given. `price` defaults to the catalog price (the size's ?? the product's, the service's).
+  `name` unless `serviceId` is given. `price` defaults to the catalog price (the size's ?? the product's; a service's
+  for the master — the receipt's appointment master, else the employee who opened it when a master, see «Service»
+  `masterPrices`).
   Stock is not checked here: the sale checks it.
 - `POST /receipts` with `appointmentId` — «Начать визит» (the appointment moves to the POS). If the appointment already
   has an open receipt, that receipt is returned unchanged (two devices starting one visit share it). Otherwise a new
@@ -1130,10 +1227,18 @@ the background.
 ### Sales (POS)
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/sales?from=&to=&clientId=&limit=&offset=` | — | `{ items: [Sale], total }` newest first |
+| GET | `/sales?from=&to=&clientId=&search=&limit=&offset=` | — | `{ items: [Sale], total }` newest first |
 | GET | `/sales/:id` | — | `Sale` |
-| POST | `/sales` | see below | `Sale` · accepts `Idempotency-Key` |
-| POST | `/sales/:id/refund` | `{ reason, restock: true }` | `Sale` (status `refunded`) · accepts `Idempotency-Key` |
+| POST | `/sales` | see below | `Sale` · accepts `Idempotency-Key` · `409` without an open shift |
+| POST | `/sales/:id/refund` | `{ reason, restock: true, items?: [ { saleItemId, quantity } ] }` | `Sale` · accepts `Idempotency-Key` |
+| POST | `/sales/:id/refund/preview` | `{ items?: [ { saleItemId, quantity } ] }` | `{ amount, items, payments, bonusTakenBack, needsShift }` — nothing is written |
+| POST | `/sales/:id/send` | `{ chatId? }` | `Sale` (with `receiptSentAt`) · rate limit 30/min |
+
+- `search` (≤ 100) — a receipt number (`17`, `№17`) or the client's name or phone (digits match anywhere in the
+  phone); combined with `from` / `to` / `clientId` when they are given. The app searches all time.
+- **A sale needs an open cash shift**: `POST /sales` and `POST /qr-payments` without one → `409 conflict` «Откройте
+  кассовую смену, чтобы провести продажу». A QR payment the bank confirms after the shift was closed still becomes a
+  sale (the money is already paid; `shiftId` = the shift open then, else `null`).
 
 `POST /sales` body:
 ```json
@@ -1179,14 +1284,56 @@ the background.
   before the check; insufficient stock → `409 insufficient_stock` ("Недостаточно на складе: Лабрет — 8 мм (осталось 0)",
   or "Лабрет (осталось 0)" for a product without sizes). Whole sale is one transaction.
 - With `appointmentId`, the appointment gets `saleId` (and is marked `completed` if not already, without aftercare).
-- Refund: gives back the bonuses and certificate amounts the sale was paid with and takes back the bonuses it earned
-  (see «Loyalty bonuses», «Gift certificates»); a sale that sold a certificate already spent in part → `409`
-  «Сертификат … уже частично оплачен покупками — чек вернуть нельзя».
-- Refund: marks `refunded`, returns product stock to the sold size (`return` movements; an archived size comes back to
-  the list — unless the product now has a current size with the same name, which then gets the stock) when `restock`;
-  a cash refund is attributed
-  to the currently open shift (`summary.cashRefunds`). The `payments.deposit` part is not paid out: it becomes the
-  appointment's held prepayment again (`unapply`).
+- Refund (`POST /sales/:id/refund`) returns some lines or units, or everything left (see «SaleRefund» for the money):
+  - `items` — `[{ saleItemId, quantity }]`, lines of this sale, each once, `1 ≤ quantity ≤` what of the line is not
+    returned yet (`400` «Можно вернуть не больше 1 шт «Лабрет — 8 мм»»). Omitted (older builds) = every unit not
+    returned yet. Nothing left to return → `409` «Чек №17 уже возвращён». `reason` 1…500 is required.
+  - Gives back the bonuses and certificate amounts of the returned part and takes back the bonuses it earned (see
+    «Loyalty bonuses», «Gift certificates»); refunding a certificate line that was already spent in part → `409`
+    «Сертификат … уже частично оплачен покупками — его нельзя вернуть».
+  - `restock` — product units go back to the sold size (`return` movements; an archived size comes back to the list —
+    unless the product now has a current size with the same name, which then gets the stock).
+  - The cash part needs an open shift (`409`) and counts in it (`summary.cashRefunds`). The `payments.deposit` part is
+    not paid out: it becomes the appointment's held prepayment again (`unapply`). The appointment of a sale returned
+    in full can be paid again; a partial refund leaves it paid.
+  - With a client in Telegram the bot tells them (see «Receipt in Telegram»).
+  - The response is the sale with the new refund last in `refunds`.
+- `POST /sales/:id/refund/preview` — what that refund would return, for the confirmation screen: `amount`, `items`,
+  `payments` and `bonusTakenBack` exactly as the refund would record them, `needsShift: true` when it returns cash and
+  no shift is open. Same `400` / `409` as the refund; open to every role.
+
+### Receipt in Telegram (чек клиенту)
+- After a paid sale (`POST /sales`, a confirmed QR code) with a client whose Telegram is linked, `botEnabled` and the
+  card not archived, and `StudioSettings.pos.sendReceipt` on, the bot sends the receipt in the client's chat (stored as
+  a `system` message so staff see it) and sets `receiptSentAt`. An idempotent replay sends nothing. Never blocks or
+  fails the sale; a failed delivery is logged and staff can resend.
+  ```
+  🧾 Чек №17 · MIKAN STUDIO
+  20 октября, 15:42
+
+  Лабрет — 8 мм — 1 500 ₽
+  Прокол мочки — 2 500 ₽
+  Серьга × 2 — 1 600 ₽
+  Скидка: −500 ₽
+  **Итого: 5 100 ₽**
+  Оплата: наличными 3 100 ₽, предоплатой 2 000 ₽
+
+  🎁 +75 бонусов, на счёте 1 275
+  Спасибо, что пришли к нам! 🧡
+  ```
+  Lines with quantity > 1 read «× N — <line total>»; payment parts that are 0 are left out («наличными», «картой»,
+  «переводом», «по QR», «предоплатой», «бонусами», «сертификатом»); a sold certificate line names its code. The bonus
+  line is the loyalty notice (`loyalty.notifyClient`, with «— начисленные действуют до …» when they burn): with the
+  receipt sent it is part of it and no separate «Спасибо за покупку!» message goes; with `sendReceipt` off the separate
+  notice goes as before.
+- `POST /sales/:id/send` `{ chatId? }` — staff send (or resend) the receipt: to `chatId` (a bot chat) or the client's
+  chat (the linked one, else the latest chat attributed to them). Without the bonus line. `409` «У клиента нет
+  Telegram — отправить чек некуда» / «Бот выключен» / the delivery problem («Клиент заблокировал бота»); a sale without
+  a client and no `chatId` → `409` «В чеке нет клиента». A refunded sale's receipt can be sent too (it shows the
+  refunds). Open to every role.
+- After a refund the client (same conditions, `sendReceipt` on) gets: «↩️ Возврат по чеку №17\nЛабрет — 8 мм — 1 350 ₽
+  \nВернули: наличными 1 350 ₽» (+ «Бонусы: −67» when some were taken back, «Бонусы вернули: +300» when bonuses paid
+  came back).
 
 ### QR payments (SBP via Tochka Bank)
 | Method | Path | Body | Response |
@@ -1222,6 +1369,14 @@ sale refunded).
 | GET | `/cash/shifts/:id` | — | `CashShift` with `operations` |
 
 ### Reports
+**Partial refunds everywhere money is counted** (reports, analytics, payroll, the dashboard, a client's
+`totalSpent`, «Рост»): a sale counts by what of it is kept. Its revenue counts on the sale's day as before; a refund
+counts on its own day (`refunds`, `refunded`) by its money (`cash + card + transfer + qr + deposit` parts — bonuses and
+certificates are not money), and what the refund returned leaves the «kept» figures: item tops, categories, margins,
+cost of goods and payroll use each line's kept units (`quantity − refundedQuantity`) with the line's net per unit;
+`totalSpent` = Σ (`total − refundedTotal`) of the client's sales. A sale returned in full behaves as a refunded sale
+did before.
+
 `GET /reports/growth?from=&to=` (instants; owner, admin; ≤ 400 days) — how the studio grows:
 ```json
 { "from": "...", "to": "...",
@@ -1430,7 +1585,8 @@ use one engine and the rules below.
 
 **What a client books.** 1–5 items `{ serviceId, variant? }` (active catalog services; `variant` — a variant `name`),
 a master or «any», a start. Duration = Σ durations (variant's, else the service's; 60 min when none), `price` = Σ
-prices (variant's, else `price`), `depositRequired` = Σ `depositAmount`. The appointment gets the service lines like
+prices of the booked master (see «Service» `masterPrices`: their own price, else the variant's, else `price`; for
+«any» — of the master the booking goes to), `depositRequired` = Σ `depositAmount`. The appointment gets the service lines like
 `POST /appointments` with `services` (a variant line is named `"<service> — <variant>"`). A service with variants
 needs one («Выберите вариант услуги «Соски»: Один, Два»).
 
@@ -1499,6 +1655,8 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
 - A linked Mini App chat posts the booking without `name` and `phone` (the chat's client is used). When `/me` answers
   `401` the page stops sending the init data and books like the website (name and phone). A linked chat whose card has
   no birthday (`hasBirthday: false`) gets the optional «Дата рождения» on the confirmation (it skips the contacts).
+- The bot's prompt names the masters' own prices next to a service («у Амины — 4 000 ₽») and quotes the chosen
+  master's price when booking.
 - `items` in `/days` and `/slots` is built as `serviceId[:encodeURIComponent(variant)]` and then encoded once more as a
   query value: the server splits the decoded value on `,` / `:` and decodes each variant.
 
@@ -1516,7 +1674,13 @@ Link previews (Open Graph): «Запись в MIKAN STUDIO».
 | GET | `/public/booking/b/:token/calendar.ics` | — | `text/calendar` event |
 
 - `PublicService`: `{ id, name, category, group, description, priceText: "от 3 000 ₽", price, durationMin,
-  depositAmount, imageUrl, variants: [ { name, priceText, price, durationMin } ], portfolio }` — no internal fields;
+  depositAmount, imageUrl, variants: [ { name, priceText, price, durationMin } ], masterPrices, portfolio }` — no
+  internal fields; `masterPrices` — `[ { masterId, price, priceText, variants: [ { name, price, priceText } ] } ]`, the
+  own prices of active masters (`isMaster`) that have them (every variant listed, with the master's price or the
+  catalog one), `[]` otherwise. `price` / `priceText` stay the catalog ones. The page shows the catalog price on the
+  service step; on the master step each master's total for the chosen items when it differs; «Любой мастер» and the
+  confirm step for «any» show the range of the masters' totals («3 000–4 000 ₽ — зависит от мастера») when they
+  differ; the booking itself carries the exact price.
   `portfolio` — the number of working masters' portfolio photos of the service. `imageUrl` —
   the cover (`imageUrl` ?? `photos[0]`, `null` when none); `durationMin` — the effective duration (a variant's falls
   back to the service's, 60 when none). Order: per service category (tattoo, piercing, other) its groups in staff
@@ -1864,8 +2028,11 @@ saleId, saleNumber, note, employee: EmployeeRef | null, createdAt }`.
   burns like newly earned ones; then the bonuses it earned are taken back, except what of them has already burnt — the
   unspent rest of its own lot, then (for what the client spent of them) from the oldest lots, never below 0. Refunds
   work with loyalty off too.
-- After a paid sale that earned bonuses (`POST /sales`, a confirmed QR code) the bot tells the client in the
-  **linked** Telegram chat, when `loyalty.notifyClient`, the client's `botEnabled` and the card is not archived:
+- A partial refund takes back the earned bonuses in proportion (see «SaleRefund») and gives back the bonuses paid in
+  the returned part.
+- After a paid sale that earned bonuses (`POST /sales`, a confirmed QR code) the bot tells the client — inside the
+  receipt when it is sent (see «Receipt in Telegram»), else as its own message — in the **linked** Telegram chat, when
+  `loyalty.notifyClient`, the client's `botEnabled` and the card is not archived:
   «Спасибо за покупку! 🎁 +75 бонусов, на счёте 1 275» (+ « — начисленные действуют до 14 ноября» when they burn). An
   idempotent replay sends nothing.
 

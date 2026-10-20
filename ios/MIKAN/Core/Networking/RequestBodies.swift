@@ -76,6 +76,8 @@ nonisolated struct ServiceBody: Encodable, Sendable {
     var variants: [ServiceVariant] = []
     /// Prepayment required to book the service; 0 — none.
     var depositAmount = 0
+    /// Replaces the masters' own prices; `nil` — unchanged.
+    var masterPrices: [ServiceMasterPrice]? = nil
     var aftercareTemplateId: Nullable<Int>
     /// «Свежий прокол» / «Свежее тату»: aftercare memos are sent only for such services.
     var freshProcedure: Bool
@@ -328,6 +330,38 @@ nonisolated struct ReceiptBody: Encodable, Hashable, Sendable {
 nonisolated struct RefundBody: Encodable, Sendable {
     let reason: String
     let restock: Bool
+    /// The lines and units to return; `nil` — everything not returned yet.
+    var items: [RefundItemBody]? = nil
+}
+
+nonisolated struct RefundItemBody: Codable, Hashable, Sendable {
+    let saleItemId: Int
+    let quantity: Int
+}
+
+/// `POST /sales/:id/refund/preview`.
+nonisolated struct RefundPreviewBody: Encodable, Sendable {
+    var items: [RefundItemBody]?
+}
+
+/// `POST /sales/:id/send` — to a chosen bot chat, else the client's chat.
+nonisolated struct SendReceiptBody: Encodable, Sendable {
+    var chatId: Int64?
+}
+
+/// `POST /stock/deliveries`.
+nonisolated struct DeliveryBody: Encodable, Sendable {
+    var supplier: String?
+    var note: String?
+    var lines: [DeliveryLineBody]
+}
+
+nonisolated struct DeliveryLineBody: Encodable, Hashable, Sendable {
+    let productId: Int
+    let variantId: Int
+    let quantity: Int
+    /// What one unit cost on this delivery; `nil` — unknown (the cost does not change).
+    var unitCost: Int?
 }
 
 nonisolated struct OpenShiftBody: Encodable, Sendable {

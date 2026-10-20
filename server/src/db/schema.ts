@@ -92,6 +92,11 @@ export const services = sqliteTable('services', {
   variantsJson: text('variants_json').notNull().default('[]'),
   /** Prepayment required to book this service (rubles); 0 = none. */
   depositAmount: integer('deposit_amount').notNull().default(0),
+  /**
+   * JSON array of `{ employeeId, price, priceMax | null, variants: [{ name, price }] }` — a master's own prices
+   * (docs/API.md «Service» `masterPrices`); `[]` = every master charges the catalog price.
+   */
+  masterPricesJson: text('master_prices_json').notNull().default('[]'),
   aftercareTemplateId: integer('aftercare_template_id').references(() => aftercareTemplates.id, {
     onDelete: 'set null',
   }),
@@ -345,6 +350,10 @@ export const sales = sqliteTable(
     refundReason: text('refund_reason'),
     refundShiftId: integer('refund_shift_id').references(() => cashShifts.id),
     refundedById: integer('refunded_by_id').references(() => employees.id),
+    /** Σ `sale_refunds.amount` — what partial and full refunds have returned so far. */
+    refundedTotal: integer('refunded_total').notNull().default(0),
+    /** When the bot last sent the receipt to the client's Telegram (automatically after the sale or by staff). */
+    receiptSentAt: ms('receipt_sent_at'),
     createdAt: ms('created_at').notNull(),
   },
   (t) => [
@@ -376,8 +385,62 @@ export const saleItems = sqliteTable(
     quantity: integer('quantity').notNull(),
     price: integer('price').notNull(),
     total: integer('total').notNull(),
+    /** Units returned by refunds so far (Σ `sale_refund_items.quantity`); `quantity − refundedQuantity` are kept. */
+    refundedQuantity: integer('refunded_quantity').notNull().default(0),
   },
   (t) => [index('sale_items_sale_idx').on(t.saleId)],
+);
+
+/**
+ * A refund of a sale (docs/API.md «SaleRefund»): some lines or quantities, or everything left. A sale whose every unit
+ * is refunded becomes `refunded`. The `pay*` columns are the parts of `amount` given back, by how the sale was paid.
+ */
+export const saleRefunds = sqliteTable(
+  'sale_refunds',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    saleId: integer('sale_id')
+      .notNull()
+      .references(() => sales.id),
+    amount: integer('amount').notNull(),
+    payCash: integer('pay_cash').notNull().default(0),
+    payCard: integer('pay_card').notNull().default(0),
+    payTransfer: integer('pay_transfer').notNull().default(0),
+    payQr: integer('pay_qr').notNull().default(0),
+    payDeposit: integer('pay_deposit').notNull().default(0),
+    payBonus: integer('pay_bonus').notNull().default(0),
+    payCertificate: integer('pay_certificate').notNull().default(0),
+    /** Bonuses the sale had earned that this refund took back. */
+    bonusTakenBack: integer('bonus_taken_back').notNull().default(0),
+    restock: bool('restock').notNull(),
+    reason: text('reason').notNull(),
+    employeeId: integer('employee_id').references(() => employees.id),
+    /** The cash shift open at the refund (always set when `payCash > 0`). */
+    shiftId: integer('shift_id').references(() => cashShifts.id),
+    createdAt: ms('created_at').notNull(),
+  },
+  (t) => [
+    index('sale_refunds_sale_idx').on(t.saleId),
+    index('sale_refunds_shift_idx').on(t.shiftId),
+    index('sale_refunds_created_idx').on(t.createdAt),
+  ],
+);
+
+export const saleRefundItems = sqliteTable(
+  'sale_refund_items',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    refundId: integer('refund_id')
+      .notNull()
+      .references(() => saleRefunds.id, { onDelete: 'cascade' }),
+    saleItemId: integer('sale_item_id')
+      .notNull()
+      .references(() => saleItems.id),
+    quantity: integer('quantity').notNull(),
+    /** What this line's units returned (after their share of the sale discount). */
+    amount: integer('amount').notNull(),
+  },
+  (t) => [index('sale_refund_items_refund_idx').on(t.refundId), index('sale_refund_items_item_idx').on(t.saleItemId)],
 );
 
 /**
@@ -479,7 +542,8 @@ export const depositOperations = sqliteTable(
     index('deposit_operations_created_idx').on(t.createdAt),
     // A paid QR code is recorded once; a sale applies (and, when refunded, returns) a prepayment once.
     uniqueIndex('deposit_operations_qr_receive_unique').on(t.qrPaymentId).where(sql`type = 'receive'`),
-    uniqueIndex('deposit_operations_sale_type_unique').on(t.saleId, t.type).where(sql`sale_id is not null`),
+    // Partial refunds may return a prepayment in several `unapply` steps; a sale applies it once.
+    uniqueIndex('deposit_operations_sale_apply_unique').on(t.saleId).where(sql`sale_id is not null and type = 'apply'`),
     check('deposit_operations_amount_positive', sql`${t.amount} > 0`),
   ],
 );
@@ -507,6 +571,16 @@ export const stockRevisions = sqliteTable('stock_revisions', {
   createdAt: ms('created_at').notNull(),
 });
 
+/** A delivery (поставка): one receiving of many products and sizes; its lines are `receipt` movements. */
+export const stockDeliveries = sqliteTable('stock_deliveries', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  number: integer('number').notNull().unique(),
+  supplier: text('supplier'),
+  note: text('note'),
+  employeeId: integer('employee_id').references(() => employees.id),
+  createdAt: ms('created_at').notNull(),
+});
+
 export const stockMovements = sqliteTable(
   'stock_movements',
   {
@@ -526,6 +600,8 @@ export const stockMovements = sqliteTable(
     appointmentId: integer('appointment_id').references(() => appointments.id),
     /** The stock count this adjustment came from. */
     revisionId: integer('revision_id').references(() => stockRevisions.id),
+    /** The delivery this receipt belongs to. */
+    deliveryId: integer('delivery_id').references(() => stockDeliveries.id),
     /** Rubles paid: set on `purchase` (a restock of a presence consumable), null otherwise. */
     amount: integer('amount'),
     employeeId: integer('employee_id').references(() => employees.id),
@@ -535,6 +611,7 @@ export const stockMovements = sqliteTable(
     index('stock_movements_product_idx').on(t.productId, t.id),
     index('stock_movements_variant_idx').on(t.variantId, t.id),
     index('stock_movements_type_idx').on(t.type),
+    index('stock_movements_delivery_idx').on(t.deliveryId),
   ],
 );
 

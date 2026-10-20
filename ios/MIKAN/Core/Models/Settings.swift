@@ -19,6 +19,14 @@ nonisolated struct StudioSettings: Codable, Hashable, Sendable {
     var reviewLinks: ReviewLinks? = nil
     /// How clients book themselves; `nil` from a server that predates online booking (then never sent back).
     var onlineBooking: OnlineBookingSettings? = nil
+    /// The till; `nil` from a server that predates the receipt in Telegram (then never sent back).
+    var pos: PosSettings? = nil
+}
+
+/// `StudioSettings.pos`.
+nonisolated struct PosSettings: Codable, Hashable, Sendable {
+    /// The bot sends the receipt to the client's Telegram after a paid sale and tells them about a refund.
+    var sendReceipt: Bool
 }
 
 /// `StudioSettings.cancellation`: what the studio keeps of a prepayment when a visit is cancelled late or missed.

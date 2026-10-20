@@ -102,6 +102,8 @@ nonisolated struct SaleItem: Codable, Hashable, Identifiable, Sendable {
     var certificateId: Int? = nil
     /// Its code «MIKAN-7K3Q-9F2D»; `nil` for other lines and from servers that only name it in `name`.
     var certificateCode: String? = nil
+    /// Units of the line returned by refunds so far; `nil` from a server without partial refunds.
+    var refundedQuantity: Int? = nil
 
     /// A gift certificate sold in the sale (whatever `type` the server gave the line).
     var isCertificate: Bool { certificateId != nil || type == .certificate }
@@ -131,12 +133,61 @@ nonisolated struct Sale: Codable, Hashable, Identifiable, Sendable {
     let createdAt: Date
     /// Bonuses credited for this sale; `nil` from a server without loyalty.
     var bonusEarned: Int? = nil
+    /// What refunds have returned so far; `nil` from a server without partial refunds.
+    var refundedTotal: Int? = nil
+    /// The refunds of this sale, oldest first; `nil` from a server without partial refunds.
+    var refunds: [SaleRefund]? = nil
+    /// When the bot last sent the receipt to the client's Telegram; `nil` — never (or an older server).
+    var receiptSentAt: Date? = nil
 
     var isRefunded: Bool { status == .refunded }
+    /// Returned so far: `refundedTotal`, or the whole total of a refunded sale from an older server.
+    var returnedAmount: Int { refundedTotal ?? (isRefunded ? total : 0) }
+    /// Some of the sale is returned, some kept.
+    var isPartlyRefunded: Bool { !isRefunded && returnedAmount > 0 }
+    /// Units of a line returned so far (all of them on a refunded sale from an older server).
+    func returnedQuantity(of item: SaleItem) -> Int { item.refundedQuantity ?? (isRefunded ? item.quantity : 0) }
+    /// Units of a line that can still be returned.
+    func refundableQuantity(of item: SaleItem) -> Int { max(0, item.quantity - returnedQuantity(of: item)) }
     var hasProducts: Bool { items.contains { $0.type == .product && !$0.isCertificate } }
     var itemsSummary: String { items.map(\.name).joined(separator: ", ") }
     /// Gift certificates this sale issued.
     var certificateItems: [SaleItem] { items.filter(\.isCertificate) }
     /// Bonuses credited for this sale (0 when none or from a server without loyalty).
     var earnedBonuses: Int { max(0, bonusEarned ?? 0) }
+}
+
+/// One line of a refund: which sale line, how many units and what they returned.
+nonisolated struct SaleRefundItem: Codable, Hashable, Sendable {
+    let saleItemId: Int
+    let name: String
+    let quantity: Int
+    let amount: Int
+}
+
+/// A refund of some lines or units of a sale, or of everything left (docs/API.md «SaleRefund»).
+nonisolated struct SaleRefund: Codable, Hashable, Identifiable, Sendable {
+    let id: Int
+    let saleId: Int
+    let items: [SaleRefundItem]
+    let amount: Int
+    /// How `amount` went back, by how the sale was paid.
+    let payments: Payments
+    /// Bonuses the sale earned that this refund took back.
+    let bonusTakenBack: Int
+    let restock: Bool
+    let reason: String
+    let employee: EmployeeRef?
+    let shiftId: Int?
+    let createdAt: Date
+}
+
+/// `POST /sales/:id/refund/preview`: what a refund would return, recorded exactly so by the refund.
+nonisolated struct RefundPreview: Codable, Hashable, Sendable {
+    let amount: Int
+    let items: [SaleRefundItem]
+    let payments: Payments
+    let bonusTakenBack: Int
+    /// The refund returns cash and no shift is open: open one first.
+    let needsShift: Bool
 }

@@ -230,6 +230,13 @@ export async function createTestApp(
   };
 }
 
+/** Opens the cash shift — selling needs one (docs/API.md «Cash register»); returns its id. */
+export async function openShift(t: TestApp, openingCash = 0): Promise<number> {
+  const res = await t.api('POST', '/api/cash/shift/open', { openingCash });
+  if (res.statusCode !== 200) throw new Error(`POST /api/cash/shift/open → ${res.statusCode}: ${res.body}`);
+  return res.json<{ id: number }>().id;
+}
+
 /** Creates a service/product/client quickly through the API and returns the JSON body. */
 export async function make(t: TestApp, url: string, payload: Record<string, unknown>) {
   const res = await t.api('POST', url, payload);
