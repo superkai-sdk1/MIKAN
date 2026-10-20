@@ -63,6 +63,8 @@ struct AppointmentEditorView: View {
                     .navigationBarBackButtonHidden()
             }
             .task { await loadReference() }
+            // Another master (or the first one chosen) charges their own prices for the lines nobody edited.
+            .onChange(of: draft.masterId) { draft.repriceLines(from: reference.services) }
             .errorAlert($errorMessage)
             .alert("Записать всё равно?", isPresented: conflictBinding) {
                 Button("Записать") { save(force: true) }
@@ -210,7 +212,7 @@ struct AppointmentEditorView: View {
             try await reference.ensureEmployees()
             try await reference.ensureServices()
             try? await reference.ensureWorkday()
-            draft.resolveDeposits(from: reference.services)
+            draft.resolveCatalog(from: reference.services)
             referenceError = nil
             if draft.masterId == nil, let me = appState.employee, me.isMaster, me.active {
                 draft.masterId = me.id

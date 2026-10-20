@@ -90,6 +90,7 @@
 		2DF2882B85ED04403CD919B0 /* CalendarPeriod.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33AF0ACC9932851C7726897D /* CalendarPeriod.swift */; };
 		2E5C9EC4C60972CDA37FAF68 /* BonusAdjustTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CCE9A21ECECCA51D3BECEC3 /* BonusAdjustTests.swift */; };
 		2EEC34BC81BA68469C91654B /* EmployeeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30477A752EB8EFC0AD92C66 /* EmployeeEditorView.swift */; };
+		2F61D82159848A61B5AFF2CE /* AppointmentLinePricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE73B8FE680D749D2D83B7B /* AppointmentLinePricing.swift */; };
 		2FADEA35FCA2247E6BF02A80 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF3329D7F4E46E0179BE4D5 /* ModelDecodingTests.swift */; };
 		2FBDDE3EC08BBEF7CA4CB533 /* ClientMarketingSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 734DC933AF69B852D1250373 /* ClientMarketingSection.swift */; };
 		307B738A097A0D415D2F31D1 /* StaffBindingMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 821D504BA84289CC198CEC2E /* StaffBindingMenu.swift */; };
@@ -222,6 +223,7 @@
 		71980DC630418DFBD02A04EE /* AnalyticsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08FEAA960B5CE2D0980C1966 /* AnalyticsComponents.swift */; };
 		719963EC99BC77BBDF70F73E /* ServicePicking.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B698A342A5FC4418396E47 /* ServicePicking.swift */; };
 		726A671A70F69B19564065A4 /* MediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0765D3B62A5D27ACAC1448B4 /* MediaViews.swift */; };
+		73CA57B8DC578EA3EEB1D7C0 /* AppointmentMasterPricingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F223D607C22D270DA2EA101B /* AppointmentMasterPricingTests.swift */; };
 		751E9BF1C2BB3137E1206941 /* DeviceAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CFEC3ED9C6470AD43E535A /* DeviceAuthentication.swift */; };
 		753A857822C167F8EC540BA6 /* ServiceCardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 640DCF9373A3B925897F1920 /* ServiceCardTests.swift */; };
 		75FD9CBCDA58A62F0FDDE112 /* RevisionHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 448FC8CB58A020A6755E6CD7 /* RevisionHistoryView.swift */; };
@@ -670,6 +672,7 @@
 		6C59F908F5744097D294D25C /* RemoteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteState.swift; sourceTree = "<group>"; };
 		6CCE9A21ECECCA51D3BECEC3 /* BonusAdjustTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonusAdjustTests.swift; sourceTree = "<group>"; };
 		6CD067D1BCF2FF1C579248D4 /* ProductDetailCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailCards.swift; sourceTree = "<group>"; };
+		6CE73B8FE680D749D2D83B7B /* AppointmentLinePricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentLinePricing.swift; sourceTree = "<group>"; };
 		6CF709B7A6FBB01F8BCEDBED /* DepositPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositPresentation.swift; sourceTree = "<group>"; };
 		6E5A6571584A92D220FEA9CB /* ChatMarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownTests.swift; sourceTree = "<group>"; };
 		6EC3A48EF031946312B2CD9A /* QRPaymentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRPaymentView.swift; sourceTree = "<group>"; };
@@ -906,6 +909,7 @@
 		F0F67F66CE9BFFD987DB6139 /* CertificateEditDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateEditDraft.swift; sourceTree = "<group>"; };
 		F12E8D2C8D454960AD9E89E1 /* ConsumablePurchaseSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsumablePurchaseSheet.swift; sourceTree = "<group>"; };
 		F1671D415138D39FBBFA62DC /* AnalyticsKPIGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsKPIGrid.swift; sourceTree = "<group>"; };
+		F223D607C22D270DA2EA101B /* AppointmentMasterPricingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentMasterPricingTests.swift; sourceTree = "<group>"; };
 		F32DCA6CAEFE63084022C64A /* ScheduleShading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleShading.swift; sourceTree = "<group>"; };
 		F360E92B8751EDF8CCDBEADD /* ServiceEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceEditorView.swift; sourceTree = "<group>"; };
 		F3978E49CF74DEF6ECE07A09 /* ProductServicesPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductServicesPicker.swift; sourceTree = "<group>"; };
@@ -1168,6 +1172,7 @@
 				FD547C668BCFCA43A4EB8089 /* AppLockTests.swift */,
 				3D30A036B706354BDFAD5556 /* AppointmentDraftTests.swift */,
 				366F17A689264EA35504085C /* AppointmentDragTests.swift */,
+				F223D607C22D270DA2EA101B /* AppointmentMasterPricingTests.swift */,
 				3DE8B34825CA9680EA3C8A2A /* AuditLogTests.swift */,
 				3D3C35F2777CA5DF149DC0B3 /* BirthdayTests.swift */,
 				6CCE9A21ECECCA51D3BECEC3 /* BonusAdjustTests.swift */,
@@ -1260,6 +1265,7 @@
 				8D6466EA57DACAC151D703B2 /* AppointmentDetailView.swift */,
 				5871851D4120D23EDA8AAF38 /* AppointmentDraft.swift */,
 				32834C088CCE6B6B10C61F34 /* AppointmentEditorView.swift */,
+				6CE73B8FE680D749D2D83B7B /* AppointmentLinePricing.swift */,
 				5F5BE31C742F5DC36E85AD4B /* AppointmentServicesSection.swift */,
 				6366CBA7544C22C932871225 /* AppointmentStatus+UI.swift */,
 				33AF0ACC9932851C7726897D /* CalendarPeriod.swift */,
@@ -1968,6 +1974,7 @@
 				C3A3F23A0C0782391B9A4FE3 /* AppointmentDragPlan.swift in Sources */,
 				36FA598BEB366FA035EE733B /* AppointmentDragSource.swift in Sources */,
 				1980BACE843B73B12822595F /* AppointmentEditorView.swift in Sources */,
+				2F61D82159848A61B5AFF2CE /* AppointmentLinePricing.swift in Sources */,
 				4A61EAB98163513A51D47324 /* AppointmentMove.swift in Sources */,
 				2B1396B63CC264A4CB5E9BF3 /* AppointmentMoveSheet.swift in Sources */,
 				262C37E1D7810ADB4B871CA5 /* AppointmentOnlineSection.swift in Sources */,
@@ -2322,6 +2329,7 @@
 				5486BD468F67ECFAC9525EF5 /* AppLockTests.swift in Sources */,
 				B9A4337BAC62B2D48687EB8D /* AppointmentDraftTests.swift in Sources */,
 				B51EA5E17C810499B91824CB /* AppointmentDragTests.swift in Sources */,
+				73CA57B8DC578EA3EEB1D7C0 /* AppointmentMasterPricingTests.swift in Sources */,
 				328CFB5DB178D497CDA3F77B /* AuditLogTests.swift in Sources */,
 				DBC1AB8F633034733A7456AE /* BirthdayTests.swift in Sources */,
 				2E5C9EC4C60972CDA37FAF68 /* BonusAdjustTests.swift in Sources */,

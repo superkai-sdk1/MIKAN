@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// «Перенести запись Анны на 21 октября, 15:00?» after a drop in the calendar, with «Уведомить клиента в Telegram».
-/// A schedule conflict asks «Записать всё равно?». Closing without saving puts the appointment back.
+/// Another master re-prices the service lines nobody edited. A schedule conflict asks «Записать всё равно?». Closing
+/// without saving puts the appointment back.
 struct AppointmentMoveSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
@@ -23,6 +24,9 @@ struct AppointmentMoveSheet: View {
         reference.employees.first { $0.id == move.target.masterId }?.name ?? "другой мастер"
     }
 
+    /// The new master's prices, once the catalog is loaded.
+    private var repricing: AppointmentMoveRepricing? { move.repricing(catalog: reference.services) }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -39,6 +43,16 @@ struct AppointmentMoveSheet: View {
                     LabeledContent("Станет", value: AppointmentMoveText.slot(move.target.startsAt, move.target.endsAt))
                     if move.changesMaster {
                         LabeledContent("Мастер", value: "\(appointment.master.name) → \(newMasterName)")
+                    }
+                    if let repricing {
+                        LabeledContent("Стоимость") {
+                            Text("\(Money.format(appointment.price)) → \(Money.format(repricing.price))")
+                                .monospacedDigit()
+                        }
+                    }
+                } footer: {
+                    if repricing != nil {
+                        Text("Цены услуг — как у мастера \(newMasterName). Цены, изменённые вручную, остаются.")
                     }
                 }
                 if move.offersTelegramNotice() {
@@ -65,6 +79,8 @@ struct AppointmentMoveSheet: View {
                 }
             }
             .interactiveDismissDisabled(isSaving)
+            // Only re-prices the lines; without the catalog the move keeps the prices.
+            .task { try? await reference.ensureServices() }
             .alert("Записать всё равно?", isPresented: present($conflictMessage)) {
                 Button("Записать") { save(force: true) }
                 Button("Отмена", role: .cancel) { dismiss() }
@@ -89,7 +105,8 @@ struct AppointmentMoveSheet: View {
         Task {
             defer { isSaving = false }
             do {
-                let saved = try await api.moveAppointment(id: appointment.id, move.body(notifyClient: notifyClient, force: force))
+                let body = move.body(notifyClient: notifyClient, force: force, repricing: repricing)
+                let saved = try await api.moveAppointment(id: appointment.id, body)
                 onSaved(saved)
                 dismiss()
             } catch let error as APIError where error.isScheduleConflict {

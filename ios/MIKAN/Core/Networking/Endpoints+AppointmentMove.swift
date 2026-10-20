@@ -12,6 +12,11 @@ nonisolated struct AppointmentMoveBody: Encodable, Equatable, Sendable {
     let notifyClient: Bool
     /// Omitted unless the user confirmed moving despite a schedule conflict.
     var force: Bool?
+    /// Only when another master charges otherwise: the re-priced service lines, the total and the prepayment the
+    /// appointment already asks for (sending `services` would reset it to the services' sum).
+    var services: [AppointmentServiceBody]?
+    var price: Int?
+    var depositRequired: Int?
 }
 
 extension APIClient {
