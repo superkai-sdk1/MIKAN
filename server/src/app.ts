@@ -28,6 +28,7 @@ import { campaignRoutes } from './routes/campaigns.js';
 import { categoryRoutes } from './routes/categories.js';
 import { clientRoutes } from './routes/clients.js';
 import { dashboardRoutes } from './routes/dashboard.js';
+import { deliveryRoutes } from './routes/deliveries.js';
 import { depositRoutes } from './routes/deposits.js';
 import { deviceRoutes } from './routes/devices.js';
 import { employeeRoutes } from './routes/employees.js';
@@ -200,6 +201,7 @@ export async function buildApp(ctx: AppContext, options: BuildOptions = {}): Pro
         catalogRoutes(secured, ctx);
         categoryRoutes(secured, ctx);
         productRoutes(secured, ctx);
+        deliveryRoutes(secured, ctx);
         historyRoutes(secured, ctx);
         uploadRoutes(secured, ctx);
         appointmentRoutes(secured, ctx);

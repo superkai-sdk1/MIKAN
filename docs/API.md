@@ -834,9 +834,10 @@ an appointment with its prepayment); `limit` default 50, max 200. Anyone but the
   `settings`, `bot`, `campaign`, `certificate`, `waitlist`, `portfolio`. A manual bonus adjustment is `client.bonus_adjust` on the client
   («Начислено 500 бонусов клиенту «Анна Иванова»: Компенсация»); certificates log `certificate.update` /
   `certificate.cancel` / `certificate.send`; a sale paid with bonuses or certificates says so («… Оплачено бонусами
-  300 ₽, сертификатом 1 000 ₽»). `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
+  300 ₽, сертификатом 1 000 ₽»); a delivery is `stock.delivery` («Поставка №4 от Industrial Strength: 3 позиции,
+  14 шт, 12 400 ₽»). `action` is `<entity>.<verb>` (`appointment.move`, `sale.refund`, …).
 - `entityId` is the id of what the entry is about: `deposit` — the appointment; `stock` — the product (`null` for a
-  stock count); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
+  stock count or a delivery); `cash` — the shift; `schedule` and `payroll` — the employee; `bot` — the chat id (may be negative),
   the booking request or the scheduled message; `sale` — the sale (`null` for a QR code not yet paid); `settings` and
   a category reorder — `null`. An edit that changed nothing is logged too («… сохранена без изменений»); a write
   without a specific summary gets «Изменение: PUT /…» with the entity taken from the path.
@@ -1026,8 +1027,10 @@ Deliveries (поставки):
   movement «Поставка №4» (+ « · <note>»), with `amount` and the new cost exactly like a receipt with `unitCost` (see
   «Movements»).
 - `supplier` — trimmed, ≤ 100 (`""` = none). A product whose `supplier` is empty gets this one.
-- `GET /stock/suppliers` — distinct supplier names of deliveries and products (case-insensitive, the latest spelling),
-  with `deliveries` (how many) and `lastAt` (the latest delivery, `null` when only products name it).
+- `GET /stock/suppliers` — distinct supplier names of deliveries and products not deleted (case-insensitive; the
+  spelling of the latest delivery, else of the latest edited product), with `deliveries` (how many) and `lastAt` (the
+  latest delivery, `null` when only products name it). Order: by `lastAt`, newest first, then the names only products
+  carry, alphabetically. `?supplier=` of the list matches a name in any case.
 - Deliveries cannot be edited or deleted: a mistake is fixed by a write-off or a stock count.
 
 Stock counts (ревизии):

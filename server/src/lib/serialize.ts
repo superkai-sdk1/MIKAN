@@ -244,6 +244,7 @@ export const movementOut = (m: MovementRow, productName: string, variantName: st
   saleId: m.saleId,
   appointmentId: m.appointmentId,
   revisionId: m.revisionId,
+  deliveryId: m.deliveryId,
   amount: m.amount,
   employee,
   createdAt: toIso(m.createdAt),
