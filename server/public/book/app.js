@@ -8,10 +8,10 @@ import { createApi, describeError } from './lib/api.js';
 import { isCabinetPath } from './lib/cabinet.js';
 import { mount } from './lib/dom.js';
 import {
-  STEP_TITLES, applyPreselect, canProceed, createFlow, firstIncompleteStep, reduce, selectedLines, stepPosition,
-  stepsFor, totalDuration,
+  STEP_TITLES, applyPreselect, bookingPriceText, canProceed, createFlow, firstIncompleteStep, reduce, selectedLines,
+  stepPosition, stepsFor, totalDuration,
 } from './lib/flow.js';
-import { addDays, deviceTimeZone, formatDateTime, formatDuration, plural, todayIn, totalPriceText } from './lib/format.js';
+import { addDays, deviceTimeZone, formatDateTime, formatDuration, plural, todayIn } from './lib/format.js';
 import { toE164 } from './lib/phone.js';
 import { bookingBody, bookingPagePath, bookingTokenFromPath, parsePreselect } from './lib/query.js';
 import { initTelegram } from './lib/telegram.js';
@@ -114,8 +114,10 @@ function summaryText(state) {
   if (state.step === 'time') return state.slot ? formatDateTime(state.slot.startsAt, app.data.timeZone) : 'Выберите день и время';
   if (state.step === 'contacts') return '';
   if (lines.length === 0) return 'Выберите услугу';
-  const parts = [`${lines.length} ${plural(lines.length, 'услуга', 'услуги', 'услуг')}`, formatDuration(totalDuration(lines)), totalPriceText(lines)];
-  return state.step === 'confirm' ? `Итого ${totalPriceText(lines)}` : parts.join(' · ');
+  // The chosen master's prices; «any» — the masters' one total or their range.
+  const price = bookingPriceText(state, app.data.catalog, app.data.masters);
+  const parts = [`${lines.length} ${plural(lines.length, 'услуга', 'услуги', 'услуг')}`, formatDuration(totalDuration(lines)), price];
+  return state.step === 'confirm' ? `Итого ${price}` : parts.join(' · ');
 }
 
 function updateChrome() {
@@ -144,7 +146,7 @@ function renderStep() {
       view = renderServices({ ...base, services: data.services, onWorks: app.works?.service });
       break;
     case 'master':
-      view = renderMaster({ ...base, masters: data.masters, onWorks: app.works?.master });
+      view = renderMaster({ ...base, catalog: data.catalog, masters: data.masters, onWorks: app.works?.master });
       break;
     case 'time':
       view = renderTime({

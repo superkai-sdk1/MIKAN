@@ -14,6 +14,7 @@ import { formatShortDate, formatTime, MINUTE_MS } from '../lib/time.js';
 import { autoRetainDeposit, cancelPendingDepositCodes } from './deposits.js';
 import { deleteReceiptOfAppointment } from './receipts.js';
 import { getAppointmentRow, getClientRow, serviceLinesByAppointment, servicesByIds } from './refs.js';
+import { pricingMaster, servicePriceFor } from './service-prices.js';
 import { studioTimezone } from './settings.js';
 import { cancelPendingForAppointment, hasAftercare, scheduleAftercare, syncReminder } from './scheduling.js';
 import { applyConsumptionNorms, noConsumption, recordListedUsage, usageRecorded } from './consumption.js';
@@ -128,7 +129,8 @@ function clientMustExist(db: DbOrTx, clientId: number): void {
   }
 }
 
-function resolveLines(db: DbOrTx, inputs: ServiceLineInput[]): ServiceLine[] {
+/** `masterId` — the appointment's master: a catalog line without a price gets theirs (see «Service» `masterPrices`). */
+function resolveLines(db: DbOrTx, inputs: ServiceLineInput[], masterId: number | null): ServiceLine[] {
   const catalog = servicesByIds(db, inputs.map((l) => l.serviceId));
   return inputs.map((line, index) => {
     const name = line.name?.trim() || null;
@@ -138,7 +140,7 @@ function resolveLines(db: DbOrTx, inputs: ServiceLineInput[]): ServiceLine[] {
       return {
         serviceId: service.id,
         name: name ?? service.name,
-        price: line.price ?? service.price,
+        price: line.price ?? servicePriceFor(service, null, masterId),
         durationMin: line.durationMin ?? service.durationMin,
       };
     }
@@ -147,10 +149,10 @@ function resolveLines(db: DbOrTx, inputs: ServiceLineInput[]): ServiceLine[] {
   });
 }
 
-const singleServiceLine = (service: ServiceRow, price: number | undefined): ServiceLine => ({
+const singleServiceLine = (service: ServiceRow, price: number | undefined, masterId: number | null): ServiceLine => ({
   serviceId: service.id,
   name: service.name,
-  price: price ?? service.price,
+  price: price ?? servicePriceFor(service, null, masterId),
   durationMin: service.durationMin,
 });
 
@@ -160,12 +162,14 @@ const singleServiceLine = (service: ServiceRow, price: number | undefined): Serv
  * (`null` included: older builds always send `serviceId: null` for appointments with custom lines only), replaces
  * them with that single service otherwise, and clears them when `null` drops the current catalog service.
  */
-function proposedLines(db: DbOrTx, input: AppointmentInput, current: ServiceLine[]): ServiceLine[] | undefined {
-  if (input.services !== undefined) return resolveLines(db, input.services);
+function proposedLines(db: DbOrTx, input: AppointmentInput, current: ServiceLine[], masterId: number): ServiceLine[] | undefined {
+  // Lines without a price cost what the appointment's master charges.
+  const priceMaster = () => pricingMaster(db, masterId);
+  if (input.services !== undefined) return resolveLines(db, input.services, priceMaster());
   if (input.serviceId === undefined) return undefined;
   if (input.serviceId === firstServiceId(current)) return undefined;
   if (input.serviceId === null) return [];
-  return [singleServiceLine(loadService(db, input.serviceId), input.price)];
+  return [singleServiceLine(loadService(db, input.serviceId), input.price, priceMaster())];
 }
 
 const firstServiceId = (lines: ServiceLine[]): number | null => lines.find((l) => l.serviceId != null)?.serviceId ?? null;
@@ -218,7 +222,7 @@ export function createAppointment(db: DbOrTx, input: AppointmentInput): Appointm
     if (input.startsAt === undefined) throw badRequest('«Начало»: обязательное поле');
     clientMustExist(tx, input.clientId);
     assertMaster(tx, input.masterId);
-    const lines = proposedLines(tx, input, []) ?? [];
+    const lines = proposedLines(tx, input, [], input.masterId) ?? [];
     const endsAt = input.endsAt ?? defaultEndsAt(tx, input, input.startsAt, lines);
     if (endsAt === undefined) throw badRequest('«Окончание»: обязательное поле');
     if (endsAt <= input.startsAt) throw badRequest('Окончание записи должно быть позже начала');
@@ -276,7 +280,7 @@ export function updateAppointment(db: DbOrTx, id: number, input: AppointmentInpu
     if (input.clientId !== undefined) clientMustExist(tx, input.clientId);
     if (input.masterId !== undefined && input.masterId !== current.masterId) assertMaster(tx, input.masterId);
     const before = currentLines(tx, id);
-    const proposed = proposedLines(tx, input, before);
+    const proposed = proposedLines(tx, input, before, input.masterId ?? current.masterId);
     // Re-sending identical lines keeps the stored rows (and their ids, used by the history).
     const replaced = proposed !== undefined && !sameLines(proposed, before) ? proposed : undefined;
     const lines = replaced ?? before;

@@ -108,6 +108,7 @@ const FIELD_LABELS: Record<string, string> = {
   priceMax: 'Максимальная цена',
   photos: 'Фото',
   variants: 'Варианты',
+  masterPrices: 'Цены мастеров',
   imageUrl: 'Картинка',
   imagePrompt: 'Описание картинки',
   prompt: 'Описание картинки',

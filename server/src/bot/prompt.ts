@@ -17,7 +17,19 @@ import { depositLedgerByAppointment, heldAmount, latestDepositCodes } from '../d
 import { bonusContextLine } from '../domain/loyalty.js';
 import { serviceLinesByAppointment } from '../domain/refs.js';
 import { getBotSettings, getStudioSettings, type StudioSettings } from '../domain/settings.js';
-import { clientFullName, parsePhotos, parseSteps, parseVariants, type AppointmentRow, type ClientRow, type ServiceRow } from '../lib/serialize.js';
+import { onlineMasters } from '../domain/online-booking-slots.js';
+import { genitiveName } from '../lib/name-cases.js';
+import {
+  clientFullName,
+  parseMasterPrices,
+  parsePhotos,
+  parseSteps,
+  parseVariants,
+  type AppointmentRow,
+  type ClientRow,
+  type ServiceRow,
+  type ServiceVariant,
+} from '../lib/serialize.js';
 import { formatRub, formatServicePrice } from '../lib/text.js';
 import { jewelryLines } from './jewelry.js';
 import { mastersSection } from './portfolio.js';
@@ -77,7 +89,7 @@ const RULES = `Ты — администратор тату- и пирсинг-�
 const REQUEST_RULE = `5. Новая запись: время подтверждает администратор. Можешь посмотреть свободное время через free_slots (с serviceId) и предложить пару вариантов, сказав, что время подтвердит администратор. Для заявки нужны имя, телефон, услуга и удобное время — затем вызови create_booking_request и скажи, что администратор скоро напишет для подтверждения. Если имя или телефон уже есть в данных о клиенте — не спрашивай заново, а уточни, верны ли они. Если у услуги есть предоплата — предупреди, что после подтверждения времени администратор пришлёт сюда ссылку на оплату через СБП и предоплата зачтётся в стоимость. Сам ссылок на оплату не придумывай; о предоплате по записям клиента говори только по данным о клиенте.`;
 
 /** Rule 5 with online booking on: the bot books itself (`book_appointment`), requests are for vague wishes. */
-const BOOKING_RULE = `5. Новая запись: клиент может записаться прямо здесь. Узнай услугу (и вариант, если у услуги есть варианты), к какому мастеру хочет клиент (или «любой мастер») и удобный день; вызови free_slots с этой датой и serviceId (и masterId, если нужен конкретный мастер) и предложи 2–4 варианта. Только когда клиент согласился с услугами, мастером и конкретным временем — вызови book_appointment и перескажи его ответ простыми словами: либо время за клиентом и сейчас придёт кнопка для оплаты предоплаты через СБП (после оплаты запись подтвердится сама, иначе время освободится), либо запись ждёт подтверждения студии. Если в удобные клиенту дни подходящего времени нет — предложи лист ожидания: уточни период (не больше 30 дней) и вызови join_waitlist; когда время освободится, бот сам напишет клиенту сюда с кнопкой записи. Если у услуги есть предоплата — предупреди о ней и о правиле отмены до записи. Клиент не идентифицирован — попроси поделиться номером кнопкой «📱 Поделиться номером». Если точного времени у клиента нет («как-нибудь на выходных», «вечером на неделе») или он просит, чтобы время подобрал администратор, — оформи заявку create_booking_request (имя, телефон, услуга, удобное время); имя и телефон из данных о клиенте не спрашивай заново, а уточни, верны ли они. Записаться самому можно и онлайн — кнопка «📅 Записаться» в меню чата. Сам ссылок на оплату не придумывай; о предоплате по записям клиента говори только по данным о клиенте.`;
+const BOOKING_RULE = `5. Новая запись: клиент может записаться прямо здесь. Узнай услугу (и вариант, если у услуги есть варианты), к какому мастеру хочет клиент (или «любой мастер») и удобный день; вызови free_slots с этой датой и serviceId (и masterId, если нужен конкретный мастер) и предложи 2–4 варианта. Только когда клиент согласился с услугами, мастером и конкретным временем — вызови book_appointment и перескажи его ответ простыми словами (цену называй ту, что в ответе, — это цена мастера записи): либо время за клиентом и сейчас придёт кнопка для оплаты предоплаты через СБП (после оплаты запись подтвердится сама, иначе время освободится), либо запись ждёт подтверждения студии. Если в удобные клиенту дни подходящего времени нет — предложи лист ожидания: уточни период (не больше 30 дней) и вызови join_waitlist; когда время освободится, бот сам напишет клиенту сюда с кнопкой записи. Если у услуги есть предоплата — предупреди о ней и о правиле отмены до записи. Клиент не идентифицирован — попроси поделиться номером кнопкой «📱 Поделиться номером». Если точного времени у клиента нет («как-нибудь на выходных», «вечером на неделе») или он просит, чтобы время подобрал администратор, — оформи заявку create_booking_request (имя, телефон, услуга, удобное время); имя и телефон из данных о клиенте не спрашивай заново, а уточни, верны ли они. Записаться самому можно и онлайн — кнопка «📅 Записаться» в меню чата. Сам ссылок на оплату не придумывай; о предоплате по записям клиента говори только по данным о клиенте.`;
 
 function line(label: string, value: string | null | undefined): string | null {
   return value && value.trim() ? `${label}: ${value.trim()}` : null;
@@ -89,7 +101,35 @@ const CATEGORY_TITLES: Array<[string, string]> = [
   ['other', 'Другое'],
 ];
 
-function serviceLine(s: ServiceRow): string {
+/** Names of the active masters by id: whose own prices the price list names. */
+export type MasterNames = ReadonlyMap<number, string>;
+
+export function masterNames(db: DbOrTx): MasterNames {
+  return new Map(onlineMasters(db).map((m) => [m.id, m.name]));
+}
+
+/**
+ * «свои цены мастеров: у Амины — 4 000 ₽; у Фатимы: Два — 5 000 ₽» — the prices of active masters that differ from
+ * the catalog (by variant for a service with variants), in the order staff entered them.
+ */
+function masterPricesText(s: ServiceRow, variants: ServiceVariant[], masters: MasterNames): string | null {
+  const catalog = new Map(variants.map((v) => [v.name, v.price]));
+  const parts = parseMasterPrices(s.masterPricesJson).flatMap((own) => {
+    const name = masters.get(own.employeeId);
+    if (!name) return [];
+    const whose = genitiveName(name);
+    const who = whose ? `у ${whose}` : `мастер ${name}`;
+    if (variants.length) {
+      const differ = own.variants.filter((v) => catalog.has(v.name) && catalog.get(v.name) !== v.price);
+      return differ.length ? [`${who}: ${differ.map((v) => `${v.name} — ${formatRub(v.price)}`).join(', ')}`] : [];
+    }
+    if (own.price === s.price && own.priceMax === s.priceMax) return [];
+    return [`${who} — ${formatServicePrice(own.price, own.priceMax, s.priceFrom)}`];
+  });
+  return parts.length ? `свои цены мастеров: ${parts.join('; ')}` : null;
+}
+
+function serviceLine(s: ServiceRow, masters: MasterNames): string {
   const variants = parseVariants(s.variantsJson);
   const hasPicture = Boolean(s.imageUrl) || parsePhotos(s.photosJson).length > 0;
   return [
@@ -99,6 +139,7 @@ function serviceLine(s: ServiceRow): string {
     variants.length
       ? `варианты: ${variants.map((v) => `${v.name} — ${formatRub(v.price)}${v.durationMin ? ` (${v.durationMin} мин)` : ''}`).join('; ')}`
       : null,
+    masterPricesText(s, variants, masters),
     s.depositAmount > 0 ? `предоплата ${formatRub(s.depositAmount)}` : null,
     hasPicture ? 'есть картинка' : null,
     s.description?.trim(),
@@ -108,7 +149,7 @@ function serviceLine(s: ServiceRow): string {
 }
 
 /** Active services grouped by category, then group (groups in price-list order; ungrouped first). */
-export function servicesPriceList(rows: ServiceRow[]): string {
+export function servicesPriceList(rows: ServiceRow[], masters: MasterNames): string {
   const known = new Set(CATEGORY_TITLES.map(([key]) => key));
   const categories = [
     ...CATEGORY_TITLES,
@@ -121,7 +162,7 @@ export function servicesPriceList(rows: ServiceRow[]): string {
     const groups = [...new Set(inCategory.map((r) => r.groupName?.trim() || null))].sort((a, b) => Number(a !== null) - Number(b !== null));
     const lines = groups.flatMap((group) => [
       ...(group ? [`${group}:`] : []),
-      ...inCategory.filter((r) => (r.groupName?.trim() || null) === group).map(serviceLine),
+      ...inCategory.filter((r) => (r.groupName?.trim() || null) === group).map((r) => serviceLine(r, masters)),
     ]);
     blocks.push(`### ${title}\n${lines.join('\n')}`);
   }
@@ -148,9 +189,15 @@ export function activeServices(db: DbOrTx): ServiceRow[] {
   return db.select().from(services).where(eq(services.active, true)).orderBy(asc(services.sort), asc(services.name), asc(services.id)).all();
 }
 
-/** «## Услуги и цены» with ids, prices, variants, durations and prepayments. */
-export function servicesSection(rows: ServiceRow[]): string {
-  return `## Услуги и цены\n${rows.length ? servicesPriceList(rows) : 'Прайс пока не заполнен — цены уточняет администратор.'}`;
+const MASTER_PRICES_NOTE =
+  '«Свои цены мастеров» — у этих мастеров услуга стоит иначе, чем в прайсе. Когда клиент выбрал мастера, называй цену ' +
+  'этого мастера; если мастер любой — скажи, что цена зависит от мастера.';
+
+/** «## Услуги и цены» with ids, prices, variants, masters' own prices, durations and prepayments. */
+export function servicesSection(rows: ServiceRow[], masters: MasterNames): string {
+  if (rows.length === 0) return '## Услуги и цены\nПрайс пока не заполнен — цены уточняет администратор.';
+  const ownPrices = rows.some((r) => masterPricesText(r, parseVariants(r.variantsJson), masters) !== null);
+  return `## Услуги и цены\n${servicesPriceList(rows, masters)}${ownPrices ? `\n\n${MASTER_PRICES_NOTE}` : ''}`;
 }
 
 /** «## Отмена и предоплата»: the studio's rules in plain words and when to tell them. */
@@ -182,7 +229,7 @@ export function buildStablePrompt(db: DbOrTx): string {
 
   sections.push(`# Данные студии\n\n${studioAboutSection(db)}`);
   const serviceRows = activeServices(db);
-  sections.push(servicesSection(serviceRows));
+  sections.push(servicesSection(serviceRows, masterNames(db)));
   const masters = mastersSection(db);
   if (masters) sections.push(masters);
   sections.push(cancellationSection(studio));

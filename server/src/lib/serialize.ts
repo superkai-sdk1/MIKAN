@@ -51,6 +51,14 @@ export interface ServiceVariant {
   price: number;
   durationMin: number | null;
 }
+/** A master's own prices of a service (docs/API.md «Service» `masterPrices`). */
+export interface MasterPrice {
+  employeeId: number;
+  price: number;
+  priceMax: number | null;
+  /** Their price of a variant, by the variant's current name. */
+  variants: Array<{ name: string; price: number }>;
+}
 export interface ClientStats {
   visits: number;
   totalSpent: number;
@@ -129,6 +137,7 @@ export const serviceOut = (sv: ServiceRow) => ({
   photos: parsePhotos(sv.photosJson),
   variants: parseVariants(sv.variantsJson),
   depositAmount: sv.depositAmount,
+  masterPrices: parseMasterPrices(sv.masterPricesJson),
   aftercareTemplateId: sv.aftercareTemplateId,
   freshProcedure: sv.freshProcedure,
   healingCheckDays: sv.healingCheckDays,
@@ -154,6 +163,21 @@ export function parseVariants(json: string): ServiceVariant[] {
   return parseJsonArray(json)
     .filter((x): x is ServiceVariant => typeof (x as ServiceVariant)?.name === 'string' && typeof (x as ServiceVariant)?.price === 'number')
     .map((x) => ({ name: x.name, price: x.price, durationMin: typeof x.durationMin === 'number' ? x.durationMin : null }));
+}
+
+const isAmount = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+
+export function parseMasterPrices(json: string): MasterPrice[] {
+  return parseJsonArray(json)
+    .filter((x): x is MasterPrice => Number.isInteger((x as MasterPrice)?.employeeId) && isAmount((x as MasterPrice)?.price))
+    .map((x) => ({
+      employeeId: x.employeeId,
+      price: x.price,
+      priceMax: isAmount(x.priceMax) ? x.priceMax : null,
+      variants: (Array.isArray(x.variants) ? x.variants : [])
+        .filter((v) => typeof v?.name === 'string' && isAmount(v?.price))
+        .map((v) => ({ name: v.name, price: v.price })),
+    }));
 }
 
 export function parseSteps(json: string): AftercareStep[] {

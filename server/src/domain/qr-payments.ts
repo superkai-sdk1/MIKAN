@@ -85,7 +85,7 @@ function purposeFor(db: DbOrTx): string {
 export async function createQrPayment(ctx: AppContext, input: SaleInput, employeeId: number): Promise<QrPaymentRow> {
   const provider = requireQrProvider(ctx);
   if (input.payments.qr <= 0) throw badRequest('Укажите сумму оплаты по QR-коду');
-  const prepared = prepareSale(ctx.db, input);
+  const prepared = prepareSale(ctx.db, input, employeeId);
   // A catalog price edited (or a size added) before the client pays must not change what is sold: the stored cart
   // keeps every item's price and size as validated now.
   const frozen: SaleInput = {
