@@ -68,7 +68,7 @@ export function saleInputOf(input: SaleBody): SaleInput {
 }
 
 const refundBody = z.object({ reason: requiredText(500), restock: nonNull(z.boolean()) });
-const listQuery = pagination.extend({ from: queryInstant, to: queryInstant, clientId: queryId });
+const listQuery = pagination.extend({ from: queryInstant, to: queryInstant, clientId: queryId, search: z.string().trim().max(100).optional() });
 
 export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { db } = ctx;

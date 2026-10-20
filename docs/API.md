@@ -1238,7 +1238,8 @@ the background.
 | POST | `/sales/:id/send` | `{ chatId? }` | `Sale` (with `receiptSentAt`) · rate limit 30/min |
 
 - `search` (≤ 100) — a receipt number (`17`, `№17`) or the client's name or phone (digits match anywhere in the
-  phone); combined with `from` / `to` / `clientId` when they are given. The app searches all time.
+  phone; a bare number of 1–2 digits is a receipt number only, from 3 digits it also matches phones); combined with
+  `from` / `to` / `clientId` when they are given. The app searches all time.
 - **A sale needs an open cash shift**: `POST /sales` and `POST /qr-payments` without one → `409 conflict` «Откройте
   кассовую смену, чтобы провести продажу». A QR payment the bank confirms after the shift was closed still becomes a
   sale (the money is already paid; `shiftId` = the shift open then, else `null`).

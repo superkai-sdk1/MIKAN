@@ -118,6 +118,7 @@ const FIELD_LABELS: Record<string, string> = {
   stone: 'Камень',
   supplier: 'Поставщик',
   unitCost: 'Цена закупки за штуку',
+  search: 'Поиск',
   size: 'Размер',
   serviceIds: 'Подходящие услуги',
   variantId: 'Размер',
