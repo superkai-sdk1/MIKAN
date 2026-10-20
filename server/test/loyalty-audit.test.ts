@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { upsertChat } from '../src/domain/bot-chats.js';
-import { createTestApp, make, type TestApp } from './helpers.js';
+import { createTestApp, make, openShift, type TestApp } from './helpers.js';
 
 const NOW = Date.parse('2026-10-15T09:00:00.000Z');
 
@@ -12,6 +12,7 @@ describe('audit log of loyalty writes', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
     t = await createTestApp();
+    await openShift(t);
     client = await make(t, '/api/clients', { name: 'Анна', lastName: 'Иванова', phone: '+79990001122' });
   });
   afterEach(async () => {

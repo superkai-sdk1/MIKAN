@@ -150,6 +150,14 @@ function resolveItem(db: DbOrTx, item: SaleItemInput, position: number): Resolve
   };
 }
 
+/**
+ * Selling needs an open cash shift (docs/API.md «Sales (POS)»): `POST /sales` and a new QR code check it. A QR code the
+ * bank confirms later still becomes a sale — the client has already paid.
+ */
+export function assertShiftOpen(db: DbOrTx): void {
+  if (!getOpenShift(db)) throw conflict('Откройте кассовую смену, чтобы провести продажу');
+}
+
 /** An older build sold a product that now has several sizes: it cannot say which one. */
 const severalSizesForSale = (product: ProductRow) => () =>
   conflict(`У «${product.name}» несколько размеров. Обновите приложение MIKAN, чтобы выбрать размер.`);

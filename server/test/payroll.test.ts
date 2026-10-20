@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { splitByWeight } from '../src/domain/payroll.js';
-import { createTestApp, make, type TestApp } from './helpers.js';
+import { createTestApp, make, openShift, type TestApp } from './helpers.js';
 import { at, ok, pay, setRules, staff, statement, visit, type Staff } from './payroll-fixtures.js';
 
 // The studio is in Moscow (UTC+3); the test process runs in Asia/Tomsk (UTC+7, see vitest.config.ts).
@@ -29,6 +29,7 @@ describe('payroll statement', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     at('2026-09-20T06:00:00.000Z');
     t = await createTestApp();
+    await openShift(t);
     fatima = await staff(t, 'Фатима', 'fatima', 'master');
     clientId = (await make(t, '/api/clients', { name: 'Иван', phone: '+79990000101' })).id;
     labret = await make(t, '/api/products', { kind: 'jewelry', name: 'Лабрет', price: 1000, initialQuantity: 10 });

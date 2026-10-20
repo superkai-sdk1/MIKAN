@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { announceBonusEarned } from '../domain/loyalty.js';
 import { getSaleRow, serializeSale } from '../domain/refs.js';
-import { createSale, listSales, refundSale, type SaleInput } from '../domain/sales.js';
+import { assertShiftOpen, createSale, listSales, refundSale, type SaleInput } from '../domain/sales.js';
 import { badRequest } from '../lib/errors.js';
 import { idempotent, REPLAYED_HEADER } from '../lib/idempotency.js';
 import { idParams, money, nonNull, nullableText, pagination, parse, queryId, queryInstant, requiredText } from '../lib/validation.js';
@@ -87,7 +87,10 @@ export function salesRoutes(app: FastifyInstance, ctx: AppContext): void {
     const input = saleInputOf(parse(saleBody, request.body));
     // QR money is only counted once the bank confirms it: such a sale is created by POST /qr-payments.
     if (input.payments.qr > 0) throw badRequest('Оплату по QR-коду проводите через «Показать QR-код»');
-    const sale = idempotent(db, request, reply, (tx) => serializeSale(tx, createSale(tx, input, request.employee.id)));
+    const sale = idempotent(db, request, reply, (tx) => {
+      assertShiftOpen(tx);
+      return serializeSale(tx, createSale(tx, input, request.employee.id));
+    });
     // The client hears about the credited bonuses once (not on a replay); the reply does not wait for Telegram.
     if (reply.getHeader(REPLAYED_HEADER) === undefined) void announceBonusEarned(ctx, sale.id);
     return sale;

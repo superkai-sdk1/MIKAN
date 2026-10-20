@@ -6,7 +6,7 @@ import { linkTelegram } from '../src/domain/clients.js';
 import { birthdayDiscount } from '../src/domain/loyalty.js';
 import { DEFAULT_RETENTION } from '../src/domain/retention-settings.js';
 import { DAY_MS } from '../src/lib/time.js';
-import { createTestApp, FakeQrProvider, make, type TestApp } from './helpers.js';
+import { createTestApp, FakeQrProvider, make, openShift, type TestApp } from './helpers.js';
 
 const NOW = Date.parse('2026-10-15T09:00:00.000Z'); // Thu 12:00 Moscow
 const CHAT = 777_001;
@@ -22,6 +22,7 @@ describe('loyalty bonuses', () => {
     vi.setSystemTime(NOW);
     bank = new FakeQrProvider();
     t = await createTestApp({ qr: bank });
+    await openShift(t);
     client = await make(t, '/api/clients', { name: 'Анна', lastName: 'Иванова', phone: '+79990001122' });
     service = await make(t, '/api/services', { name: 'Прокол мочки', category: 'piercing', price: 3000, durationMin: 30 });
   });
@@ -171,7 +172,6 @@ describe('loyalty bonuses', () => {
     await adjust({ amount: 1000, note: 'Старт' });
     const sale = await sold({ cash: 2100, bonus: 900 });
     expect((await ledger()).balance).toBe(100 + 105);
-    await t.api('POST', '/api/cash/shift/open', { openingCash: 0 });
     const refunded = (await t.api('POST', `/api/sales/${sale.id}/refund`, { reason: 'Ошибка', restock: true })).json();
     expect(refunded).toMatchObject({ status: 'refunded', bonusEarned: 105 });
     const list = await ledger();
@@ -189,7 +189,6 @@ describe('loyalty bonuses', () => {
     await adjust({ amount: 50, note: 'Добавка' });
     await adjust({ amount: -180, note: 'Списание' });
     expect((await ledger()).balance).toBe(20);
-    await t.api('POST', '/api/cash/shift/open', { openingCash: 0 });
     await t.api('POST', `/api/sales/${first.id}/refund`, { reason: 'Возврат', restock: true });
     const list = await ledger();
     expect(list.balance).toBe(0);
@@ -198,7 +197,6 @@ describe('loyalty bonuses', () => {
 
   it('does not take back earned bonuses that have already burnt', async () => {
     await setLoyalty({ expiryDays: 30 });
-    await t.api('POST', '/api/cash/shift/open', { openingCash: 0 });
     await adjust({ amount: 500, note: 'Старт' });
     const burnt = await sold({ cash: 3000 }); // +150, burning in 30 days
     vi.setSystemTime(NOW + 2 * DAY_MS);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestApp, FakeQrProvider, make, type TestApp } from './helpers.js';
+import { createTestApp, FakeQrProvider, make, openShift, type TestApp } from './helpers.js';
 
 type Json = Record<string, any>;
 
@@ -14,6 +14,7 @@ describe('open receipts (POS)', () => {
   beforeEach(async () => {
     bank = new FakeQrProvider();
     t = await createTestApp({ qr: bank });
+    await openShift(t);
     labret = await make(t, '/api/products', {
       kind: 'jewelry',
       name: 'Лабрет',

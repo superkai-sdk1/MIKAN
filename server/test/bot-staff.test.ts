@@ -9,7 +9,7 @@ import { STAFF_TOOLS } from '../src/bot/staff-tools.js';
 import { employees } from '../src/db/schema.js';
 import { getStaffChatId } from '../src/domain/settings.js';
 import { normalizePhone } from '../src/lib/phone.js';
-import { blocked, createTestApp, make, message, ScriptedAi, text, toolUse, type TestApp } from './helpers.js';
+import { blocked, createTestApp, make, message, openShift, ScriptedAi, text, toolUse, type TestApp } from './helpers.js';
 
 const NOW = Date.parse('2026-10-15T09:00:00.000Z'); // Thu 12:00 Moscow
 const CHAT = 740_001;
@@ -29,6 +29,7 @@ describe('bot: staff recognised by phone, staff mode', () => {
     vi.setSystemTime(NOW);
     ai = new ScriptedAi();
     t = await createTestApp({ ai });
+    await openShift(t);
     pipeline = new BotPipeline(t.ctx, 0);
     handleStaffCommand(t.ctx, STAFF, issueStaffCode(t.ctx.db).code);
     // An admin: the staff tools include analytics (a master gets «Отчёты доступны…», see below).
