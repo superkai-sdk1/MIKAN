@@ -31,20 +31,66 @@ struct ServiceMasterPricesTests {
 
     // MARK: - Loading
 
-    @Test("Saved values equal to the catalog read as empty; variant prices are matched by name")
-    func loadReadsCatalogValuesAsEmpty() throws {
+    @Test("Saved entries load exactly — values equal to the catalog included; variant prices are matched by name")
+    func loadKeepsSavedEntries() throws {
         let saved = [
             ServiceMasterPrice(employeeId: 2, price: 3_000, priceMax: nil, variants: [ServiceMasterVariantPrice(name: "Два", price: 5_000)]),
             ServiceMasterPrice(employeeId: 3, price: 2_500, priceMax: nil, variants: [ServiceMasterVariantPrice(name: "Один", price: 2_500)]),
         ]
         let draft = ServiceEditorDraft(service: Self.service(variants: Self.pairs, masterPrices: saved), nextSort: 0)
 
-        #expect(draft.masterPrices.entries.map(\.employeeId) == [2], "an entry equal to the catalog is not an own price")
+        #expect(draft.masterPrices.entries.map(\.employeeId) == [2, 3])
         let amina = draft.masterPrices.entry(for: 2)
         #expect(amina.price == 3_000)
+        #expect(amina.priceMax == .noMaximum)
         let two = try #require(draft.variants.first { $0.name == "Два" })
         #expect(amina.variantPrices == [two.id: 5_000])
-        #expect(draft.masterPrices.entry(for: 3).isBlank)
+        #expect(draft.body.masterPrices == saved, "an untouched card sends the entries back as they came")
+    }
+
+    @Test("A master's saved fixed price in a range service stays fixed when anything else is edited")
+    func savedFixedPriceSurvivesRangeCatalog() {
+        let saved = [ServiceMasterPrice(employeeId: 2, price: 4_000, priceMax: nil)]
+        var draft = ServiceEditorDraft(
+            service: Self.service(price: 3_000, priceMax: 6_000, priceFrom: true, masterPrices: saved),
+            nextSort: 0
+        )
+        draft.description = "Новое описание"
+        #expect(draft.body.masterPrices == saved)
+        #expect(draft.canSave)
+
+        // Editing that master's price keeps the maximum they never had.
+        var amina = draft.masterPrices.entry(for: 2)
+        amina.price = 4_500
+        draft.masterPrices.set(amina)
+        #expect(draft.body.masterPrices == [ServiceMasterPrice(employeeId: 2, price: 4_500, priceMax: nil)])
+    }
+
+    @Test("A saved price equal to the catalog one stays pinned when the catalog price changes")
+    func pinnedPriceDoesNotFollowCatalog() {
+        let saved = [ServiceMasterPrice(employeeId: 2, price: 2_500, priceMax: nil)]
+        var draft = ServiceEditorDraft(service: Self.service(price: 2_500, masterPrices: saved), nextSort: 0)
+        draft.price.amount = 2_800
+        #expect(draft.body.price == 2_800)
+        #expect(draft.body.masterPrices == saved)
+    }
+
+    @Test("Only a field the user empties falls back to the catalog")
+    func clearedFieldsFollowCatalog() {
+        let saved = [ServiceMasterPrice(employeeId: 2, price: 4_000, priceMax: 9_000)]
+        var draft = ServiceEditorDraft(
+            service: Self.service(price: 3_000, priceMax: 6_000, priceFrom: true, masterPrices: saved),
+            nextSort: 0
+        )
+        var amina = draft.masterPrices.entry(for: 2)
+        amina.priceMax = .catalog
+        draft.masterPrices.set(amina)
+        #expect(draft.body.masterPrices == [ServiceMasterPrice(employeeId: 2, price: 4_000, priceMax: 6_000)])
+
+        amina.price = nil
+        draft.masterPrices.set(amina)
+        #expect(draft.masterPrices.entries.isEmpty, "every field empty — the master charges the catalog price")
+        #expect(draft.body.masterPrices == [])
     }
 
     // MARK: - Body
@@ -57,7 +103,7 @@ struct ServiceMasterPricesTests {
         #expect(draft.body.masterPrices == [])
 
         draft.masterPrices.set(ServiceMasterPriceDraft(employeeId: 2, price: 3_000))
-        draft.masterPrices.set(ServiceMasterPriceDraft(employeeId: 4, priceMax: 7_000))
+        draft.masterPrices.set(ServiceMasterPriceDraft(employeeId: 4, priceMax: .amount(7_000)))
         #expect(draft.body.masterPrices == [
             ServiceMasterPrice(employeeId: 2, price: 3_000, priceMax: 5_000),
             ServiceMasterPrice(employeeId: 4, price: 2_000, priceMax: 7_000),
@@ -126,7 +172,7 @@ struct ServiceMasterPricesTests {
         #expect(draft.validationMessage == "У мастера максимум должен быть больше минимума.")
         #expect(!draft.canSave)
 
-        draft.masterPrices.set(ServiceMasterPriceDraft(employeeId: 2, price: 6_000, priceMax: 8_000))
+        draft.masterPrices.set(ServiceMasterPriceDraft(employeeId: 2, price: 6_000, priceMax: .amount(8_000)))
         #expect(draft.masterPricesMessage == nil)
         #expect(draft.canSave)
     }

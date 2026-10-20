@@ -291,8 +291,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
         durationMin = duration
         let variantRows = ServiceVariantDrafts.drafts(from: service?.variants ?? [], defaultDuration: duration)
         variants = variantRows
-        masterPrices = service.map { ServiceMasterPricesDraft($0.masterPrices, service: $0, variants: variantRows) }
-            ?? ServiceMasterPricesDraft()
+        masterPrices = ServiceMasterPricesDraft(service?.masterPrices ?? [], variants: variantRows)
         imageUrl = service?.imageUrl.nonEmpty
         imagePrompt = service?.imagePrompt ?? ""
         photos = service?.photos ?? []
