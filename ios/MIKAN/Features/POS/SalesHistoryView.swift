@@ -8,6 +8,8 @@ struct SalesHistoryView: View {
     @State private var shownDay: Date?
     @State private var sales = Remote<[Sale]>()
     @State private var search = SalesSearchModel()
+    /// The query of the shown results, like `shownDay`: the same query is not reloaded when the screen reappears.
+    @State private var shownQuery: String?
 
     private static let dayLimit = 200
     private static let searchDebounce: Duration = .milliseconds(350)
@@ -57,11 +59,16 @@ struct SalesHistoryView: View {
             await load()
         }
         .task(id: search.query) {
-            if search.query != nil {
+            let query = search.query
+            // Coming back from a sale keeps the loaded pages and the scroll; only another query starts over.
+            guard query != shownQuery || search.remote.value == nil else { return }
+            if query != nil {
                 try? await Task.sleep(for: Self.searchDebounce)
                 guard !Task.isCancelled else { return }
             }
             await search.load(api: api)
+            // A load cut short (the screen left) runs again on return.
+            if !Task.isCancelled { shownQuery = query }
         }
         .remoteErrorAlert(sales)
         .remoteErrorAlert(search.remote)
