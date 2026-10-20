@@ -80,6 +80,10 @@ struct StudioSettingsView: View {
                     CancellationRulesSection(rules: rules)
                         .disabled(isReadOnly)
                 }
+                if let pos = Binding(settings.pos) {
+                    PosSettingsSection(settings: pos)
+                        .disabled(isReadOnly)
+                }
                 if let links = Binding(settings.reviewLinks) {
                     ReviewLinksSection(links: links)
                         .disabled(isReadOnly)

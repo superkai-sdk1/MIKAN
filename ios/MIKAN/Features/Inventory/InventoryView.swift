@@ -4,6 +4,7 @@ import SwiftUI
 enum WarehouseRoute: Hashable {
     case movements
     case revisions
+    case deliveries
 }
 
 /// «Склад» — the unified warehouse: Украшения · Услуги · Расходники · Товары. Product sections list their products by
@@ -17,6 +18,7 @@ struct InventoryView: View {
     @State private var showsEditor = false
     @State private var showsCategories = false
     @State private var showsRevision = false
+    @State private var showsDelivery = false
     @State private var categoriesChanged = false
     @State private var route: WarehouseRoute?
     @State private var errorMessage: String?
@@ -38,6 +40,7 @@ struct InventoryView: View {
                     switch route {
                     case .movements: MovementsListView()
                     case .revisions: RevisionHistoryView()
+                    case .deliveries: DeliveriesListView { _ in stockChanged() }
                     }
                 }
                 .sheet(isPresented: $showsEditor) {
@@ -51,11 +54,11 @@ struct InventoryView: View {
                 }
                 .sheet(isPresented: $showsRevision) {
                     RevisionFlowView(initialSection: model.kind.map(CatalogSection.init(kind:))) { _ in
-                        Task {
-                            await model.reloadLoaded(api: api)
-                            await appState.refreshBadges()
-                        }
+                        stockChanged()
                     }
+                }
+                .sheet(isPresented: $showsDelivery) {
+                    DeliveryEditorView { _ in stockChanged() }
                 }
                 // Only orders the groups; without the registry they fall back to alphabetical order.
                 .task { try? await reference.ensureCategories() }
@@ -166,6 +169,14 @@ struct InventoryView: View {
         try? await reference.ensureCategories(force: true)
     }
 
+    /// A stock count or a delivery changed many stocks at once: reload the lists and the low-stock badge.
+    private func stockChanged() {
+        Task {
+            await model.reloadLoaded(api: api)
+            await appState.refreshBadges()
+        }
+    }
+
     /// Renames, merges and deletions moved items between categories: reload what is on screen.
     private func categoriesClosed() {
         guard categoriesChanged else { return }
@@ -189,6 +200,7 @@ struct InventoryView: View {
             if model.section != .service {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        Button("Поставки", systemImage: "shippingbox") { route = .deliveries }
                         Button("История ревизий", systemImage: "clock.arrow.circlepath") { route = .revisions }
                         Button("Движения", systemImage: "arrow.left.arrow.right") { route = .movements }
                     } label: {
@@ -204,6 +216,9 @@ struct InventoryView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Категории \(model.section.genitiveTitle)", systemImage: "folder") { showsCategories = true }
+                    Divider()
+                    Button("Принять поставку", systemImage: "shippingbox.and.arrow.backward") { showsDelivery = true }
+                    Button("Поставки", systemImage: "shippingbox") { route = .deliveries }
                     Divider()
                     Button("Провести ревизию", systemImage: "checklist") { showsRevision = true }
                     Button("История ревизий", systemImage: "clock.arrow.circlepath") { route = .revisions }

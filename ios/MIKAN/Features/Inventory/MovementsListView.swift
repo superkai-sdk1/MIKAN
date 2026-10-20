@@ -15,7 +15,7 @@ struct MovementsListView: View {
     var body: some View {
         List {
             ForEach(movements.value ?? []) { movement in
-                MovementRow(movement: movement, showsProduct: true)
+                MovementLink(movement: movement, showsProduct: true)
                     .task { await loadMore(after: movement) }
             }
             if isLoadingMore {

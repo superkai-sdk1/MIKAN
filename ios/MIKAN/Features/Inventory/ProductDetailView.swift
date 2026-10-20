@@ -231,7 +231,7 @@ struct ProductDetailView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(items) { movement in
-                    MovementRow(movement: movement, unit: product.unitLabel)
+                    MovementLink(movement: movement, unit: product.unitLabel, inCard: true)
                     if movement.id != items.last?.id { Divider() }
                 }
             } else if let failure = movements.failure {
