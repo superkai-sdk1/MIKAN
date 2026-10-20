@@ -260,6 +260,8 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
     var price: ServicePriceDraft
     var durationMin: Int
     var variants: [ServiceVariantDraft]
+    /// «Цены у мастеров»: masters' own prices; empty fields follow the catalog.
+    var masterPrices: ServiceMasterPricesDraft
     var imageUrl: String?
     var imagePrompt: String
     var photos: [String]
@@ -287,7 +289,10 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
         group = service?.group ?? ""
         price = service.map { ServicePriceDraft(price: $0.price, priceMax: $0.priceMax, priceFrom: $0.priceFrom) } ?? ServicePriceDraft()
         durationMin = duration
-        variants = ServiceVariantDrafts.drafts(from: service?.variants ?? [], defaultDuration: duration)
+        let variantRows = ServiceVariantDrafts.drafts(from: service?.variants ?? [], defaultDuration: duration)
+        variants = variantRows
+        masterPrices = service.map { ServiceMasterPricesDraft($0.masterPrices, service: $0, variants: variantRows) }
+            ?? ServiceMasterPricesDraft()
         imageUrl = service?.imageUrl.nonEmpty
         imagePrompt = service?.imagePrompt ?? ""
         photos = service?.photos ?? []
@@ -306,6 +311,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
     var nameMessage: String? { name.trimmed.isEmpty ? "Укажите название услуги." : nil }
     var durationMessage: String? { ServiceLimits.durationMessage(durationMin) }
     var variantsMessage: String? { ServiceVariantDrafts.validationMessage(for: variants) }
+    var masterPricesMessage: String? { masterPrices.validationMessage(catalog: price.fields, variants: variants) }
     var imagePromptMessage: String? { ServiceLimits.imagePromptMessage(imagePrompt) }
     var photosMessage: String? {
         photos.count > ServiceLimits.maxPhotos ? "Не больше \(ServiceLimits.maxPhotos) фото работ." : nil
@@ -320,6 +326,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
             ?? durationMessage
             ?? price.validationMessage
             ?? variantsMessage
+            ?? masterPricesMessage
             ?? imagePromptMessage
             ?? photosMessage
             ?? deposit.validationMessage
@@ -345,6 +352,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
             photos: photos,
             variants: ServiceVariantDrafts.variants(from: variants),
             depositAmount: deposit.amount,
+            masterPrices: masterPrices.prices(catalog: fields, variants: variants),
             aftercareTemplateId: Nullable(aftercareTemplateId),
             freshProcedure: freshProcedure,
             healingCheckDays: Nullable(followUps.healingCheckDays),
@@ -365,7 +373,7 @@ nonisolated struct ServiceEditorDraft: Hashable, Sendable {
 }
 
 nonisolated extension ServiceBody {
-    /// Full body of an existing service (PATCH replaces every field).
+    /// Full body of an existing service (PATCH replaces every field but the masters' prices, which stay unchanged).
     init(_ service: Service) {
         self.init(
             name: service.name,
@@ -390,28 +398,5 @@ nonisolated extension ServiceBody {
             active: service.active,
             sort: service.sort
         )
-    }
-}
-
-// MARK: - Cover generation
-
-/// How to read the outcome of an AI cover generation request.
-nonisolated enum ServiceImageGeneration {
-    /// The service has a picture other than the one it had when the generation started.
-    static func hasNewPicture(_ service: Service?, baseline: String?) -> Bool {
-        guard let current = service?.imageUrl.nonEmpty else { return false }
-        return current != baseline.nonEmpty
-    }
-
-    /// `409` because a generation for this service is still running (a missing AI key is a `409` too, with another message).
-    static func isAlreadyGenerating(_ error: any Error) -> Bool {
-        guard let error = error as? APIError, error.status == 409 else { return false }
-        return error.message.localizedCaseInsensitiveContains("генерируется")
-    }
-
-    /// The request broke on the way (timeout, dropped connection, app in background): the server may still finish.
-    static func mayStillFinish(_ error: any Error) -> Bool {
-        guard let error = error as? APIError, case .transport = error else { return false }
-        return true
     }
 }
