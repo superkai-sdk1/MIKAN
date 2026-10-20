@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The service card: cover, price, variants, compatible jewelry, the consumption norm, work photos and who got
-/// the service.
+/// The service card: cover, price, variants, masters' prices, compatible jewelry, the consumption norm, work photos and
+/// who got the service.
 struct ServiceDetailView: View {
     @Environment(APIClient.self) private var api
     @Environment(ReferenceStore.self) private var reference
@@ -36,6 +36,9 @@ struct ServiceDetailView: View {
             ServiceSummarySection(service: service)
             if !service.variants.isEmpty {
                 ServiceVariantsSummarySection(service: service)
+            }
+            if !service.masterPrices.isEmpty {
+                ServiceMasterPricesCardSection(service: service)
             }
             ServiceJewelryCardSection(jewelryIds: service.jewelryIds, stock: stock, retry: loadStock) { product in
                 openedProduct = product

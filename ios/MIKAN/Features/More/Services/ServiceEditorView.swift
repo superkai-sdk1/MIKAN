@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The service card editor: main data, price and variants, time and prepayment, compatible jewelry, the consumption
-/// norm, pictures, the text the bot reads, the aftercare memo, the bot's messages after the visit and visibility.
+/// The service card editor: main data, price and variants, masters' prices, time and prepayment, compatible jewelry,
+/// the consumption norm, pictures, the text the bot reads, the aftercare memo, the bot's messages after the visit and
+/// visibility.
 struct ServiceEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(APIClient.self) private var api
@@ -47,6 +48,11 @@ struct ServiceEditorView: View {
                     serviceName: draft.name,
                     defaultPrice: draft.price.amount,
                     defaultDuration: draft.durationMin
+                )
+                ServiceMasterPricesEditorSection(
+                    prices: $draft.masterPrices,
+                    catalog: draft.price.fields,
+                    variants: draft.variants
                 )
                 durationSection
                 depositSection

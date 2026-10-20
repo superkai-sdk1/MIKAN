@@ -15,14 +15,44 @@ nonisolated struct AppointmentMove: Identifiable, Sendable {
         changesTime && appointment.client.telegramLinked && target.startsAt > now
     }
 
-    func body(notifyClient: Bool, force: Bool, now: Date = .now) -> AppointmentMoveBody {
+    func body(
+        notifyClient: Bool,
+        force: Bool,
+        repricing: AppointmentMoveRepricing? = nil,
+        now: Date = .now
+    ) -> AppointmentMoveBody {
         AppointmentMoveBody(
             startsAt: target.startsAt,
             endsAt: target.endsAt,
             masterId: changesMaster ? target.masterId : nil,
             notifyClient: notifyClient && offersTelegramNotice(now: now),
-            force: force ? true : nil
+            force: force ? true : nil,
+            services: repricing?.services,
+            price: repricing?.price,
+            depositRequired: repricing.map { _ in appointment.depositRequired }
         )
+    }
+}
+
+/// New prices of a move to another master (docs/API.md «Service» `masterPrices`): as in the editor, the catalog
+/// lines nobody edited take the new master's prices.
+nonisolated struct AppointmentMoveRepricing: Equatable, Sendable {
+    let services: [AppointmentServiceBody]
+    /// The new total: the sum of the lines (a kept total gives way to it, as in the editor).
+    let price: Int
+}
+
+extension AppointmentMove {
+    /// `nil` when the master stays, the catalog is not loaded or no price changes.
+    @MainActor
+    func repricing(catalog: [Service]) -> AppointmentMoveRepricing? {
+        guard changesMaster, !catalog.isEmpty else { return nil }
+        var draft = AppointmentDraft.edit(appointment, catalog: catalog)
+        let before = draft.lines.map(\.price)
+        draft.masterId = target.masterId
+        draft.repriceLines(from: catalog)
+        guard draft.lines.map(\.price) != before else { return nil }
+        return AppointmentMoveRepricing(services: draft.lines.map(\.body), price: draft.total)
     }
 }
 

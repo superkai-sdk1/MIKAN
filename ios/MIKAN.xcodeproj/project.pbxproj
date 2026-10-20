@@ -13,6 +13,7 @@
 		0350E6B64A7D8F00128AEEF5 /* WorkdayHoursTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7C453340EE1FAE5F40F269 /* WorkdayHoursTests.swift */; };
 		0382B40D0F1EBA3907FAFAF0 /* PreviewData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BF9373E58FF863F90BB2B98 /* PreviewData.swift */; };
 		0405B1EB3DEB77B5B3B17040 /* TelegramLinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F2B856455BDC12B5F055F55 /* TelegramLinkSheet.swift */; };
+		0447FEA4E79B84A3D01100FC /* ServiceMasterPricesCardSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A3C9C8499D29F8E319457F /* ServiceMasterPricesCardSection.swift */; };
 		04858B8732A1DE8591C14982 /* CertificateEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8165B8F53846C68B94A5AB9A /* CertificateEditSheet.swift */; };
 		04C009D29E46F0C785540126 /* BookingRequestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 843B5CA992CEA3AE0C5D4D73 /* BookingRequestDetailView.swift */; };
 		061557886E349AADEF833713 /* JSONCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2902545CF8FE00CDA70DADBE /* JSONCoding.swift */; };
@@ -89,6 +90,7 @@
 		2DF2882B85ED04403CD919B0 /* CalendarPeriod.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33AF0ACC9932851C7726897D /* CalendarPeriod.swift */; };
 		2E5C9EC4C60972CDA37FAF68 /* BonusAdjustTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CCE9A21ECECCA51D3BECEC3 /* BonusAdjustTests.swift */; };
 		2EEC34BC81BA68469C91654B /* EmployeeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30477A752EB8EFC0AD92C66 /* EmployeeEditorView.swift */; };
+		2F61D82159848A61B5AFF2CE /* AppointmentLinePricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE73B8FE680D749D2D83B7B /* AppointmentLinePricing.swift */; };
 		2FADEA35FCA2247E6BF02A80 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EF3329D7F4E46E0179BE4D5 /* ModelDecodingTests.swift */; };
 		2FBDDE3EC08BBEF7CA4CB533 /* ClientMarketingSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 734DC933AF69B852D1250373 /* ClientMarketingSection.swift */; };
 		307B738A097A0D415D2F31D1 /* StaffBindingMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 821D504BA84289CC198CEC2E /* StaffBindingMenu.swift */; };
@@ -114,6 +116,7 @@
 		38142D49F197844DA1D78743 /* AnalyticsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE7FDC2F5956A54E1A90B0E4 /* AnalyticsSections.swift */; };
 		382923526844371B0710B190 /* Endpoints+Portfolio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23BFC9186465E3E68EF13CD8 /* Endpoints+Portfolio.swift */; };
 		38B9640C4FD80B896A270062 /* Campaign.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC058195A6FF9ACA43691072 /* Campaign.swift */; };
+		396CC962094ED8415B6334CE /* ServiceMasterPricesEditorSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 510E7B9FE7CAD4CB35F8CDFA /* ServiceMasterPricesEditorSection.swift */; };
 		396DFE18C2E76BFD4381CE93 /* ScheduleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 242300F3F168676185634CC3 /* ScheduleView.swift */; };
 		3A5DC726CFB224B7B56F83A9 /* CheckoutSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71C7011A13192F300624967 /* CheckoutSections.swift */; };
 		3ABB2E8F504BCDFB23531D9A /* MasterDayHint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9652A2164B8909F57A906120 /* MasterDayHint.swift */; };
@@ -220,6 +223,7 @@
 		71980DC630418DFBD02A04EE /* AnalyticsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08FEAA960B5CE2D0980C1966 /* AnalyticsComponents.swift */; };
 		719963EC99BC77BBDF70F73E /* ServicePicking.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B698A342A5FC4418396E47 /* ServicePicking.swift */; };
 		726A671A70F69B19564065A4 /* MediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0765D3B62A5D27ACAC1448B4 /* MediaViews.swift */; };
+		73CA57B8DC578EA3EEB1D7C0 /* AppointmentMasterPricingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F223D607C22D270DA2EA101B /* AppointmentMasterPricingTests.swift */; };
 		751E9BF1C2BB3137E1206941 /* DeviceAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9CFEC3ED9C6470AD43E535A /* DeviceAuthentication.swift */; };
 		753A857822C167F8EC540BA6 /* ServiceCardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 640DCF9373A3B925897F1920 /* ServiceCardTests.swift */; };
 		75FD9CBCDA58A62F0FDDE112 /* RevisionHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 448FC8CB58A020A6755E6CD7 /* RevisionHistoryView.swift */; };
@@ -352,6 +356,7 @@
 		BB21135A56286D8AB80E6B9E /* ScheduleStore+Offline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 411CE395B7B814B599600B65 /* ScheduleStore+Offline.swift */; };
 		BB96A304BFFBA9638B175AA4 /* AppLockCover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2026DBB4A9DE759D3E7030B /* AppLockCover.swift */; };
 		BD05763BD4987A0E2E1AD3B9 /* RevisionDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EC1348133F7957160D1C840 /* RevisionDraft.swift */; };
+		BD7F5A71DDE0DA3106625570 /* ServiceMasterPricesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F8C46EBC684C6C36C682929 /* ServiceMasterPricesTests.swift */; };
 		BDE89E4D2DC5CA5AAD423E12 /* ChatMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1010D460152CBC95F56BF6D /* ChatMarkdown.swift */; };
 		BE335BFC8B7912852D4AD0BC /* ProductDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788665723EFAF7B9D175A693 /* ProductDraftTests.swift */; };
 		BE4C5679F576E5F304CC0A30 /* ShiftsHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8F652F63A3AC1E0C72CC751 /* ShiftsHistoryView.swift */; };
@@ -397,6 +402,7 @@
 		D22D67D9633D8ADFD31141C5 /* ClientPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D5A1E310659CA380511EAD9 /* ClientPickerView.swift */; };
 		D25E4E018CDD5A17508E1CE6 /* RetentionSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5ECA627635E35F4584D032 /* RetentionSettingsTests.swift */; };
 		D27FE7DB383ED7E960F22F09 /* Endpoints+Payroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19A5972EF34A03E51C8B91CA /* Endpoints+Payroll.swift */; };
+		D5C68AEF1F24BD433BD77A9E /* ServiceMasterPriceDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99F9B1E2A609D8F63EFF71D1 /* ServiceMasterPriceDrafts.swift */; };
 		D622F5024642117D95854EF8 /* DepositRefundSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20CD0263C5169B505F4718E6 /* DepositRefundSheet.swift */; };
 		D624AE1B02D37D988E0A16C1 /* OnlineBooking.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16D0C5411DA8B527BFCC0DD /* OnlineBooking.swift */; };
 		D6C7F162F902485CD8D47DFE /* ReadOnlyNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9049F3B225FD33453D58C4D5 /* ReadOnlyNotice.swift */; };
@@ -614,6 +620,7 @@
 		4D542D49CDA51C19E46336FB /* EmployeeRoleSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeeRoleSection.swift; sourceTree = "<group>"; };
 		4FC1099D4F3981766D2CA592 /* ClientBirthdayHint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientBirthdayHint.swift; sourceTree = "<group>"; };
 		50A4FDB8D3537598C807C440 /* Endpoints+Clients.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Endpoints+Clients.swift"; sourceTree = "<group>"; };
+		510E7B9FE7CAD4CB35F8CDFA /* ServiceMasterPricesEditorSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceMasterPricesEditorSection.swift; sourceTree = "<group>"; };
 		52BDABF882425AA236F09E16 /* ProductDraftKindsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDraftKindsTests.swift; sourceTree = "<group>"; };
 		53CA994DD012892D3E04D992 /* CartStore+Loyalty.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CartStore+Loyalty.swift"; sourceTree = "<group>"; };
 		54B46118C12CC4A410ABB552 /* ServiceLinksCardSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceLinksCardSections.swift; sourceTree = "<group>"; };
@@ -642,6 +649,7 @@
 		5F22074F86AA94D0A8E8386C /* WaitlistDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaitlistDraft.swift; sourceTree = "<group>"; };
 		5F2C8181B94F86AF2F921292 /* DepositCollectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositCollectView.swift; sourceTree = "<group>"; };
 		5F5BE31C742F5DC36E85AD4B /* AppointmentServicesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentServicesSection.swift; sourceTree = "<group>"; };
+		5F8C46EBC684C6C36C682929 /* ServiceMasterPricesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceMasterPricesTests.swift; sourceTree = "<group>"; };
 		625A89E6F2B4BC9BD6262BFC /* PayRulesQuickSetupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayRulesQuickSetupTests.swift; sourceTree = "<group>"; };
 		62A63772ABF0BBC897C410AC /* StaffDigestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffDigestTests.swift; sourceTree = "<group>"; };
 		62C5E64C1AE8475764D3AC90 /* AnalyticsDelta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsDelta.swift; sourceTree = "<group>"; };
@@ -664,6 +672,7 @@
 		6C59F908F5744097D294D25C /* RemoteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteState.swift; sourceTree = "<group>"; };
 		6CCE9A21ECECCA51D3BECEC3 /* BonusAdjustTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonusAdjustTests.swift; sourceTree = "<group>"; };
 		6CD067D1BCF2FF1C579248D4 /* ProductDetailCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductDetailCards.swift; sourceTree = "<group>"; };
+		6CE73B8FE680D749D2D83B7B /* AppointmentLinePricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentLinePricing.swift; sourceTree = "<group>"; };
 		6CF709B7A6FBB01F8BCEDBED /* DepositPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositPresentation.swift; sourceTree = "<group>"; };
 		6E5A6571584A92D220FEA9CB /* ChatMarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownTests.swift; sourceTree = "<group>"; };
 		6EC3A48EF031946312B2CD9A /* QRPaymentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRPaymentView.swift; sourceTree = "<group>"; };
@@ -752,6 +761,7 @@
 		9831FCBCB339FBD60303DE53 /* ReminderScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduleTests.swift; sourceTree = "<group>"; };
 		985B4C4D7F9681DC9553F708 /* DepositQRStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositQRStep.swift; sourceTree = "<group>"; };
 		99F4FBA98473F6480F3CBD63 /* CertificateCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateCardView.swift; sourceTree = "<group>"; };
+		99F9B1E2A609D8F63EFF71D1 /* ServiceMasterPriceDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceMasterPriceDrafts.swift; sourceTree = "<group>"; };
 		9ACA6057C3395DB3E62BE66C /* AuditLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuditLinks.swift; sourceTree = "<group>"; };
 		9B5CB1170A57A3BA12E1DFBE /* VisitConsumption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitConsumption.swift; sourceTree = "<group>"; };
 		9B5CC4A7928002CFBF8DCA7F /* SizePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SizePickerSheet.swift; sourceTree = "<group>"; };
@@ -824,6 +834,7 @@
 		C59AC6879F9631BEA192EDA3 /* RequestBodies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestBodies.swift; sourceTree = "<group>"; };
 		C5B6423F78A168C3D984D2CE /* ClientsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientsListView.swift; sourceTree = "<group>"; };
 		C5E91FD698B24533B48C28D6 /* ImagePreparer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreparer.swift; sourceTree = "<group>"; };
+		C6A3C9C8499D29F8E319457F /* ServiceMasterPricesCardSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceMasterPricesCardSection.swift; sourceTree = "<group>"; };
 		C6A4F86AE8BD474A35F37BEA /* AnalyticsMarginCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsMarginCard.swift; sourceTree = "<group>"; };
 		C932C463AEB7E5A2AB050F66 /* ClientDuplicatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientDuplicatesTests.swift; sourceTree = "<group>"; };
 		C9B6AE8B7714D0BD995803CB /* AnalyticsRevenueCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsRevenueCards.swift; sourceTree = "<group>"; };
@@ -898,6 +909,7 @@
 		F0F67F66CE9BFFD987DB6139 /* CertificateEditDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CertificateEditDraft.swift; sourceTree = "<group>"; };
 		F12E8D2C8D454960AD9E89E1 /* ConsumablePurchaseSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsumablePurchaseSheet.swift; sourceTree = "<group>"; };
 		F1671D415138D39FBBFA62DC /* AnalyticsKPIGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsKPIGrid.swift; sourceTree = "<group>"; };
+		F223D607C22D270DA2EA101B /* AppointmentMasterPricingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppointmentMasterPricingTests.swift; sourceTree = "<group>"; };
 		F32DCA6CAEFE63084022C64A /* ScheduleShading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleShading.swift; sourceTree = "<group>"; };
 		F360E92B8751EDF8CCDBEADD /* ServiceEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceEditorView.swift; sourceTree = "<group>"; };
 		F3978E49CF74DEF6ECE07A09 /* ProductServicesPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductServicesPicker.swift; sourceTree = "<group>"; };
@@ -1160,6 +1172,7 @@
 				FD547C668BCFCA43A4EB8089 /* AppLockTests.swift */,
 				3D30A036B706354BDFAD5556 /* AppointmentDraftTests.swift */,
 				366F17A689264EA35504085C /* AppointmentDragTests.swift */,
+				F223D607C22D270DA2EA101B /* AppointmentMasterPricingTests.swift */,
 				3DE8B34825CA9680EA3C8A2A /* AuditLogTests.swift */,
 				3D3C35F2777CA5DF149DC0B3 /* BirthdayTests.swift */,
 				6CCE9A21ECECCA51D3BECEC3 /* BonusAdjustTests.swift */,
@@ -1213,6 +1226,7 @@
 				640DCF9373A3B925897F1920 /* ServiceCardTests.swift */,
 				5938251744528DD1BE904B95 /* ServiceFollowUpTests.swift */,
 				87BE563101A8FCFD9AD2EF40 /* ServiceLinksTests.swift */,
+				5F8C46EBC684C6C36C682929 /* ServiceMasterPricesTests.swift */,
 				B7376C571BFA57295D5F70F2 /* ServicePickingTests.swift */,
 				CEAB0D5569D826CB6FBB3679 /* SessionsTests.swift */,
 				692FE5EDE09A9D59857A973F /* StaffBindingTests.swift */,
@@ -1251,6 +1265,7 @@
 				8D6466EA57DACAC151D703B2 /* AppointmentDetailView.swift */,
 				5871851D4120D23EDA8AAF38 /* AppointmentDraft.swift */,
 				32834C088CCE6B6B10C61F34 /* AppointmentEditorView.swift */,
+				6CE73B8FE680D749D2D83B7B /* AppointmentLinePricing.swift */,
 				5F5BE31C742F5DC36E85AD4B /* AppointmentServicesSection.swift */,
 				6366CBA7544C22C932871225 /* AppointmentStatus+UI.swift */,
 				33AF0ACC9932851C7726897D /* CalendarPeriod.swift */,
@@ -1500,6 +1515,9 @@
 				D7851876100700CE8DAF7124 /* ServiceLinks.swift */,
 				54B46118C12CC4A410ABB552 /* ServiceLinksCardSections.swift */,
 				33205949C84E8F241AC34759 /* ServiceLinksEditorSections.swift */,
+				99F9B1E2A609D8F63EFF71D1 /* ServiceMasterPriceDrafts.swift */,
+				C6A3C9C8499D29F8E319457F /* ServiceMasterPricesCardSection.swift */,
+				510E7B9FE7CAD4CB35F8CDFA /* ServiceMasterPricesEditorSection.swift */,
 				BB9205D26DACA02685C77FF5 /* ServicePhotosEditor.swift */,
 				DCDD239CAB5F2222E9594DDB /* ServicePhotoViewer.swift */,
 				B4A21C479E1D00CD88174D96 /* ServiceProductPicker.swift */,
@@ -1956,6 +1974,7 @@
 				C3A3F23A0C0782391B9A4FE3 /* AppointmentDragPlan.swift in Sources */,
 				36FA598BEB366FA035EE733B /* AppointmentDragSource.swift in Sources */,
 				1980BACE843B73B12822595F /* AppointmentEditorView.swift in Sources */,
+				2F61D82159848A61B5AFF2CE /* AppointmentLinePricing.swift in Sources */,
 				4A61EAB98163513A51D47324 /* AppointmentMove.swift in Sources */,
 				2B1396B63CC264A4CB5E9BF3 /* AppointmentMoveSheet.swift in Sources */,
 				262C37E1D7810ADB4B871CA5 /* AppointmentOnlineSection.swift in Sources */,
@@ -2242,6 +2261,9 @@
 				8F6C6E8D37D9571B03A95DEB /* ServiceLinks.swift in Sources */,
 				DD6AD6EA1A5A8367A94A5853 /* ServiceLinksCardSections.swift in Sources */,
 				5F6E48157C727E8018F47130 /* ServiceLinksEditorSections.swift in Sources */,
+				D5C68AEF1F24BD433BD77A9E /* ServiceMasterPriceDrafts.swift in Sources */,
+				0447FEA4E79B84A3D01100FC /* ServiceMasterPricesCardSection.swift in Sources */,
+				396CC962094ED8415B6334CE /* ServiceMasterPricesEditorSection.swift in Sources */,
 				B89FBC808B6198890CB239AC /* ServicePhotoViewer.swift in Sources */,
 				207A9304A1A46FE60F77D155 /* ServicePhotosEditor.swift in Sources */,
 				6972CE47350C1D8F02826D81 /* ServicePickerView.swift in Sources */,
@@ -2307,6 +2329,7 @@
 				5486BD468F67ECFAC9525EF5 /* AppLockTests.swift in Sources */,
 				B9A4337BAC62B2D48687EB8D /* AppointmentDraftTests.swift in Sources */,
 				B51EA5E17C810499B91824CB /* AppointmentDragTests.swift in Sources */,
+				73CA57B8DC578EA3EEB1D7C0 /* AppointmentMasterPricingTests.swift in Sources */,
 				328CFB5DB178D497CDA3F77B /* AuditLogTests.swift in Sources */,
 				DBC1AB8F633034733A7456AE /* BirthdayTests.swift in Sources */,
 				2E5C9EC4C60972CDA37FAF68 /* BonusAdjustTests.swift in Sources */,
@@ -2360,6 +2383,7 @@
 				753A857822C167F8EC540BA6 /* ServiceCardTests.swift in Sources */,
 				00D102BAC218DD8F22F45C20 /* ServiceFollowUpTests.swift in Sources */,
 				AD1129526EB6ECE087C60034 /* ServiceLinksTests.swift in Sources */,
+				BD7F5A71DDE0DA3106625570 /* ServiceMasterPricesTests.swift in Sources */,
 				9D5F4A01038214199B77C9DA /* ServicePickingTests.swift in Sources */,
 				A0D3D4938927B055666546CE /* SessionsTests.swift in Sources */,
 				266CF5E2469904EEF102D8B6 /* StaffBindingTests.swift in Sources */,
