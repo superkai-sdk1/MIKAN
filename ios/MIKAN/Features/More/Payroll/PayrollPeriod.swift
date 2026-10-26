@@ -1,7 +1,8 @@
 import Foundation
 
-/// Payroll period chips: this month up to today, the whole previous month, or any range of days.
+/// Payroll period chips: today, this month up to today, the whole previous month, or any range of days.
 nonisolated enum PayrollPeriodOption: String, CaseIterable, Identifiable, Sendable, PeriodChipOption {
+    case today
     case thisMonth
     case lastMonth
     case custom
@@ -10,6 +11,7 @@ nonisolated enum PayrollPeriodOption: String, CaseIterable, Identifiable, Sendab
 
     var title: String {
         switch self {
+        case .today: "Сегодня"
         case .thisMonth: "Этот месяц"
         case .lastMonth: "Прошлый месяц"
         case .custom: "Период"
@@ -20,6 +22,8 @@ nonisolated enum PayrollPeriodOption: String, CaseIterable, Identifiable, Sendab
         let today = calendar.startOfDay(for: now)
         let monthStart = calendar.dateInterval(of: .month, for: now)?.start ?? today
         switch self {
+        case .today:
+            return PayrollRange(first: today, last: today)
         case .thisMonth:
             return PayrollRange(first: monthStart, last: today)
         case .lastMonth:
@@ -65,10 +69,11 @@ nonisolated struct PayrollRange: Hashable, Sendable {
         return calendar.isDate(first, inSameDayAs: month.start) && interval(calendar: calendar).end == month.end
     }
 
-    /// «Сентябрь 2026» for a whole month, else «1 – 19 октября».
+    /// «Сентябрь 2026» for a whole month, «Сегодня, 26 октября» for today, else «1 – 19 октября» or «15 октября».
     func title(now: Date = .now, calendar: Calendar = .app) -> String {
-        isWholeMonth(calendar: calendar)
-            ? DateText.monthYear(first)
-            : ReportPeriod.rangeText(interval(calendar: calendar), now: now, calendar: calendar)
+        if isWholeMonth(calendar: calendar) { return DateText.monthYear(first) }
+        let days = ReportPeriod.rangeText(interval(calendar: calendar), now: now, calendar: calendar)
+        let isToday = calendar.isDate(first, inSameDayAs: last) && calendar.isDate(first, inSameDayAs: now)
+        return isToday ? "Сегодня, \(days)" : days
     }
 }

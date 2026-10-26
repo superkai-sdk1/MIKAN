@@ -14,6 +14,8 @@ struct PayrollStatementView: View {
     @State private var errorMessage: String?
     /// The period on screen: cleared only for another period, not when the screen reappears (see PayrollListView).
     @State private var shownRange: PayrollRange?
+    /// «Сегодня» card on one's own statement, loaded apart from the period.
+    @State private var today = Remote<PayrollList>()
 
     init(employee: EmployeeRef, selection: PayrollPeriodSelection) {
         self.employee = employee
@@ -23,11 +25,16 @@ struct PayrollStatementView: View {
     private var canManage: Bool { appState.employee?.role == .owner }
     private var isSelf: Bool { appState.employee?.id == employee.id }
     private var range: PayrollRange { selection.range() }
+    /// Only on one's own statement, and not twice when the period is today already.
+    private var showsToday: Bool { isSelf && selection.option != .today }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PayrollPeriodHeader(selection: $selection)
+                if showsToday {
+                    PayrollTodayCard(today: today, employeeId: employee.id, onDetails: showToday, retry: loadToday)
+                }
                 if let value = statement.value {
                     PayrollStatementContent(
                         statement: value,
@@ -46,12 +53,17 @@ struct PayrollStatementView: View {
         }
         .background { AuraBackground() }
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .refreshable { await load() }
+        .refreshable {
+            async let day: Void = loadToday()
+            await load()
+            await day
+        }
         .task(id: range) {
             if shownRange != range { statement.reset() }
             shownRange = range
             await load()
         }
+        .task { await loadToday() }
         .remoteErrorAlert(statement)
         .errorAlert($errorMessage)
         .toolbar {
@@ -101,6 +113,15 @@ struct PayrollStatementView: View {
     private func load() async {
         let range = range
         await statement.load { try await api.payrollStatement(employeeId: employee.id, from: range.from, to: range.to) }
+    }
+
+    private func loadToday() async {
+        guard isSelf else { return }
+        await today.loadToday(api: api)
+    }
+
+    private func showToday() {
+        withAnimation(.snappy) { selection.option = .today }
     }
 
     private func delete(_ adjustment: PayrollAdjustment) {

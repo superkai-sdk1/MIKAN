@@ -35,8 +35,8 @@ private struct PayrollDueCard: View {
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(statement.due < 0 ? Color.orange : Color.primary)
             HStack(spacing: 16) {
-                LabeledValue(title: "Начислено", value: Money.format(statement.earned))
-                LabeledValue(title: "Выплачено", value: Money.format(statement.paid))
+                PayrollLabeledValue(title: "Начислено", value: Money.format(statement.earned))
+                PayrollLabeledValue(title: "Выплачено", value: Money.format(statement.paid))
             }
         }
         .cardStyle()
@@ -44,7 +44,8 @@ private struct PayrollDueCard: View {
     }
 }
 
-private struct LabeledValue: View {
+/// A small caption over a value, side by side in the due and today cards.
+struct PayrollLabeledValue: View {
     let title: String
     let value: String
 

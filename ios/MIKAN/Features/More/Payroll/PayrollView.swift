@@ -25,6 +25,8 @@ private struct PayrollListView: View {
     /// The period on screen. The task runs again whenever the screen reappears (a swipe back from a statement): the
     /// rows are cleared only for another period, otherwise they stay while the list quietly refreshes.
     @State private var shownRange: PayrollRange?
+    /// «Сегодня» card, loaded apart from the period.
+    @State private var today = Remote<PayrollList>()
 
     private var range: PayrollRange { selection.range() }
 
@@ -32,6 +34,9 @@ private struct PayrollListView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PayrollPeriodHeader(selection: $selection)
+                if selection.option != .today {
+                    PayrollTodayCard(today: today, employeeId: nil, onDetails: showToday, retry: loadToday)
+                }
                 if let value = list.value {
                     content(value.items)
                 } else if let failure = list.failure {
@@ -44,12 +49,17 @@ private struct PayrollListView: View {
         }
         .background { AuraBackground() }
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .refreshable { await load() }
+        .refreshable {
+            async let day: Void = loadToday()
+            await load()
+            await day
+        }
         .task(id: range) {
             if shownRange != range { list.reset() }
             shownRange = range
             await load()
         }
+        .task { await loadToday() }
         .remoteErrorAlert(list)
         .navigationTitle("Зарплата")
         .navigationBarTitleDisplayMode(.inline)
@@ -125,6 +135,14 @@ private struct PayrollListView: View {
     private func load() async {
         let range = range
         await list.load { try await api.payroll(from: range.from, to: range.to) }
+    }
+
+    private func loadToday() async {
+        await today.loadToday(api: api)
+    }
+
+    private func showToday() {
+        withAnimation(.snappy) { selection.option = .today }
     }
 }
 

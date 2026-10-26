@@ -216,3 +216,69 @@ struct PayrollDraftTests {
         #expect(draft.body(employeeId: 3).note == "За отзывы")
     }
 }
+
+/// A list statement of one day: only what the today card reads.
+private func todayStatement(
+    _ id: Int, _ name: String, earned: Int, visits: Int = 0, services: Int = 0, products: Int = 0, days: Int = 0
+) -> PayrollStatement {
+    PayrollStatement(
+        employee: EmployeeRef(id: id, name: name, color: nil), from: "2026-10-26", to: "2026-10-26",
+        services: .init(visits: visits, revenue: services * 2, materials: 0, amount: services),
+        products: .init(revenue: products * 10, amount: products),
+        salary: 0, days: days, perDay: 0,
+        adjustments: .init(bonus: 0, penalty: 0, advance: 0, payout: 0),
+        earned: earned, paid: 0, due: earned
+    )
+}
+
+struct PayrollTodayTests {
+    @Test("Today is a one-day range titled as today; another single day reads as its date")
+    func range() {
+        let now = day(2026, 10, 26, hour: 15)
+        let today = PayrollTodaySummary.range(now: now)
+        #expect(today.from == "2026-10-26")
+        #expect(today.to == "2026-10-26")
+        #expect(PayrollPeriodOption.today.range(now: now, customFrom: now, customTo: now) == today)
+        #expect(today.title(now: now) == "Сегодня, 26 октября")
+
+        let past = PayrollRange(first: day(2026, 10, 15, hour: 0), last: day(2026, 10, 15, hour: 0))
+        #expect(past.title(now: now) == "15 октября")
+    }
+
+    @Test("«Сегодня» is the first chip, this month stays the default")
+    func chips() {
+        #expect(PayrollPeriodOption.allCases.first == .today)
+        #expect(PayrollPeriodOption.today.title == "Сегодня")
+        #expect(PayrollPeriodSelection().option == .thisMonth)
+    }
+
+    @Test("The day leaves out employees with nothing today and puts the most earned first, then by name")
+    func summary() {
+        let summary = PayrollTodaySummary([
+            todayStatement(1, "Анна", earned: 0),
+            todayStatement(2, "Борис", earned: 1200, visits: 1, services: 1200),
+            todayStatement(3, "Фатима", earned: 4500, visits: 2, services: 4000, products: 500),
+            todayStatement(4, "Вера", earned: 0, visits: 1, days: 1),
+            todayStatement(5, "Алла", earned: 1200, products: 1200, days: 1),
+        ])
+        #expect(summary.statements.map(\.employee.name) == ["Фатима", "Алла", "Борис", "Вера"])
+        #expect(summary.earned == 6900)
+        #expect(summary.visits == 4)
+        #expect(summary.statement(of: 2)?.earned == 1200)
+        #expect(summary.statement(of: 1) == nil)
+        #expect(!summary.isEmpty)
+    }
+
+    @Test("A day with nothing earned is empty, not an error; a penalty alone still shows")
+    func emptyDay() {
+        #expect(PayrollTodaySummary([]).isEmpty)
+        let quiet = PayrollTodaySummary([todayStatement(1, "Анна", earned: 0)])
+        #expect(quiet.isEmpty)
+        #expect(quiet.earned == 0)
+        #expect(quiet.statement(of: 1) == nil)
+
+        let penalty = PayrollTodaySummary([todayStatement(1, "Анна", earned: -500)])
+        #expect(penalty.statements.map(\.id) == [1])
+        #expect(penalty.earned == -500)
+    }
+}
