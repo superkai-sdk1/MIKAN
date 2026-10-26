@@ -122,7 +122,12 @@ struct ServiceEditorView: View {
             }
             .pickerStyle(.segmented)
             .listRowSeparator(.hidden, edges: .top)
-            CategoryField(title: "Группа", options: groupOptions(for: draft.category), selection: $draft.group)
+            CategoryField(
+                title: "Группа",
+                scope: CategoryScope(section: .service, serviceCategory: draft.category),
+                options: groupOptions(for: draft.category),
+                selection: $draft.group
+            )
         } header: {
             Text("Основное")
         } footer: {
