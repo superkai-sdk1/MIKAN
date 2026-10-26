@@ -268,6 +268,11 @@ nonisolated struct CategoryCreateBody: Encodable, Sendable {
     let name: String
 }
 
+/// `PATCH /products/:id` with the category only; `null` takes the product out of its category.
+nonisolated struct ProductCategoryBody: Encodable, Sendable {
+    let category: Nullable<String>
+}
+
 /// `POST /stock/revisions` — the counted stock per size and the marked status per presence consumable.
 nonisolated struct StockRevisionBody: Encodable, Hashable, Sendable {
     var section: CatalogSection?

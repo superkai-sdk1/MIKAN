@@ -88,6 +88,12 @@ extension APIClient {
         try await request(.patch, "products/\(id)", body: body)
     }
 
+    /// Moves the product into a category of its section (the server registers a new name), or out of any (`nil`);
+    /// nothing else on the card changes.
+    func setProductCategory(id: Int, category: String?) async throws -> Product {
+        try await request(.patch, "products/\(id)", body: ProductCategoryBody(category: Nullable(category?.nonEmpty)))
+    }
+
     /// Deletes a product without history and archives one with it; `writeOff` first writes the stock left off
     /// (without it the server refuses while stock is left). A product that is already gone (`404`) counts as deleted.
     func deleteProduct(id: Int, writeOff: Bool) async throws -> ProductDeletionResult {
